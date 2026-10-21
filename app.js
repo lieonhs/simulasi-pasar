@@ -236,7 +236,7 @@
       $("barFill").style.width = "100%";
       status(`Selesai dalam ${((performance.now() - t0) / 1000).toFixed(1)} detik · ${d.values.length.toLocaleString("id-ID")} observasi · sumber ${d.source}`);
       setTimeout(() => ($("barFill").style.width = "0"), 600);
-      if (res.mode === "price") { runPlan(); if (newSymbol) { state.valBetaSet = false; state.valUpside = null; state.ai = null; state.rfAuto = true; state.oAuto = true; state.risk = null; runValuation(); } if (newSymbol || !state.cmp) runCompare(); else { renderCompare(); renderQuant(); } }
+      if (res.mode === "price") { runPlan(); if (newSymbol) { state.valBetaSet = false; state.valUpside = null; state.ai = null; state.rfAuto = true; state.oAuto = true; state.risk = null; runValuation(); } runMath(); if (newSymbol || !state.cmp) runCompare(); else { renderCompare(); renderQuant(); } }
     } catch (e) {
       status(e.message || String(e), true); $("barFill").style.width = "0";
       if (typed && !state.csv) didYouMean(typed);
@@ -1171,7 +1171,7 @@
   // ---------- bilah fokus ----------
   const FOCUS = { signal: ["headCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
     plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
-    trust: ["headCard", "confCard", "paramCard", "caveatCard"] };
+    trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {
     const out = $("out"), keep = FOCUS[f];
     document.querySelectorAll("#focusBar .fchip").forEach((b) => b.classList.toggle("active", b.dataset.f === f));
@@ -1789,17 +1789,80 @@
   }
 
   // =====================================================================
+  // LAB MATEMATIKA (UI)
+  // =====================================================================
+  async function runMath() {
+    const d = state.data; if (!d || state.mode !== "price" || d.values.length < 120) { $("mathCard").hidden = true; return; }
+    $("mathCard").hidden = false; $("mathStatus").textContent = "Menghitung…";
+    try { state.math = await compute("math", { px: d.values, o: { n: 1000, ppy: state.res ? state.res.ppy : 252 } }); renderMath(); }
+    catch (e) { $("mathStatus").textContent = "Gagal: " + e.message; }
+  }
+  function renderMath() {
+    const M = state.math; if (!M) return; const ppy = M.ppy || 252, ann = Math.sqrt(ppy), muted = css("--muted"), grid = css("--grid"), ink = css("--ink");
+    const p3 = (p) => (p < 0.001 ? "< 0,001" : nf(3).format(p)), sig = (p) => (p < 0.05 ? '<span class="neg">tolak Gaussian</span>' : '<span class="pos">konsisten Gaussian</span>');
+    $("mathStatus").textContent = `${M.n} return harian`;
+    $("mathKpi").innerHTML = [["Skewness", nf(2).format(M.skew), M.skew < -0.3 ? "ekor kiri lebih panjang" : M.skew > 0.3 ? "ekor kanan lebih panjang" : "hampir simetris"],
+      ["Kurtosis berlebih", nf(2).format(M.kurt), M.kurt > 1 ? "ekor tebal" : M.kurt < -0.5 ? "ekor lebih tipis dari normal" : "mendekati normal"], ["Jarque–Bera p", p3(M.jbP), sig(M.jbP)], ["Kolmogorov–Smirnov p", p3(M.ksP), sig(M.ksP)],
+      ["ν Student-t", nf(1).format(M.t.nu), M.t.nu < 6 ? "ekor sangat tebal" : M.t.nu < 15 ? "ekor agak tebal" : "mirip normal"],
+      ["Indeks ekor rugi (Hill α)", isFinite(M.hillL) ? nf(2).format(M.hillL) : "–", isFinite(M.hillL) ? (M.hillL < 3 ? "ekor sangat tebal (varians tidak stabil)" : M.hillL < 4 ? "ekor tebal" : M.hillL < 6 ? "ekor sedang" : "ekor tipis") : ""],
+      ["Kejadian > 4σ", `${M.sig4} kali`, `Gaussian memperkirakan ${nf(2).format(M.expected4)}`], ["Entropi vs Gaussian", nf(3).format(M.entropy - M.entropyN), "< 0 = lebih terkonsentrasi + ekor"]]
+      .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
+    const D = M.dens, lab = D.grid.map((x) => nf(1).format(x * 100) + "%"), logS = state.mathLog;
+    drawChart("mathDens", { type: "line", data: { labels: lab, datasets: [
+      { label: "Data (KDE Gaussian)", data: D.kde, borderColor: ink, borderWidth: 2.2, pointRadius: 0 },
+      { label: "Gaussian", data: D.normal, borderColor: css("--c1"), borderWidth: 1.6, borderDash: [6, 4], pointRadius: 0 },
+      { label: `Student-t (ν=${nf(1).format(M.t.nu)})`, data: D.t, borderColor: css("--c3"), borderWidth: 1.6, pointRadius: 0 },
+      { label: "Campuran 2 Gaussian", data: D.gmm, borderColor: css("--c2"), borderWidth: 1.4, borderDash: [2, 3], pointRadius: 0 }] },
+      options: baseOpts({ plugins: { legend: { labels: { boxWidth: 10 } } }, scales: { x: { ticks: { maxTicksLimit: 8 }, grid: { display: false } }, y: { type: logS ? "logarithmic" : "linear", ticks: { maxTicksLimit: 5 }, grid: { color: grid } } } }) });
+    const mn = Math.min(...M.qq.map((p) => p[0])), mx = Math.max(...M.qq.map((p) => p[0]));
+    drawChart("mathQQ", { type: "scatter", data: { datasets: [
+      { label: "Data", data: M.qq.map(([x, y]) => ({ x, y })), backgroundColor: css("--c1"), pointRadius: 3, pointBorderWidth: 0 },
+      { label: "Garis Gaussian", type: "line", data: [{ x: mn, y: mn }, { x: mx, y: mx }], borderColor: css("--bad"), borderWidth: 1.5, pointRadius: 0 }] },
+      options: baseOpts({ interaction: { mode: "nearest", intersect: true }, plugins: { legend: { labels: { boxWidth: 10 } } },
+        scales: { x: { type: "linear", title: { display: true, text: "Kuantil Gaussian teoretis" }, grid: { color: grid } }, y: { title: { display: true, text: "Kuantil data (z)" }, grid: { color: grid } } } }) });
+    const mods = [["Gaussian", M.aicN, M.bicN, 2], ["Student-t", M.aicT, NaN, 3], ["Campuran 2 Gaussian", M.aicG, M.bicG, 5]], bestA = Math.min(...mods.map((x) => x[1]));
+    $("mathModels").innerHTML = `<thead><tr><th>Model</th><th>Parameter</th><th>AIC</th><th>BIC</th><th>Selisih AIC dari terbaik</th></tr></thead><tbody>` + mods.map(([nm, a, b, k]) =>
+      `<tr class="${a === bestA ? "best" : ""}"><td>${nm}${a === bestA ? " ✓" : ""}</td><td>${k}</td><td>${nf(0).format(a)}</td><td>${isFinite(b) ? nf(0).format(b) : "–"}</td><td>${nf(1).format(a - bestA)}</td></tr>`).join("") +
+      `</tbody>`;
+    const H = M.hmm, A = H.A;
+    $("mathHmm").innerHTML = `<thead><tr><th>Rezim</th><th>Return/th</th><th>Volatilitas/th</th><th>Bertahan (hari)</th><th>→ tenang</th><th>→ bergejolak</th><th>Porsi jangka panjang</th></tr></thead><tbody>
+      <tr><td>Tenang</td><td>${pc(H.mu[0] * ppy)}</td><td>${pct(H.sd[0] * ann)}</td><td>${nf(0).format(H.dur[0])}</td><td>${pct(A[0][0], 1)}</td><td>${pct(A[0][1], 1)}</td><td>${pct(1 - H.stationaryHigh, 0)}</td></tr>
+      <tr><td>Bergejolak</td><td>${pc(H.mu[1] * ppy)}</td><td>${pct(H.sd[1] * ann)}</td><td>${nf(0).format(H.dur[1])}</td><td>${pct(A[1][0], 1)}</td><td>${pct(A[1][1], 1)}</td><td>${pct(H.stationaryHigh, 0)}</td></tr>
+      <tr><td><b>Peluang rezim bergejolak</b></td><td colspan="6" class="txt">hari ini <b>${pct(H.probHighNow, 0)}</b> · 5 hari lagi ${pct(H.probHigh5, 0)} · 21 hari lagi ${pct(H.probHigh21, 0)} <span class="note">(Gaussian campuran tanpa urutan waktu memberi ${pct(M.gmm.postNow, 0)} untuk hari terakhir)</span></td></tr></tbody>`;
+    const dts = state.data.dates.slice(-H.filt.length);
+    drawChart("mathHmmChart", { type: "line", data: { labels: dts, datasets: [{ label: "P(rezim bergejolak)", data: H.filt.map((x) => x * 100), borderColor: css("--bad"), backgroundColor: css("--bad") + "33", fill: true, borderWidth: 1.2, pointRadius: 0 }] },
+      options: baseOpts({ plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 6 }, grid: { display: false } }, y: { min: 0, max: 100, ticks: { callback: (v) => v + "%" }, grid: { color: grid } } } }) });
+    const vrRow = M.vr.map((v) => `VR(${v.q}) ${nf(2).format(v.VR)} <span class="note">(p ${p3(v.p)})</span>`).join(" · ");
+    $("mathDep").innerHTML = `<tbody>
+      <tr><td>Eksponen Hurst (R/S)</td><td>${nf(3).format(M.hurst)}</td><td class="txt">H acak untuk sampel ini ≈ ${nf(3).format(M.hurstNull)} → ${M.hurst - M.hurstNull > 0.05 ? "<b>cenderung tren berlanjut</b>" : M.hurst - M.hurstNull < -0.05 ? "<b>cenderung berbalik ke rata-rata</b>" : "tidak beda dari acak"}</td></tr>
+      <tr><td>Variance ratio</td><td colspan="2" class="txt">${vrRow}</td></tr>
+      <tr><td>Ljung–Box Q(10) return</td><td>${nf(1).format(M.lb.Q)}</td><td class="txt">p ${p3(M.lb.p)} → ${M.lb.p < 0.05 ? "<b>ada pola autokorelasi</b> (bisa dimanfaatkan, atau tanda likuiditas rendah)" : "tidak ada pola yang bisa ditebak dari return kemarin"}</td></tr>
+      <tr><td>Ljung–Box Q(10) return²</td><td>${nf(1).format(M.lb2.Q)}</td><td class="txt">p ${p3(M.lb2.p)} → ${M.lb2.p < 0.05 ? "<b>volatilitas menggerombol</b> (alasan GARCH lebih cocok)" : "volatilitas tidak menggerombol"}</td></tr>
+      <tr><td>Indeks ekor untung (Hill)</td><td>${isFinite(M.hillR) ? nf(2).format(M.hillR) : "–"}</td><td class="txt">bandingkan dengan ekor rugi ${isFinite(M.hillL) ? nf(2).format(M.hillL) : "–"}: lebih kecil = ekor lebih tebal</td></tr></tbody>`;
+    const band = 1.96 / Math.sqrt(M.n);
+    drawChart("mathAcf", { type: "bar", data: { labels: M.acf.map((_, i) => i + 1), datasets: [{ label: "ACF return", data: M.acf, backgroundColor: css("--c1") }, { label: "ACF return²", data: M.acf2, backgroundColor: css("--c3") }] },
+      options: baseOpts({ plugins: { legend: { labels: { boxWidth: 10 } }, tooltip: { callbacks: { footer: () => `batas signifikan ±${nf(3).format(band)}` } } }, scales: { x: { title: { display: true, text: "lag (hari)" }, grid: { display: false } }, y: { grid: { color: grid } } } }) });
+    const L = [];
+    L.push(M.jbP >= 0.05 ? `Return ${esc(state.data.symbol)} tidak bisa dibedakan dari Gaussian pada sampel ini.` : M.kurt > 0 ? `Return ${esc(state.data.symbol)} <b>tidak berdistribusi Gaussian</b>: ekor lebih tebal (kurtosis berlebih ${nf(1).format(M.kurt)}), ${M.sig4} gerakan > 4σ padahal Gaussian hanya memperkirakan ${nf(2).format(M.expected4)}. VaR berbasis normal akan meremehkan risiko.`
+      : `Return ${esc(state.data.symbol)} <b>tidak berdistribusi Gaussian</b>, tapi justru ekornya lebih tipis dari normal (kurtosis ${nf(1).format(M.kurt)}). Ini jarang untuk harga pasar; periksa apakah datanya wajar.`);
+    const best = mods.find((x) => x[1] === bestA)[0]; L.push(`Model distribusi terbaik menurut AIC: <b>${best}</b>.`);
+    if (H.sd[1] / H.sd[0] < 1.3) L.push("HMM tidak menemukan perbedaan rezim yang jelas: volatilitas kedua keadaan hampir sama."); else L.push(`HMM menemukan rezim tenang (vol ${pct(H.sd[0] * ann, 0)}/th) dan bergejolak (vol ${pct(H.sd[1] * ann, 0)}/th); peluang sedang di rezim bergejolak <b>${pct(H.probHighNow, 0)}</b>.`);
+    if (M.lb2.p < 0.05) L.push("Volatilitas menggerombol, jadi rentang proyeksi GARCH lebih bisa dipercaya daripada GBM.");
+    $("mathRead").innerHTML = L.join(" ") + ' <span class="note">Deskriptif, bukan sinyal.</span>';
+  }
+
+  // =====================================================================
   // GAYA BLOOMBERG: perintah mnemonic, panel fungsi (DES, HP, ALRT, HELP)
   // =====================================================================
   const FN = {
     GP: ["Grafik harga (candlestick)", "aset"], GIP: ["Grafik intraday 5 menit", "aset"], DES: ["Deskripsi & statistik kunci", "aset"], HP: ["Riwayat harga harian (tabel + CSV)", "aset"],
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
-    PLAN: ["Rencana jual per lot", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
+    PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
     ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -1830,7 +1893,7 @@
     if (fn === "DES") return showDes(target);
     if (fn === "HP") return showHp(target);
     closeFn();
-    const focus = { GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust" }[fn] || "all";
+    const focus = { GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust", MATH: "math" }[fn] || "all";
     const need = sym && (sym !== state.symbol || !state.res);
     if (need) { setFocus(focus); await openDetail(sym); } else { setView("detail"); }
     setFocus(focus);
@@ -1936,6 +1999,11 @@
       const c = e.target.closest("[data-cmd]"); if (c) { runCommand(c.dataset.cmd); return; }
       const r = e.target.closest("#hpRange .tab"); if (r) { showHp(hp.sym, +r.dataset.n); return; }
       if (e.target.id === "hpCsv") return hpCsv();
+      const ts = e.target.closest("[data-theme-set]"); if (ts) { applyTheme(ts.dataset.themeSet); showProfile(); return; }
+      if (e.target.id === "profOut") { $("cmdLogout").click(); return; }
+      if (e.target.id === "profSave") { sb.rpc("sp_update_profile", { p_name: $("profName").value }).then(({ data }) => { if (data) me = { ...me, ...data }; $("cmdUser").textContent = (me.name || "").toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); toast("Nama disimpan"); }); return; }
+      const mb = e.target.closest("[data-mem]"); if (mb) { const args = { p_user: mb.dataset.mem, p_status: mb.dataset.st || "approved", p_role: mb.dataset.role || null };
+        sb.rpc("sp_admin_decide", args).then(({ error }) => { if (error) toast("Gagal: " + error.message); showProfile(); refreshAdminBadge(); }); return; }
       if (e.target.id === "alAdd") return alAdd();
       if (e.target.id === "alCheck") return checkAlerts();
       if (e.target.id === "alPerm") { Notification.requestPermission().then(() => showAlerts()); return; }
@@ -1965,7 +2033,7 @@
   const nextTheme = (t) => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length];
   function themeBtnLbl() { const t = document.documentElement.getAttribute("data-theme"); $("themeBtn").textContent = "TEMA: " + (THEME_LBL[t] || t); $("themeBtn").title = "Ganti ke " + THEME_LBL[nextTheme(t)]; }
   function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); try { localStorage.setItem("sp_theme2", t); } catch { /* */ }
-    themeBtnLbl(); if (state.res) render(); if (ql.res) renderQuantLab(); if (wl.rows.length) { renderWatch(); renderWlMap(); } if (typeof pf !== "undefined" && pf.res) renderPortfolio(); }
+    themeBtnLbl(); if (state.res) render(); if (state.math) renderMath(); if (ql.res) renderQuantLab(); if (wl.rows.length) { renderWatch(); renderWlMap(); } if (typeof pf !== "undefined" && pf.res) renderPortfolio(); }
   function syncTopbar() { const h = document.querySelector(".topbar").offsetHeight; document.documentElement.style.setProperty("--tb", h + 8 + "px"); }
   function bindTerminal() {
     syncTopbar(); addEventListener("resize", syncTopbar); new ResizeObserver(syncTopbar).observe(document.querySelector(".topbar"));
@@ -2169,6 +2237,7 @@
     $("rgTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.rg = +t.dataset.rg;
       document.querySelectorAll("#rgTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
     $("indChecks").addEventListener("change", renderCandle);
+    $("mathDensTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab[data-s]"); if (!t) return; state.mathLog = t.dataset.s === "log"; document.querySelectorAll("#mathDensTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderMath(); });
     $("oscTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab[data-o]"); if (!t) return; state.osc = t.dataset.o; if (state.lw) drawCandle(true); });
     let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => state.lw && renderCandle(), 200); });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.res && render());
@@ -2195,23 +2264,83 @@
     $("authSub").textContent = L[0]; $("authBtn").textContent = L[1];
     $("authPass").hidden = $("authPassLbl").hidden = m === "reset";
     $("authPass").autocomplete = m === "signup" ? "new-password" : "current-password"; $("authPass").required = m === "login" || m === "signup";
-    $("authToSignup").hidden = m === "signup"; $("authToReset").hidden = m === "reset"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
-  function showAuth(msg) { $("authGate").hidden = false; $("userBox").hidden = true; stopLive(); if (msg) { $("authMsg").textContent = msg; $("authMsg").classList.add("err"); } }
+    $("authNameBox").hidden = m !== "signup"; $("authToSignup").hidden = m === "signup"; $("authToReset").hidden = m === "reset"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
+  function showAuth(msg) { $("pendGate").hidden = true; $("authGate").hidden = false; $("userBox").hidden = true; stopLive(); if (msg) { $("authMsg").textContent = msg; $("authMsg").classList.add("err"); } }
   const authErr = (e) => { const m = (e && e.message) || String(e);
     return /Invalid login/i.test(m) ? "Email atau password salah." : /Email not confirmed/i.test(m) ? "Email belum dikonfirmasi — cek kotak masuk email kamu." : /already registered/i.test(m) ? "Email sudah terdaftar, silakan masuk." :
       /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Batas kirim email tercapai (Supabase bawaan ±2 email/jam). Coba lagi nanti." : /Signups not allowed|not found|User not found/i.test(m) ? "Email ini belum terdaftar." : m; };
+  // ---------- keanggotaan: setiap akun harus disetujui admin ----------
+  let me = null, authing = null;
+  async function fetchMe(s) {
+    const md = (s.user && s.user.user_metadata) || {};
+    const { data, error } = await sb.rpc("sp_request_access", { p_name: md.name || null, p_reason: md.reason || null });
+    if (error) { if (/function|schema cache|does not exist|PGRST202/i.test(error.message || "")) return { status: "approved", role: "user", email: s.user.email, _nodb: true }; throw error; }
+    return data;
+  }
+  function showPending(m) {
+    $("authGate").hidden = true; $("pendGate").hidden = false;
+    const st = m.status, nm = m.name ? esc(m.name) + " · " : "";
+    $("pendTitle").textContent = st === "pending" ? "Menunggu persetujuan admin" : st === "rejected" ? "Permintaan ditolak" : "Akses dicabut";
+    $("pendText").innerHTML = `${nm}<b>${esc(m.email || "")}</b><br>` + (st === "pending" ? `Akunmu sudah terdaftar sejak ${esc(String(m.requested_at || "").slice(0, 10))}. Admin harus menyetujui dulu sebelum kamu bisa memakai Simulasi Pasar. Halaman ini memeriksa otomatis tiap 30 detik.`
+      : st === "rejected" ? "Admin menolak permintaanmu. Kamu bisa mengirim ulang dengan alasan yang lebih jelas." : "Admin mencabut aksesmu. Hubungi admin bila menurutmu ini keliru.");
+    $("pendRe").hidden = st !== "rejected";
+  }
   async function onAuthed(s) {
-    session = s; lastAct = Date.now(); $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || ""; $("cmdUser").textContent = (s.user.email || "").split("@")[0];
+    session = s; lastAct = Date.now();
+    if (authing) return authing;
+    authing = (async () => {
+      try { me = await fetchMe(s); } catch (e) { authing = null; showAuth("Gagal memeriksa keanggotaan: " + (e.message || e)); return; }
+      if (me.status !== "approved") { authing = null; showPending(me); clearTimeout(window.__pendT); window.__pendT = setTimeout(() => { if (!$("pendGate").hidden) onAuthed(session); }, 30000); return; }
+      $("pendGate").hidden = true; await enterApp(s);
+    })();
+    return authing;
+  }
+  async function enterApp(s) {
+    $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
+    $("cmdUser").textContent = (me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : "");
+    if (me.role === "admin") refreshAdminBadge();
     if (booted) return; booted = true;
     readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs();
     const P = new URLSearchParams(location.search);
     if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
+  }
+  async function refreshAdminBadge() {
+    try { const { data } = await sb.from("sp_members").select("user_id").eq("status", "pending"); const n = (data || []).length;
+      $("cmdUser").classList.toggle("hot", n > 0); $("cmdUser").title = n ? `${n} permintaan menunggu persetujuanmu` : "Profil"; if (n) $("cmdUser").dataset.n = n; else delete $("cmdUser").dataset.n; } catch { /* */ }
+  }
+  async function showProfile() {
+    if (!me) return; const th = document.documentElement.getAttribute("data-theme");
+    let admin = "";
+    if (me.role === "admin" && !me._nodb) {
+      const { data, error } = await sb.from("sp_members").select("*").order("requested_at", { ascending: false });
+      const L = data || [], cnt = (st) => L.filter((x) => x.status === st).length;
+      const btn = (u, st, lbl) => `<button class="fn-key" data-mem="${esc(u)}" data-st="${st}">${lbl}</button>`;
+      admin = `<div class="subh">Admin · anggota (${cnt("pending")} menunggu, ${cnt("approved")} disetujui)</div>${error ? `<p class="status err">${esc(error.message)}</p>` : ""}
+        <div class="table-wrap"><table><thead><tr><th>Nama / email</th><th>Status</th><th>Peran</th><th>Daftar</th><th>Alasan</th><th>Aksi</th></tr></thead><tbody>${L.map((m) => `<tr><td><b>${esc(m.name || "–")}</b><div class="nm">${esc(m.email || "")}</div></td>
+          <td><span class="pill ${m.status === "approved" ? "pos" : m.status === "pending" ? "sig" : "neg"}">${m.status === "approved" ? "disetujui" : m.status === "pending" ? "menunggu" : m.status === "rejected" ? "ditolak" : "dicabut"}</span></td>
+          <td>${m.role}</td><td>${esc(String(m.requested_at || "").slice(0, 10))}</td><td class="txt">${esc(m.reason || "")}</td>
+          <td>${m.user_id === session.user.id ? '<span class="note">kamu</span>' : (m.status !== "approved" ? btn(m.user_id, "approved", "Setujui") : btn(m.user_id, "revoked", "Cabut")) + (m.status === "pending" ? btn(m.user_id, "rejected", "Tolak") : "") +
+            (m.status === "approved" ? `<button class="fn-key" data-mem="${esc(m.user_id)}" data-role="${m.role === "admin" ? "user" : "admin"}">${m.role === "admin" ? "Jadikan user" : "Jadikan admin"}</button>` : "")}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Akun yang belum disetujui tidak bisa memuat data apa pun (dicek juga di server, bukan hanya di layar).</p>`;
+    }
+    openFn("PROFIL", `<div class="fn-cols"><div class="kvs"><div class="subh">Akun</div>
+        <div><span>Nama</span><b><input id="profName" value="${esc(me.name || "")}" maxlength="60" style="width:200px;padding:4px 8px"></b></div>
+        <div><span>Email</span><b>${esc(session.user.email || "")}</b></div><div><span>Peran</span><b>${me.role === "admin" ? "Admin" : "Pengguna"}</b></div>
+        <div><span>Status</span><b>${me._nodb ? "persetujuan belum aktif (database belum dipasang)" : "disetujui"}</b></div><div><span>Terdaftar</span><b>${esc(String(me.requested_at || "").slice(0, 10) || "–")}</b></div>
+        <div><span>Login terakhir</span><b>${esc(String(session.user.last_sign_in_at || "").slice(0, 16).replace("T", " "))}</b></div></div>
+      <div class="kvs"><div class="subh">Tampilan & sesi</div><div><span>Tema</span><b>${["pro", "light", "terminal"].map((t) => `<button class="fn-key ${t === th ? "on" : ""}" data-theme-set="${t}">${THEME_LBL[t]}</button>`).join(" ")}</b></div>
+        <div><span>Keluar otomatis</span><b>${IDLE_MIN} menit tidak aktif · saat jendela ditutup</b></div><div><span>Alarm aktif</span><b>${al.list.filter((a) => a.on).length}</b></div><div><span>Posisi portofolio</span><b>${pf.list.length}</b></div></div></div>
+      <div class="fn-actions"><button class="fn-key" id="profSave">Simpan nama</button><button class="fn-key" data-cmd="HELP">HELP</button><button class="fn-key" id="profOut">Keluar</button></div>${admin}`);
   }
   async function startAuth() {
     setAuthMode("login");
     $("authToSignup").onclick = (e) => { e.preventDefault(); setAuthMode("signup"); };
     $("authToReset").onclick = (e) => { e.preventDefault(); setAuthMode("reset"); };
     $("authToLogin").onclick = (e) => { e.preventDefault(); setAuthMode("login"); };
+    $("pendCheck").onclick = (e) => { e.preventDefault(); $("pendMsg").textContent = "Memeriksa…"; onAuthed(session).then(() => { if (!$("pendGate").hidden) $("pendMsg").textContent = "Belum disetujui."; }); };
+    $("pendOut").onclick = (e) => { e.preventDefault(); logout(); };
+    $("pendSend").onclick = async () => { const { data, error } = await sb.rpc("sp_request_access", { p_name: null, p_reason: $("pendReason").value.trim() || "kirim ulang" }); $("pendMsg").textContent = error ? error.message : "Permintaan dikirim ulang."; if (data) showPending(data); };
+    $("cmdUser").onclick = () => showProfile();
     const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
     $("logoutBtn").onclick = () => logout(); $("cmdLogout").onclick = () => logout();
     ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, () => (lastAct = Date.now()), { passive: true }));
@@ -2223,7 +2352,8 @@
       try {
         if (authMode === "login") { const { data, error } = await sb.auth.signInWithPassword({ email, password: pass }); if (error) throw error; msg.textContent = "";
           await onAuthed(data.session); }
-        else if (authMode === "signup") { const { data, error } = await sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error;
+        else if (authMode === "signup") { if (!$("authName").value.trim()) throw new Error("Isi nama dulu supaya admin tahu siapa kamu.");
+          const { data, error } = await sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: location.origin + location.pathname, data: { name: $("authName").value.trim(), reason: $("authReason").value.trim() } } }); if (error) throw error;
           if (data.session) await onAuthed(data.session); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
         else { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; msg.textContent = "Tautan atur ulang password sudah dikirim ke email kamu."; }
       } catch (err) { msg.textContent = authErr(err); msg.classList.add("err"); }
@@ -2231,7 +2361,7 @@
     if (!sb) { $("authMsg").textContent = "Gagal memuat modul login. Periksa koneksi lalu muat ulang."; $("authMsg").classList.add("err"); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
-      if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") showAuth();
+      if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { $("pendGate").hidden = true; showAuth(); }
     });
     const { data } = await sb.auth.getSession();
     if (data.session) onAuthed(data.session);

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261021172847">
+<link rel="stylesheet" href="style.css?v=20261021173719">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -20,6 +20,8 @@
   <form id="authForm" class="auth-card" autocomplete="on">
     <div class="brand"><span class="dot"></span>Simulasi Pasar</div>
     <p class="sub" id="authSub">Masuk untuk melanjutkan</p>
+    <div id="authNameBox" hidden><label class="lbl" for="authName">Nama</label><input id="authName" autocomplete="name" maxlength="60">
+      <label class="lbl" for="authReason">Alasan / siapa kamu (dibaca admin)</label><input id="authReason" maxlength="200" placeholder="mis. teman kuliah El, mau belajar analisis saham"></div>
     <label class="lbl" for="authEmail">Email</label>
     <input id="authEmail" type="email" autocomplete="email" required>
     <label class="lbl" for="authPass" id="authPassLbl">Password</label>
@@ -28,6 +30,16 @@
     <div id="authMsg" class="status"></div>
     <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a></div>
   </form>
+</div>
+<div id="pendGate" class="auth-gate" hidden>
+  <div class="auth-card">
+    <div class="brand"><span class="dot"></span>Simulasi Pasar</div>
+    <p class="sub" id="pendTitle">Menunggu persetujuan admin</p>
+    <p id="pendText" class="lead small-lead"></p>
+    <div id="pendRe" hidden><label class="lbl" for="pendReason">Alasan (kirim ulang permintaan)</label><input id="pendReason" maxlength="200"><button id="pendSend" class="run alt">Kirim ulang permintaan</button></div>
+    <div id="pendMsg" class="status"></div>
+    <div class="auth-links"><a href="#" id="pendCheck">Cek lagi</a><a href="#" id="pendOut">Keluar</a></div>
+  </div>
 </div>
 <header class="top">
   <div class="wrap top-row">
@@ -41,7 +53,7 @@
 <div id="fnPanel" class="fn-panel" hidden tabindex="-1"><div class="fn-box" role="dialog" aria-modal="true"><div class="fn-head"><span id="fnTitle"></span><span class="note">Esc = tutup</span><button class="cmd-btn" id="fnClose">✕</button></div><div id="fnBody" class="fn-body"></div></div></div>
 <div id="toasts" class="toasts"></div>
 <div class="tape" id="tape"><div class="tape-inner" id="tapeInner"><span class="tape-item">MEMUAT HARGA…</span></div></div>
-<div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><span class="cmd-user" id="cmdUser"></span><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
+<div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
 <nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
@@ -55,6 +67,7 @@
   <button class="fchip" data-f="quant">Kuantitatif & opsi</button>
   <button class="fchip" data-f="val">Valuasi</button>
   <button class="fchip" data-f="news">Berita</button>
+  <button class="fchip" data-f="math">Matematika</button>
   <button class="fchip" data-f="trust">Keyakinan model</button>
 </nav></div>
 
@@ -643,6 +656,41 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
         <li><b>Penting:</b> jika ada beberapa berita di hari yang sama, reaksinya sama untuk semua. Pengaruh ini <i>korelasi waktu</i>, bukan bukti bahwa berita itu penyebabnya.</li></ul>
       </details>
     </div>
+    <div class="card price-only" id="mathCard">
+      <div class="card-h"><h2>Lab matematika <span class="tag">Gaussian · Student-t · GMM · HMM · KDE · Hurst</span></h2><span id="mathStatus" class="note"></span></div>
+      <div class="kpis compact" id="mathKpi"></div>
+      <div class="math-grid">
+        <div><div class="subh">Bentuk distribusi return harian</div><div class="tabs small-tabs" id="mathDensTabs"><button class="tab active" data-s="lin">Skala biasa</button><button class="tab" data-s="log">Skala log (lihat ekor)</button></div><div class="chart-box"><canvas id="mathDens"></canvas></div></div>
+        <div><div class="subh">QQ-plot terhadap Gaussian</div><div class="chart-box"><canvas id="mathQQ"></canvas></div></div>
+      </div>
+      <div class="subh">Model mana yang paling cocok dengan data</div>
+      <div class="table-wrap"><table id="mathModels"></table></div>
+      <div class="subh">Rezim pasar (Hidden Markov Model Gaussian 2 keadaan)</div>
+      <div class="table-wrap"><table id="mathHmm"></table></div>
+      <div class="chart-box short"><canvas id="mathHmmChart"></canvas></div>
+      <div class="subh">Memori & ketergantungan waktu</div>
+      <div class="math-grid"><div class="table-wrap"><table id="mathDep"></table></div><div class="chart-box short"><canvas id="mathAcf"></canvas></div></div>
+      <div id="mathRead" class="verdict"></div>
+      <details class="formula"><summary>Rumus · matematika</summary><div class="fx">
+<p>Momen: \( \hat\mu = \tfrac1n\sum r_t,\ \hat\sigma^2 = \tfrac1{n-1}\sum (r_t-\hat\mu)^2,\ S = \tfrac1n\sum z_t^3,\ K = \tfrac1n\sum z_t^4 - 3,\ z_t = (r_t-\hat\mu)/\hat\sigma \)</p>
+<p>Jarque–Bera: \( JB = \tfrac{n}{6}\left(S^2 + \tfrac{K^2}{4}\right) \sim \chi^2_2 \); Kolmogorov–Smirnov: \( D = \sup_x |F_n(x) - \Phi(\tfrac{x-\hat\mu}{\hat\sigma})| \)</p>
+<p>Student-t: \( f(x) = \dfrac{\Gamma(\frac{\nu+1}{2})}{\Gamma(\frac{\nu}{2})\sqrt{\nu\pi}\,s}\left(1+\dfrac{(x-\mu)^2}{\nu s^2}\right)^{-\frac{\nu+1}{2}} \), \( \nu \) dipilih dengan maksimum likelihood</p>
+<p>Campuran Gaussian (EM): \( f(x) = \sum_{k=1}^{2} w_k\,\phi(x;\mu_k,\sigma_k) \); E-step \( \gamma_{tk} = \dfrac{w_k\phi(r_t;\mu_k,\sigma_k)}{\sum_j w_j\phi(r_t;\mu_j,\sigma_j)} \); M-step \( w_k = \tfrac1n\sum_t\gamma_{tk},\ \mu_k = \dfrac{\sum_t\gamma_{tk}r_t}{\sum_t\gamma_{tk}} \)</p>
+<p>HMM: \( S_t \in \{1,2\} \) rantai Markov, \( \Pr(S_{t+1}=j\mid S_t=i) = a_{ij} \), \( r_t \mid S_t=k \sim N(\mu_k,\sigma_k^2) \); maju \( \alpha_t(j) = \big[\sum_i \alpha_{t-1}(i)a_{ij}\big]\phi(r_t;\mu_j,\sigma_j) \); durasi harapan \( 1/(1-a_{kk}) \); prakiraan \( \pi_{t+h} = \pi_t A^h \)</p>
+<p>KDE: \( \hat f(x) = \tfrac{1}{nh}\sum_t \varphi\!\left(\tfrac{x-r_t}{h}\right),\ h = 0{,}9\min(\hat\sigma, \tfrac{IQR}{1{,}34})\,n^{-1/5} \) (Silverman)</p>
+<p>Hurst (R/S): \( \mathbb E[R/S]_m \propto m^H \); \( H = 0{,}5 \) acak, \( > 0{,}5 \) tren berlanjut, \( < 0{,}5 \) berbalik ke rata-rata. Variance ratio: \( VR(q) = \dfrac{\mathrm{Var}(r_t + \dots + r_{t-q+1})}{q\,\mathrm{Var}(r_t)} \)</p>
+<p>Ljung–Box: \( Q = n(n+2)\sum_{k=1}^{10}\dfrac{\hat\rho_k^2}{n-k} \sim \chi^2_{10} \); Hill: \( \hat\alpha = \Big[\tfrac1k\sum_{i=1}^{k}\ln\tfrac{X_{(i)}}{X_{(k+1)}}\Big]^{-1} \) (ekor rugi, \( k \) = 5% terbesar)</p>
+<p>Entropi diferensial: \( h(X) = -\int f\ln f \le \tfrac12\ln(2\pi e\sigma^2) \) — Gaussian punya entropi maksimum untuk varians yang sama</p></div></details>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li><b>Gaussian (normal)</b> adalah asumsi di banyak model keuangan klasik (Black-Scholes, VaR parametrik). Lab ini menguji apakah asumsi itu benar untuk aset ini. Biasanya <b>tidak</b>: ekornya lebih tebal.</li>
+        <li><b>p-value</b> &lt; 0,05 pada Jarque–Bera / KS = data bukan Gaussian. <b>Kurtosis berlebih</b> &gt; 0 = kejadian ekstrem lebih sering dari normal. <b>ν Student-t</b> kecil (3–6) = ekor tebal.</li>
+        <li><b>Kejadian &gt; 4σ</b>: berapa kali harga bergerak lebih dari 4 standar deviasi, dibanding yang "diizinkan" Gaussian. Kalau aktual jauh di atas harapan, VaR berbasis normal meremehkan risiko.</li>
+        <li><b>AIC/BIC</b> lebih kecil = model lebih cocok setelah dihukum karena parameter lebih banyak.</li>
+        <li><b>HMM</b> memisahkan hari-hari "tenang" dan "bergejolak" secara otomatis. Peluang rezim bergejolak hari ini tinggi = siap-siap pergerakan lebih lebar; durasi harapan = rata-rata berapa hari rezim itu bertahan.</li>
+        <li><b>Hurst & variance ratio</b>: bandingkan H dengan "H acak" untuk ukuran sampel yang sama. VR &gt; 1 dan signifikan = momentum; VR &lt; 1 = cenderung berbalik.</li>
+        <li><b>Ljung–Box return²</b> hampir selalu signifikan: volatilitas menggerombol. Inilah alasan model GARCH dipakai.</li>
+        <li>Semua uji dihitung dari maksimal 1.000 return harian terakhir; data lebih pendek = kesimpulan lebih lemah.</li></ul></details>
+    </div>
     <div class="card" id="sumCard">
       <h2>Distribusi di akhir horizon</h2>
       <div class="table-wrap"><table id="sumTable"></table></div>
@@ -695,8 +743,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261021172847";</script>
-<script src="engine.js?v=20261021172847"></script>
-<script src="app.js?v=20261021172847"></script>
+<script>window.APP_V = "20261021173719";</script>
+<script src="engine.js?v=20261021173719"></script>
+<script src="app.js?v=20261021173719"></script>
 </body>
 </html>

@@ -344,8 +344,6 @@ table.heat td { text-align: center; font-size: 12px; } table.heat td:first-child
 .pf-sym { cursor: pointer; color: var(--accent); font-family: var(--mono); font-weight: 600; }
 .cal-past td { opacity: .45; } .cal-next td { background: var(--accent-soft); }
 td.txt { text-align: left !important; white-space: normal !important; font-family: var(--sans); font-size: 12.5px; min-width: 200px; }
-.cmd-user { font: 12px var(--mono); color: var(--muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 640px) { .cmd-user { display: none; } }
 
 /* ===== kontras tambahan ===== */
 .note, .meta, .sub-d, .kpi .h { color: var(--muted); }
@@ -385,3 +383,8 @@ th:first-child, td:first-child { color: var(--ink); }
 .toast { background: var(--card); color: var(--ink); border: 1px solid var(--good); border-left: 4px solid var(--good); padding: 10px 12px; font: 13px var(--mono); border-radius: 4px; box-shadow: 0 8px 30px rgba(0,0,0,.4); cursor: pointer; }
 .flash-card { animation: flashc 1.4s; } @keyframes flashc { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 @media (max-width: 640px) { #helpBtn { display: none; } }
+.math-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 18px; align-items: start; }
+@media (min-width: 1100px) { #out > #mathCard { grid-column: 1 / -1; } }
+.prof-btn { color: var(--ink); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prof-btn.hot::after { content: attr(data-n); margin-left: 6px; background: var(--bad); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
+.fn-key.on { background: var(--accent); color: var(--bg); }

@@ -972,6 +972,123 @@
       avgDays: trades.length ? mean(trades.map((x) => x.days)) : NaN, exposure: strat.filter((x) => x !== 0).length / strat.length, opt: o };
   }
 
-  const api = { signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // =====================================================================
+  // LAB MATEMATIKA: Gaussian, Student-t, KDE, GMM (EM), HMM Gaussian (Baum-Welch),
+  // uji normalitas, Hurst R/S, variance ratio, ACF + Ljung-Box, indeks ekor Hill
+  // =====================================================================
+  function qnorm(p) { // Acklam
+    const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239],
+      b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+      c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783],
+      d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416], pl = 0.02425;
+    if (p <= 0) return -Infinity; if (p >= 1) return Infinity;
+    if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    const q = p - 0.5, r = q * q; return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  function gammaP(a, x) { // gamma tak lengkap teregulasi P(a,x)
+    if (x <= 0) return 0; const gln = lgamma(a);
+    if (x < a + 1) { let ap = a, sum = 1 / a, del = sum; for (let n = 0; n < 500; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-14) break; } return sum * Math.exp(-x + a * Math.log(x) - gln); }
+    let b = x + 1 - a, c = 1e300, d = 1 / b, h = d; for (let i = 1; i < 500; i++) { const an = -i * (i - a); b += 2; d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300; c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300; d = 1 / d; const del = d * c; h *= del; if (Math.abs(del - 1) < 1e-14) break; }
+    return 1 - Math.exp(-x + a * Math.log(x) - gln) * h;
+  }
+  const chi2p = (x, k) => 1 - gammaP(k / 2, x / 2); // p-value uji chi-kuadrat
+  const gpdf = (x, m, s) => Math.exp(-0.5 * ((x - m) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+  const tLogPdf = (x, nu, m, s) => lgamma((nu + 1) / 2) - lgamma(nu / 2) - 0.5 * Math.log(nu * Math.PI) - Math.log(s) - ((nu + 1) / 2) * Math.log(1 + ((x - m) / s) ** 2 / nu);
+  function ksPvalue(D, n) { const l = (Math.sqrt(n) + 0.12 + 0.11 / Math.sqrt(n)) * D; let s = 0; for (let k = 1; k < 100; k++) s += 2 * (k % 2 ? 1 : -1) * Math.exp(-2 * k * k * l * l); return Math.min(1, Math.max(0, s)); }
+  function gmm2(r, iters = 300) {
+    const n = r.length, m = mean(r), s = std(r);
+    let w = [0.7, 0.3], mu = [m, m], sd = [s * 0.7, s * 1.8], ll = -Infinity;
+    const g = r.map(() => [0, 0]);
+    for (let it = 0; it < iters; it++) {
+      let nll = 0;
+      for (let i = 0; i < n; i++) { const a = w[0] * gpdf(r[i], mu[0], sd[0]), b = w[1] * gpdf(r[i], mu[1], sd[1]), t = a + b || 1e-300; g[i][0] = a / t; g[i][1] = b / t; nll += Math.log(t); }
+      for (let k = 0; k < 2; k++) { let nk = 0, sm = 0; for (let i = 0; i < n; i++) { nk += g[i][k]; sm += g[i][k] * r[i]; } const mk = sm / nk; let v = 0; for (let i = 0; i < n; i++) v += g[i][k] * (r[i] - mk) ** 2;
+        w[k] = nk / n; mu[k] = mk; sd[k] = Math.max(Math.sqrt(v / nk), s * 0.05); }
+      if (Math.abs(nll - ll) < 1e-9 * Math.abs(nll)) { ll = nll; break; } ll = nll;
+    }
+    const lo = sd[0] <= sd[1] ? 0 : 1, hi = 1 - lo;
+    return { w: [w[lo], w[hi]], mu: [mu[lo], mu[hi]], sd: [sd[lo], sd[hi]], ll, post: g.map((x) => x[hi]) };
+  }
+  function hmm2(r, init, iters = 150) {
+    const n = r.length; let mu = init.mu.slice(), sd = init.sd.slice(), pi = init.w.slice(), A = [[0.97, 0.03], [0.06, 0.94]], ll = -Infinity;
+    const al = Array.from({ length: n }, () => [0, 0]), be = Array.from({ length: n }, () => [0, 0]), c = new Float64Array(n), B = Array.from({ length: n }, () => [0, 0]);
+    for (let it = 0; it < iters; it++) {
+      for (let t = 0; t < n; t++) { B[t][0] = Math.max(gpdf(r[t], mu[0], sd[0]), 1e-300); B[t][1] = Math.max(gpdf(r[t], mu[1], sd[1]), 1e-300); }
+      // maju (dengan skala)
+      al[0][0] = pi[0] * B[0][0]; al[0][1] = pi[1] * B[0][1]; c[0] = al[0][0] + al[0][1]; al[0][0] /= c[0]; al[0][1] /= c[0];
+      for (let t = 1; t < n; t++) { for (let j = 0; j < 2; j++) al[t][j] = (al[t - 1][0] * A[0][j] + al[t - 1][1] * A[1][j]) * B[t][j]; c[t] = al[t][0] + al[t][1]; al[t][0] /= c[t]; al[t][1] /= c[t]; }
+      let nll = 0; for (let t = 0; t < n; t++) nll += Math.log(c[t]);
+      // mundur
+      be[n - 1][0] = be[n - 1][1] = 1;
+      for (let t = n - 2; t >= 0; t--) for (let i = 0; i < 2; i++) be[t][i] = (A[i][0] * B[t + 1][0] * be[t + 1][0] + A[i][1] * B[t + 1][1] * be[t + 1][1]) / c[t + 1];
+      // M-step
+      const gam = al.map((a, t) => { const x = a[0] * be[t][0], y = a[1] * be[t][1], s = x + y; return [x / s, y / s]; });
+      const xi = [[0, 0], [0, 0]];
+      for (let t = 0; t < n - 1; t++) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) xi[i][j] += (al[t][i] * A[i][j] * B[t + 1][j] * be[t + 1][j]) / c[t + 1];
+      for (let i = 0; i < 2; i++) { const s = xi[i][0] + xi[i][1]; A[i] = [xi[i][0] / s, xi[i][1] / s]; }
+      pi = gam[0].slice();
+      for (let k = 0; k < 2; k++) { let nk = 0, sm = 0; for (let t = 0; t < n; t++) { nk += gam[t][k]; sm += gam[t][k] * r[t]; } mu[k] = sm / nk; let v = 0; for (let t = 0; t < n; t++) v += gam[t][k] * (r[t] - mu[k]) ** 2; sd[k] = Math.max(Math.sqrt(v / nk), 1e-6); }
+      if (Math.abs(nll - ll) < 1e-8 * Math.abs(nll)) { ll = nll; break; } ll = nll;
+      if (it === iters - 1) ll = nll;
+    }
+    // urutkan: 0 = tenang, 1 = bergejolak
+    let o = sd[0] <= sd[1] ? [0, 1] : [1, 0];
+    const Ao = [[A[o[0]][o[0]], A[o[0]][o[1]]], [A[o[1]][o[0]], A[o[1]][o[1]]]];
+    const filt = al.map((a) => a[o[1]]), stat1 = Ao[0][1] / (Ao[0][1] + Ao[1][0]);
+    const now = [1 - filt[n - 1], filt[n - 1]], fc = (h) => { let p = now.slice(); for (let k = 0; k < h; k++) p = [p[0] * Ao[0][0] + p[1] * Ao[1][0], p[0] * Ao[0][1] + p[1] * Ao[1][1]]; return p[1]; };
+    return { mu: [mu[o[0]], mu[o[1]]], sd: [sd[o[0]], sd[o[1]]], A: Ao, ll, filt, stationaryHigh: stat1, dur: [1 / (1 - Ao[0][0]), 1 / (1 - Ao[1][1])], probHighNow: now[1], probHigh5: fc(5), probHigh21: fc(21) };
+  }
+  function hurstRS(r) {
+    const N = r.length, pts = [];
+    for (let m = 8; m <= Math.floor(N / 2); m *= 2) { const vals = [];
+      for (let s = 0; s + m <= N; s += m) { const seg = r.slice(s, s + m), mu = mean(seg); let cum = 0, mx = -Infinity, mn = Infinity; for (const x of seg) { cum += x - mu; mx = Math.max(mx, cum); mn = Math.min(mn, cum); } const sd = std(seg, 0); if (sd > 0) vals.push((mx - mn) / sd); }
+      if (vals.length) pts.push([Math.log(m), Math.log(mean(vals))]); }
+    if (pts.length < 3) return { H: NaN, pts };
+    const mx = mean(pts.map((p) => p[0])), my = mean(pts.map((p) => p[1])); let sxy = 0, sxx = 0; for (const [x, y] of pts) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; }
+    // nilai harapan R/S untuk data acak (Anis-Lloyd) -> H "netral" untuk ukuran sampel ini
+    const eRS = (m) => { let sum = 0; for (let i = 1; i < m; i++) sum += Math.sqrt((m - i) / i); const f = m <= 340 ? Math.exp(lgamma((m - 1) / 2) - lgamma(m / 2)) / Math.sqrt(Math.PI) : 1 / Math.sqrt((m * Math.PI) / 2); return ((m - 0.5) / m) * f * sum; };
+    const e = pts.map(([x]) => [x, Math.log(eRS(Math.round(Math.exp(x))))]), ey = mean(e.map((p) => p[1])); let exy = 0; for (const [x, y] of e) exy += (x - mx) * (y - ey);
+    return { H: sxy / sxx, Hnull: exy / sxx, pts };
+  }
+  function varianceRatio(r, q) { const n = r.length, mu = mean(r); let v1 = 0; for (const x of r) v1 += (x - mu) ** 2; v1 /= n - 1;
+    let vq = 0, c = 0; for (let t = q - 1; t < n; t++) { let s = 0; for (let k = 0; k < q; k++) s += r[t - k]; vq += (s - q * mu) ** 2; c++; } vq /= c;
+    const VR = vq / (q * v1), z = (VR - 1) / Math.sqrt((2 * (2 * q - 1) * (q - 1)) / (3 * q * n)); return { q, VR, z, p: 2 * (1 - ncdf(Math.abs(z))) }; }
+  function acf(x, L) { const n = x.length, m = mean(x); let v = 0; for (const a of x) v += (a - m) ** 2; const out = [];
+    for (let k = 1; k <= L; k++) { let s = 0; for (let t = k; t < n; t++) s += (x[t] - m) * (x[t - k] - m); out.push(s / v); } return out; }
+  function ljungBox(rho, n, L) { let Q = 0; for (let k = 1; k <= L; k++) Q += (rho[k - 1] ** 2) / (n - k); Q *= n * (n + 2); return { Q, p: chi2p(Q, L) }; }
+  function hill(losses, frac = 0.05) { const x = losses.filter((v) => v > 0).sort((a, b) => b - a), k = Math.max(10, Math.floor(x.length * frac)); if (x.length <= k + 1) return NaN;
+    let s = 0; for (let i = 0; i < k; i++) s += Math.log(x[i] / x[k]); return k / s; }
+  function mathLab(px, opt = {}) {
+    const all = logReturns(px), r = all.slice(-(opt.n || 1000)), n = r.length, m = mean(r), s = std(r), sk = skew(r), ku = exKurt(r);
+    const JB = (n / 6) * (sk * sk + (ku * ku) / 4), jbP = Math.exp(-JB / 2);
+    const so = r.slice().sort((a, b) => a - b); let D = 0; so.forEach((x, i) => { const F = ncdf((x - m) / s); D = Math.max(D, Math.abs((i + 1) / n - F), Math.abs(F - i / n)); });
+    // Student-t (profil ν)
+    let best = { nu: NaN, ll: -Infinity, sc: s };
+    for (let nu = 2.2; nu <= 60; nu += nu < 6 ? 0.1 : nu < 15 ? 0.5 : 2) { for (const f of [0.8, 0.9, 1, 1.1, 1.2]) { const sc = s * Math.sqrt((nu - 2) / nu) * f; let ll = 0; for (const x of r) ll += tLogPdf(x, nu, m, sc); if (ll > best.ll) best = { nu, ll, sc }; } }
+    let llN = 0; for (const x of r) llN += Math.log(gpdf(x, m, s));
+    const G = gmm2(r), H = hmm2(r, G);
+    // KDE Gaussian (Silverman)
+    const iqr = so[Math.floor(0.75 * n)] - so[Math.floor(0.25 * n)], h = 0.9 * Math.min(s, iqr / 1.34) * Math.pow(n, -0.2);
+    const lo = so[Math.floor(0.003 * n)], hi = so[Math.ceil(0.997 * n) - 1], grid = Array.from({ length: 90 }, (_, i) => lo + ((hi - lo) * i) / 89);
+    const kde = grid.map((x) => r.reduce((a, v) => a + gpdf(x, v, h), 0) / n);
+    const dens = { grid, kde, normal: grid.map((x) => gpdf(x, m, s)), t: grid.map((x) => Math.exp(tLogPdf(x, best.nu, m, best.sc))), gmm: grid.map((x) => G.w[0] * gpdf(x, G.mu[0], G.sd[0]) + G.w[1] * gpdf(x, G.mu[1], G.sd[1])) };
+    const step = Math.max(1, Math.floor(n / 250)), qq = []; for (let i = 0; i < n; i += step) qq.push([qnorm((i + 0.5) / n), (so[i] - m) / s]);
+    const tail = (k) => { const z = qnorm(0.01); return { emp: so[Math.floor(0.01 * n)], normal: m + z * s }; };
+    const rho = acf(r, 20), rho2 = acf(r.map((x) => (x - m) ** 2), 20), lb = ljungBox(rho, n, 10), lb2 = ljungBox(rho2, n, 10);
+    const hu = hurstRS(r), vrs = [2, 5, 10].map((q) => varianceRatio(r, q));
+    const alphaL = hill(r.map((x) => -x)), alphaR = hill(r);
+    const sig4 = r.filter((x) => Math.abs(x - m) > 4 * s).length, expected4 = n * 2 * (1 - ncdf(4));
+    // entropi Shannon relatif (30 bin) vs Gaussian
+    const bins = 30, cnt = new Array(bins).fill(0); for (const x of r) { const b = Math.min(bins - 1, Math.max(0, Math.floor(((x - lo) / (hi - lo)) * bins))); cnt[b]++; }
+    const ent = -cnt.reduce((a, c) => (c ? a + (c / n) * Math.log(c / n) : a), 0) + Math.log((hi - lo) / bins), entN = 0.5 * Math.log(2 * Math.PI * Math.E * s * s);
+    return { n, mean: m, sd: s, skew: sk, kurt: ku, JB, jbP, ksD: D, ksP: ksPvalue(D, n), t: { nu: best.nu, scale: best.sc, ll: best.ll }, llN,
+      aicN: 4 - 2 * llN, aicT: 6 - 2 * best.ll, aicG: 10 - 2 * G.ll, bicN: 2 * Math.log(n) - 2 * llN, bicG: 5 * Math.log(n) - 2 * G.ll,
+      gmm: { w: G.w, mu: G.mu, sd: G.sd, postNow: G.post[n - 1] }, hmm: { ...H, filt: H.filt.slice(-500) }, dens, qq, tail: tail(), acf: rho, acf2: rho2, lb, lb2,
+      hurst: hu.H, hurstNull: hu.Hnull, hurstPts: hu.pts, vr: vrs, hillL: alphaL, hillR: alphaR, sig4, expected4, entropy: ent, entropyN: entN, h, ppy: opt.ppy || 252 };
+  }
+
+  const api = { mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);
