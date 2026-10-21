@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261021153028">
+<link rel="stylesheet" href="style.css?v=20261021153218">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -24,14 +24,9 @@
     <input id="authEmail" type="email" autocomplete="email" required>
     <label class="lbl" for="authPass" id="authPassLbl">Password</label>
     <input id="authPass" type="password" autocomplete="current-password" minlength="6">
-    <div id="otpBox" hidden>
-      <label class="lbl" for="authCode">Kode atau tautan dari email</label>
-      <input id="authCode" autocomplete="one-time-code" maxlength="2000" placeholder="6 digit, atau tempel tautan dari email">
-      <p class="note" id="otpNote"></p>
-    </div>
     <button id="authBtn" class="run" type="submit">Masuk</button>
     <div id="authMsg" class="status"></div>
-    <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a><a href="#" id="authResend" hidden>Kirim ulang kode</a></div>
+    <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a></div>
   </form>
 </div>
 <header class="top">
@@ -615,8 +610,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261021153028";</script>
-<script src="engine.js?v=20261021153028"></script>
-<script src="app.js?v=20261021153028"></script>
+<script>window.APP_V = "20261021153218";</script>
+<script src="engine.js?v=20261021153218"></script>
+<script src="app.js?v=20261021153218"></script>
 </body>
 </html>

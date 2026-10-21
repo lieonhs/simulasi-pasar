@@ -10,7 +10,7 @@
     if (sb) { const { data } = await sb.auth.getSession(); session = data.session; }
     const headers = { ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) };
     const r = await fetch(url, { ...opt, headers });
-    if (r.status === 401) { const t = await r.clone().json().catch(() => ({})); if (/verifikasi/i.test(t.error || "") && session) startOtp(session.user.email, false); else showAuth("Sesi berakhir, silakan masuk lagi."); }
+    if (r.status === 401) { const t = await r.clone().json().catch(() => ({})); showAuth("Sesi berakhir, silakan masuk lagi."); }
     return r;
   }
   const PRESETS = {
@@ -1654,45 +1654,16 @@
     if (settings.quantlab) $("qlQ").value = settings.quantlab;
     if (settings.focus) setFocus(settings.focus, false);
   }
-  let authMode = "login", otpEmail = "", resendAt = 0;
-  // verifikasi kode email dimatikan atas permintaan pemilik: login email + password sudah cukup
-  const isVerified = (sess) => !!sess;
-  function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"],
-      otp: ["Langkah 2 dari 2: verifikasi email", "Verifikasi"] }[m];
+  let authMode = "login";
+  function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];
     $("authSub").textContent = L[0]; $("authBtn").textContent = L[1];
-    $("authPass").hidden = $("authPassLbl").hidden = m === "reset" || m === "otp"; $("authEmail").readOnly = m === "otp";
+    $("authPass").hidden = $("authPassLbl").hidden = m === "reset";
     $("authPass").autocomplete = m === "signup" ? "new-password" : "current-password"; $("authPass").required = m === "login" || m === "signup";
-    $("otpBox").hidden = m !== "otp"; $("authResend").hidden = m !== "otp";
-    $("authToSignup").hidden = m === "signup" || m === "otp"; $("authToReset").hidden = m === "reset" || m === "otp"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
-  async function sendOtp(email) {
-    if (Date.now() < resendAt) { $("authMsg").textContent = `Tunggu ${Math.ceil((resendAt - Date.now()) / 1000)} detik sebelum kirim ulang.`; return; }
-    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
-    if (error) throw error;
-    resendAt = Date.now() + 60000; try { sessionStorage.setItem("sp_otp_sent", email + "|" + Date.now()); } catch { /* */ }
-  }
-  async function startOtp(email, alreadySent) {
-    otpEmail = email; $("authEmail").value = email; setAuthMode("otp"); $("authGate").hidden = false; $("userBox").hidden = true;
-    $("otpNote").innerHTML = `Email verifikasi dikirim ke <b>${esc(email)}</b>. Masukkan <b>kode 6 digit</b> bila ada, <b>atau</b> tekan lama / klik kanan tautan di email → <b>Salin alamat tautan</b> → tempel di kolom ini. Bila tautan sudah terlanjur diklik dan membuka halaman error (localhost), salin alamat halaman error itu dan tempel di sini. Tautan hanya bisa dipakai sekali. Cek folder spam bila email tidak muncul.`;
-    if (!alreadySent) { try { $("authMsg").textContent = "Mengirim kode…"; await sendOtp(email); $("authMsg").textContent = ""; } catch (err) { $("authMsg").textContent = authErr(err); $("authMsg").classList.add("err"); } }
-    setTimeout(() => $("authCode").focus(), 50);
-  }
-  // terima: kode 6 digit, tautan dari email (…/auth/v1/verify?token=…&type=magiclink), atau alamat setelah tautan diklik (#access_token=…)
-  async function verifyFromInput(raw) {
-    const pick = (re) => { const m = raw.match(re); return m ? decodeURIComponent(m[1]) : null; };
-    const at = pick(/access_token=([^&#\s]+)/), rt = pick(/refresh_token=([^&#\s]+)/);
-    if (at && rt) { const { data, error } = await sb.auth.setSession({ access_token: at, refresh_token: rt }); if (error) throw error; if (!isVerified(data.session)) throw new Error("Tautan ini bukan dari email verifikasi."); return data; }
-    const th = pick(/[?&](?:token|token_hash)=([^&#\s]+)/);
-    if (th) { const type = pick(/[?&]type=([a-z_]+)/) || "magiclink";
-      const { data, error } = await sb.auth.verifyOtp({ token_hash: th, type: type === "signup" ? "email" : type }); if (error) throw error; return data; }
-    const code = raw.replace(/\D/g, "");
-    if (code.length < 6) throw new Error("Kode harus 6 digit, atau tempel tautan lengkap dari email.");
-    const { data, error } = await sb.auth.verifyOtp({ email: otpEmail, token: code, type: "email" }); if (error) throw error; return data;
-  }
-  function recentlySent(email) { try { const [e, t] = (sessionStorage.getItem("sp_otp_sent") || "").split("|"); return e === email && Date.now() - +t < 600000; } catch { return false; } }
+    $("authToSignup").hidden = m === "signup"; $("authToReset").hidden = m === "reset"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
   function showAuth(msg) { $("authGate").hidden = false; $("userBox").hidden = true; stopLive(); if (msg) { $("authMsg").textContent = msg; $("authMsg").classList.add("err"); } }
   const authErr = (e) => { const m = (e && e.message) || String(e);
     return /Invalid login/i.test(m) ? "Email atau password salah." : /Email not confirmed/i.test(m) ? "Email belum dikonfirmasi — cek kotak masuk email kamu." : /already registered/i.test(m) ? "Email sudah terdaftar, silakan masuk." :
-      /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Batas kirim email tercapai (Supabase bawaan ±2 email/jam). Coba lagi nanti." : /expired|invalid.*(otp|token)|Token has expired/i.test(m) ? "Kode salah atau sudah kedaluwarsa. Kirim ulang kode." : /Signups not allowed|not found|User not found/i.test(m) ? "Email ini belum terdaftar." : m; };
+      /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Batas kirim email tercapai (Supabase bawaan ±2 email/jam). Coba lagi nanti." : /Signups not allowed|not found|User not found/i.test(m) ? "Email ini belum terdaftar." : m; };
   async function onAuthed(s) {
     session = s; $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
     if (booted) return; booted = true;
@@ -1706,28 +1677,23 @@
     $("authToReset").onclick = (e) => { e.preventDefault(); setAuthMode("reset"); };
     $("authToLogin").onclick = (e) => { e.preventDefault(); setAuthMode("login"); };
     $("logoutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
-    $("authResend").onclick = async (e) => { e.preventDefault(); try { await sendOtp(otpEmail); $("authMsg").classList.remove("err"); $("authMsg").textContent = "Kode baru sudah dikirim."; } catch (err) { $("authMsg").textContent = authErr(err); $("authMsg").classList.add("err"); } };
-    $("authToLogin").addEventListener("click", async () => { if (authMode === "otp") { try { await sb.auth.signOut(); } catch { /* */ } $("authEmail").readOnly = false; } });
     $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
       msg.classList.remove("err"); msg.textContent = "Memproses…"; $("authBtn").disabled = true;
       try {
         if (authMode === "login") { const { data, error } = await sb.auth.signInWithPassword({ email, password: pass }); if (error) throw error; msg.textContent = "";
-          if (isVerified(data.session)) await onAuthed(data.session); else await startOtp(email, false); }
-        else if (authMode === "otp") { const raw = $("authCode").value.trim(); if (!raw) throw new Error("Masukkan kode atau tempel tautan dari email.");
-          const data = await verifyFromInput(raw);
-          try { sessionStorage.removeItem("sp_otp_sent"); } catch { /* */ } msg.textContent = ""; await onAuthed(data.session); }
+          await onAuthed(data.session); }
         else if (authMode === "signup") { const { data, error } = await sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error;
-          if (data.session && isVerified(data.session)) await onAuthed(data.session); else if (data.session) await startOtp(email, false); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
+          if (data.session) await onAuthed(data.session); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
         else { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; msg.textContent = "Tautan atur ulang password sudah dikirim ke email kamu."; }
       } catch (err) { msg.textContent = authErr(err); msg.classList.add("err"); }
       finally { $("authBtn").disabled = false; } };
     if (!sb) { $("authMsg").textContent = "Gagal memuat modul login. Periksa koneksi lalu muat ulang."; $("authMsg").classList.add("err"); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
-      if (s && isVerified(s)) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { if (authMode !== "otp") showAuth(); }
+      if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") showAuth();
     });
     const { data } = await sb.auth.getSession();
-    if (data.session) { if (isVerified(data.session)) onAuthed(data.session); else startOtp(data.session.user.email, recentlySent(data.session.user.email)); }
+    if (data.session) onAuthed(data.session);
   }
   startAuth();
 })();
