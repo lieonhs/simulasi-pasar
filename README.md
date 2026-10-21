@@ -11,6 +11,14 @@ Web app simulasi Monte Carlo untuk harga aset (kripto, saham IDX/global, indeks,
 | Harga | Block bootstrap | Resample blok 10 hari dari return historis |
 | Yield | Vasicek / CIR | Kalibrasi OLS, lalu dikonversi ke harga coupon bond |
 
+## Fitur lain
+- **Candlestick** harian/mingguan/bulanan + MA20/MA50, Bollinger, volume, RSI (Lightweight Charts)
+- **Prediksi per periode** (median, rentang 80%, peluang naik) dan **rencana jual per lot** (target, stop loss, fee, fraksi harga BEI) yang disimulasikan path-by-path
+- **Perbandingan** dengan indeks/aset lain: return, volatilitas, beta, korelasi, proyeksi
+- **Analisis kuantitatif**: Sharpe, Sortino, Calmar, alpha Jensen, information ratio, up/down capture, Kelly; ARDL(p,q) mingguan dengan evaluasi out-of-sample; opsi Black-Scholes & binomial CRR (Eropa/Amerika); model ARCH-t
+- **Valuasi Damodaran**: DCF FCFF 10 tahun (konvergensi growth/margin, sales-to-capital, terminal), excess return model untuk bank, reverse DCF, simulasi input. Parameter default: ERP 4,23% & CRP Indonesia 2,46% (dataset Damodaran Jan 2026)
+- **Berita**: Yahoo, Google News, Bing News; sentimen judul + event study (reaksi abnormal hari berita vs model pasar)
+
 ## Uji keyakinan
 Untuk ±60 titik waktu historis, model di-fit ulang **hanya** dengan data sebelum titik itu, disimulasikan sejauh horizon, lalu dicek apakah nilai aktual jatuh di rentang 50/80/90/95%. Plus backtest VaR 1-hari 95% (uji Kupiec) untuk 250 hari terakhir.
 Jendela horizon saling tumpang tindih, jadi sampel independen efektifnya jauh lebih kecil dari jumlah titik uji.

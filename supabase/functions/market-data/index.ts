@@ -3,6 +3,8 @@
 // Deploy: supabase functions deploy market-data --no-verify-jwt
 // GET ?action=chart&symbol=BTC-USD&range=5y
 // GET ?action=search&q=bbca
+// GET ?action=news&symbol=BBCA.JK&q=saham BBCA
+// GET ?action=fundamentals&symbol=TLKM.JK
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -29,13 +31,18 @@ async function yahooChart(symbol: string, range: string) {
     if (!res?.timestamp) continue;
     const adj = res.indicators?.adjclose?.[0]?.adjclose;
     const close = adj ?? res.indicators?.quote?.[0]?.close;
+    const q = res.indicators?.quote?.[0] ?? {};
     const rows: [string, number][] = [];
+    const ohlc: [string, number, number, number, number, number][] = []; // harga mentah (bukan adjusted) untuk candlestick
     res.timestamp.forEach((t: number, i: number) => {
       const v = close?.[i];
-      if (v != null && isFinite(v) && v > 0) rows.push([new Date(t * 1000).toISOString().slice(0, 10), v]);
+      const d = new Date(t * 1000).toISOString().slice(0, 10);
+      if (v != null && isFinite(v) && v > 0) rows.push([d, v]);
+      const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+      if ([o, h, l, c].every((x) => x != null && isFinite(x) && x > 0)) ohlc.push([d, o, h, l, c, q.volume?.[i] ?? 0]);
     });
     const m = res.meta ?? {};
-    return { source: "yahoo", symbol: m.symbol ?? symbol, name: m.longName ?? m.shortName ?? symbol, currency: m.currency ?? "", type: m.instrumentType ?? "", rows };
+    return { source: "yahoo", symbol: m.symbol ?? symbol, name: m.longName ?? m.shortName ?? symbol, currency: m.currency ?? "", type: m.instrumentType ?? "", rows, ohlc };
   }
   return null;
 }
@@ -45,18 +52,98 @@ async function binanceChart(symbol: string, range: string) {
   if (!m) return null;
   const days = { "1y": 365, "2y": 730, "5y": 1825, "10y": 3650, max: 3650 }[range] ?? 1825;
   let end = Date.now();
-  const out: [string, number][] = [];
+  const out: [string, number, number, number, number, number][] = [];
   while (out.length < days) {
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${m[1]}USDT&interval=1d&limit=1000&endTime=${end}`);
     if (!r.ok) break;
     const k = await r.json();
     if (!Array.isArray(k) || !k.length) break;
-    out.unshift(...k.map((x: any) => [new Date(x[0]).toISOString().slice(0, 10), +x[4]] as [string, number]));
+    out.unshift(...k.map((x: any) => [new Date(x[0]).toISOString().slice(0, 10), +x[1], +x[2], +x[3], +x[4], +x[5]] as [string, number, number, number, number, number]));
     end = k[0][0] - 1;
     if (k.length < 1000) break;
   }
   if (!out.length) return null;
-  return { source: "binance", symbol: `${m[1]}-USDT`, name: `${m[1]}/USDT (Binance)`, currency: "USDT", type: "CRYPTOCURRENCY", rows: out.slice(-days) };
+  const ohlc = out.slice(-days);
+  return { source: "binance", symbol: `${m[1]}-USDT`, name: `${m[1]}/USDT (Binance)`, currency: "USDT", type: "CRYPTOCURRENCY", rows: ohlc.map((x) => [x[0], x[4]] as [string, number]), ohlc };
+}
+
+
+// ---------- berita: Yahoo (search + RSS) + Google News RSS (Indonesia) ----------
+const decode = (t: string) => t.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+function parseRss(xml: string, src: string) {
+  const items: any[] = [];
+  for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const g = (tag: string) => { const x = m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`)); return x ? decode(x[1]) : ""; };
+    let title = g("title"), publisher = g("source") || g("News:Source") || src;
+    const dash = title.lastIndexOf(" - "); if (src === "Google News" && dash > 20) { publisher = g("source") || title.slice(dash + 3); title = title.slice(0, dash); }
+    let summary = g("description");
+    if (!summary || summary.replace(/\W/g, "").toLowerCase().includes(title.replace(/\W/g, "").toLowerCase().slice(0, 40))) summary = ""; // Google: deskripsi = judul
+    const t = Date.parse(g("pubDate"));
+    if (title && isFinite(t)) items.push({ title, summary: summary.slice(0, 400), publisher, link: g("link"), time: Math.floor(t / 1000), via: src });
+  }
+  return items;
+}
+async function getNews(symbol: string, q: string) {
+  const tasks: Promise<any[]>[] = [];
+  tasks.push(fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=20`, { headers: UA })
+    .then((r) => (r.ok ? r.json() : {})).then((j: any) => (j.news ?? []).map((n: any) => ({ title: n.title, summary: "", publisher: n.publisher, link: n.link, time: n.providerPublishTime, via: "Yahoo" }))).catch(() => []));
+  tasks.push(fetch(`https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol)}&region=US&lang=en-US`, { headers: UA })
+    .then((r) => (r.ok ? r.text() : "")).then((x) => parseRss(x, "Yahoo")).catch(() => []));
+  if (q) tasks.push(fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(q + " when:180d")}&hl=id&gl=ID&ceid=ID:id`, { headers: UA })
+    .then((r) => (r.ok ? r.text() : "")).then((x) => parseRss(x, "Google News")).catch(() => []));
+  if (q) tasks.push(fetch(`https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&setlang=id&cc=ID&count=50`, { headers: UA })
+    .then((r) => (r.ok ? r.text() : "")).then((x) => parseRss(x, "Bing News")).catch(() => []));
+  const all = (await Promise.all(tasks)).flat();
+  const seen = new Map<string, any>();
+  for (const n of all) { const k = n.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60); const prev = seen.get(k);
+    if (!prev) seen.set(k, n); else if (!prev.summary && n.summary) prev.summary = n.summary; }
+  return [...seen.values()].sort((a, b) => b.time - a.time).slice(0, 120);
+}
+
+
+// ---------- fundamental (untuk valuasi Damodaran) ----------
+async function yahooCrumb() {
+  const r1 = await fetch("https://fc.yahoo.com", { headers: UA, redirect: "manual" });
+  const ck = (r1.headers.get("set-cookie") ?? "").split(",").map((c) => c.split(";")[0].trim()).filter((c) => c.includes("=")).join("; ");
+  const r2 = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", { headers: { ...UA, cookie: ck } });
+  const crumb = r2.ok ? (await r2.text()).trim() : "";
+  return { ck, crumb };
+}
+const raw = (x: any) => (x && typeof x === "object" ? x.raw ?? null : x ?? null);
+async function getFundamentals(symbol: string) {
+  const out: any = { symbol, source: [] };
+  try {
+    const { ck, crumb } = await yahooCrumb();
+    if (crumb && !crumb.includes("<")) {
+      const mods = "price,summaryDetail,defaultKeyStatistics,financialData,assetProfile";
+      const r = await fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${mods}&crumb=${encodeURIComponent(crumb)}`, { headers: { ...UA, cookie: ck } });
+      if (r.ok) {
+        const q = (await r.json())?.quoteSummary?.result?.[0] ?? {};
+        const fd = q.financialData ?? {}, ks = q.defaultKeyStatistics ?? {}, sd = q.summaryDetail ?? {}, pr = q.price ?? {}, ap = q.assetProfile ?? {};
+        Object.assign(out, { sector: ap.sector ?? "", industry: ap.industry ?? "", currency: pr.currency ?? fd.financialCurrency ?? "", financialCurrency: fd.financialCurrency ?? "",
+          price: raw(pr.regularMarketPrice), marketCap: raw(pr.marketCap), shares: raw(ks.sharesOutstanding), beta: raw(sd.beta) ?? raw(ks.beta),
+          revenue: raw(fd.totalRevenue), operatingMargin: raw(fd.operatingMargins), revenueGrowth: raw(fd.revenueGrowth), totalDebt: raw(fd.totalDebt), totalCash: raw(fd.totalCash),
+          roe: raw(fd.returnOnEquity), bookValuePerShare: raw(ks.bookValue), priceToBook: raw(ks.priceToBook), trailingPE: raw(sd.trailingPE), forwardPE: raw(sd.forwardPE),
+          dividendYield: raw(sd.dividendYield), payoutRatio: raw(sd.payoutRatio), freeCashflow: raw(fd.freeCashflow), ebitda: raw(fd.ebitda), netIncome: raw(ks.netIncomeToCommon) });
+        out.source.push("quoteSummary");
+      }
+    }
+  } catch (_) { /* lanjut ke timeseries */ }
+  try { // seri tahunan (tanpa crumb)
+    const types = ["annualTotalRevenue", "annualOperatingIncome", "annualPretaxIncome", "annualTaxProvision", "annualNetIncome", "annualTotalDebt",
+      "annualCashAndCashEquivalents", "annualStockholdersEquity", "annualInvestedCapital", "annualOrdinarySharesNumber", "annualCapitalExpenditure", "annualDepreciationAndAmortization"];
+    const now = Math.floor(Date.now() / 1000);
+    const r = await fetch(`https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?type=${types.join(",")}&period1=1420070400&period2=${now}`, { headers: UA });
+    if (r.ok) {
+      const res = (await r.json())?.timeseries?.result ?? [];
+      const series: Record<string, [string, number][]> = {};
+      for (const it of res) { const t = it?.meta?.type?.[0]; if (!t || !it[t]) continue;
+        series[t.replace("annual", "")] = it[t].filter((x: any) => x?.reportedValue?.raw != null).map((x: any) => [x.asOfDate, x.reportedValue.raw]); }
+      out.annual = series; out.source.push("timeseries");
+    }
+  } catch (_) { /* */ }
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -72,6 +159,16 @@ Deno.serve(async (req) => {
       const j = await r.json();
       const quotes = (j.quotes ?? []).filter((x: any) => x.symbol).map((x: any) => ({ symbol: x.symbol, name: x.longname ?? x.shortname ?? "", exch: x.exchDisp ?? "", type: x.quoteType ?? "" }));
       return json({ quotes }, 200, 3600);
+    }
+    if (action === "fundamentals") {
+      const sym = (u.searchParams.get("symbol") ?? "").trim();
+      if (!SYMBOL_RE.test(sym)) return json({ error: "Simbol tidak valid" }, 400);
+      return json(await getFundamentals(sym), 200, 21600);
+    }
+    if (action === "news") {
+      const sym = (u.searchParams.get("symbol") ?? "").trim(), q = (u.searchParams.get("q") ?? "").slice(0, 80);
+      if (!SYMBOL_RE.test(sym)) return json({ error: "Simbol tidak valid" }, 400);
+      return json({ items: await getNews(sym, q) }, 200, 900);
     }
     const symbol = (u.searchParams.get("symbol") ?? "").trim();
     const range = u.searchParams.get("range") ?? "5y";

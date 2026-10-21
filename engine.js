@@ -201,6 +201,35 @@
     },
   };
 
+  // ---------- ARCH(1)-t (pembanding GARCH; beta = 0, tanpa leverage) ----------
+  function archFit(r) {
+    const x = r.map((v) => v * 100), mu = mean(x), e = x.map((v) => v - mu);
+    const s2 = e.reduce((s, v) => s + v * v, 0) / e.length;
+    const nll = ([a, nu]) => {
+      if (a < 0 || a >= 0.999 || nu <= 2.05 || nu > 200) return 1e12;
+      const om = s2 * (1 - a), C = lgamma((nu + 1) / 2) - lgamma(nu / 2) - 0.5 * Math.log(Math.PI * (nu - 2));
+      let h = s2, ll = 0;
+      for (let t = 0; t < e.length; t++) { ll += C - 0.5 * Math.log(h) - ((nu + 1) / 2) * Math.log(1 + (e[t] * e[t]) / ((nu - 2) * h)); h = om + a * e[t] * e[t]; }
+      return -ll;
+    };
+    let best = null;
+    for (const x0 of [[0.2, 5], [0.4, 8], [0.1, 4]]) { const r1 = nelderMead(nll, x0, [0.1, 2]); if (!best || r1.fx < best.fx) best = r1; }
+    const [alpha, nu] = best.x;
+    return { alpha, gamma: 0, beta: 0, nu, omega: s2 * (1 - alpha), mu, s2, persistence: alpha, ll: -best.fx };
+  }
+  PRICE_MODELS.arch = {
+    label: "ARCH-t",
+    prep(r, cache) { const p = cache && cache.params ? cache.params : archFit(r); return { p, h0: garchNextVar(r, p) }; },
+    sim(ctx, days, n, mu, rng) { return PRICE_MODELS.garch.sim(ctx, days, n, mu, rng); },
+    info(ctx, ppy) { const p = ctx.p; return { alpha: p.alpha, "nu (ekor)": p.nu, "Vol tahunan saat ini": Math.sqrt(ctx.h0) / 100 * Math.sqrt(ppy), "Vol tahunan jangka panjang": Math.sqrt(p.s2) / 100 * Math.sqrt(ppy) }; },
+  };
+  // rata-rata volatilitas yang diharapkan GARCH/ARCH sepanjang horizon (tahunan, desimal)
+  function condVolHorizon(ctx, days, ppy) {
+    const p = ctx.p; let h = ctx.h0, s = 0;
+    for (let k = 0; k < days; k++) { s += h; h = p.s2 + p.persistence * (h - p.s2); }
+    return Math.sqrt(s / days) / 100 * Math.sqrt(ppy);
+  }
+
   // ---------- model yield ----------
   function fitRate(y, dt, kind) {
     const y0 = y.slice(0, -1), y1 = y.slice(1), n = y0.length;
@@ -312,9 +341,123 @@
     return 0;
   }
 
+  // ---------- cache path untuk evaluasi rencana (hanya run utama) ----------
+  const CACHE = { s0: null, days: 0, models: {} };
+  function storePaths(m, paths) {
+    const days = paths[0].length, keep = Math.min(paths.length, Math.max(2000, Math.floor(2e6 / days)));
+    const flat = new Float32Array(keep * days);
+    for (let i = 0; i < keep; i++) flat.set(paths[i], i * days);
+    CACHE.models[m] = { flat, n: keep, days };
+  }
+
+  // Fraksi harga BEI (Peraturan II-A, berlaku sejak 2016)
+  function idxTick(p) { return p < 200 ? 1 : p < 500 ? 2 : p < 2000 ? 5 : p < 5000 ? 10 : 25; }
+  function roundTick(p, isIdx, dir) {
+    if (!isIdx) { const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(p))) - 3); return Math.round(p / mag) * mag; }
+    const t = idxTick(p); return (dir > 0 ? Math.ceil(p / t) : dir < 0 ? Math.floor(p / t) : Math.round(p / t)) * t;
+  }
+
+  /* Peluang tersentuh untuk grid level & evaluasi rencana jual bertahap.
+   * plan = { model, entry, units (lembar/unit total), unitPerLot, feeBuy, feeSell, isIdx,
+   *          targets: [{price, lots}], stop (harga, boleh null), auto: bool, probs: [0.5,0.3,0.15], stopProb: 0.2, split:[.4,.3,.3] } */
+  function evalPlan(plan) {
+    const C = CACHE.models[plan.model];
+    if (!C) throw new Error("Jalankan simulasi dulu");
+    const { flat, n, days } = C, s0 = CACHE.s0;
+    const maxR = new Float32Array(n), minR = new Float32Array(n), endR = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let mx = -Infinity, mn = Infinity; const o = i * days;
+      for (let t = 0; t < days; t++) { const v = flat[o + t]; if (v > mx) mx = v; if (v < mn) mn = v; }
+      maxR[i] = Math.exp(mx); minR[i] = Math.exp(mn); endR[i] = Math.exp(flat[o + days - 1]);
+    }
+    const sMax = Float64Array.from(maxR).sort(), sMin = Float64Array.from(minR).sort();
+    const lots = Math.max(0, plan.isIdx ? Math.floor(plan.lots) : +plan.lots); // IDX: lot bulat; kripto/lainnya: boleh pecahan
+    let targets = plan.targets, stop = plan.stop;
+    if (plan.auto) {
+      const probs = plan.probs || [0.5, 0.3, 0.15], split = plan.split || [0.4, 0.3, 0.3];
+      let left = lots;
+      targets = probs.map((p, k) => {
+        const lvl = roundTick(s0 * quantileSorted(sMax, 1 - p), plan.isIdx, 1);
+        const l = k === probs.length - 1 ? left : Math.min(left, plan.isIdx ? Math.round(lots * split[k]) : lots * split[k]);
+        left -= l; return { price: lvl, lots: l };
+      });
+      stop = roundTick(s0 * quantileSorted(sMin, plan.stopProb ?? 0.2), plan.isIdx, -1);
+    }
+    targets = targets.filter((t) => t.price > 0 && t.lots > 0).sort((a, b) => a.price - b.price);
+    const upl = plan.unitPerLot || 1, fb = plan.feeBuy || 0, fs = plan.feeSell || 0, entry = plan.entry;
+    const cost = lots * upl * entry * (1 + fb);
+
+    // evaluasi path-by-path
+    const pnlPlan = new Float64Array(n), pnlHold = new Float64Array(n);
+    const hit = targets.map(() => ({ n: 0, days: [] })); let stopHits = 0; const stopDays = [];
+    let unsoldSum = 0;
+    for (let i = 0; i < n; i++) {
+      const o = i * days; let proceeds = 0, rem = lots, k = 0, stopped = false;
+      for (let t = 0; t < days && rem > 0; t++) {
+        const p = s0 * Math.exp(flat[o + t]);
+        if (stop && p <= stop) { proceeds += rem * upl * p * (1 - fs); rem = 0; stopped = true; stopHits++; stopDays.push(t + 1); break; }
+        while (k < targets.length && p >= targets[k].price) {
+          const q = Math.min(rem, targets[k].lots); proceeds += q * upl * targets[k].price * (1 - fs); rem -= q;
+          hit[k].n++; hit[k].days.push(t + 1); k++;
+        }
+      }
+      const pend = s0 * endR[i];
+      unsoldSum += rem;
+      proceeds += rem * upl * pend * (1 - fs); // sisa dinilai di harga akhir (belum terealisasi)
+      pnlPlan[i] = proceeds - cost;
+      pnlHold[i] = lots * upl * pend * (1 - fs) - cost;
+    }
+    const dist = (a) => { const s = Float64Array.from(a).sort(); return { mean: mean(Array.from(a)), p5: quantileSorted(s, 0.05), p25: quantileSorted(s, 0.25), median: quantileSorted(s, 0.5), p75: quantileSorted(s, 0.75), p95: quantileSorted(s, 0.95), probProfit: a.filter((v) => v > 0).length / a.length }; };
+    const medDay = (arr) => (arr.length ? quantileSorted(Float64Array.from(arr).sort(), 0.5) : NaN);
+
+    // grid peluang level (relatif terhadap harga sekarang)
+    const grid = [];
+    const vol = std(Array.from(endR, Math.log));
+    const stepPct = vol > 0.25 ? 10 : vol > 0.12 ? 5 : vol > 0.05 ? 2.5 : 1;
+    for (let k = -6; k <= 6; k++) {
+      if (k === 0) continue;
+      const lvl = s0 * (1 + (k * stepPct) / 100);
+      if (lvl <= 0) continue;
+      const touch = k > 0 ? maxR.filter((v) => v * s0 >= lvl).length / n : minR.filter((v) => v * s0 <= lvl).length / n;
+      const endBeyond = k > 0 ? endR.filter((v) => v * s0 >= lvl).length / n : endR.filter((v) => v * s0 <= lvl).length / n;
+      grid.push({ pct: (k * stepPct) / 100, price: roundTick(lvl, plan.isIdx, 0), touch, end: endBeyond });
+    }
+    return { s0, days, nPaths: n, cost, targets: targets.map((t, k) => ({ ...t, prob: hit[k].n / n, medDay: medDay(hit[k].days),
+        pctFromEntry: t.price / entry - 1, pnl: t.lots * upl * (t.price * (1 - fs) - entry * (1 + fb)) })),
+      stop: stop ? { price: stop, prob: stopHits / n, medDay: medDay(stopDays), pctFromEntry: stop / entry - 1, pnl: lots * upl * (stop * (1 - fs) - entry * (1 + fb)) } : null,
+      plan: dist(pnlPlan), hold: dist(pnlHold), unsoldAvg: unsoldSum / n, grid, lots, unitPerLot: upl };
+  }
+
+  // ---------- statistik perbandingan historis ----------
+  function compareStats(series, benchIdx = 0) { // series: [{dates, values}]; beta/korelasi vs series[benchIdx]
+    const base = series[benchIdx];
+    const out = series.map((s) => {
+      const v = s.values, d = s.dates, r = logReturns(v), last = v[v.length - 1];
+      const back = (days) => { const t = new Date(d[d.length - 1]); t.setDate(t.getDate() - days); const ts = t.toISOString().slice(0, 10);
+        let i = d.length - 1; while (i > 0 && d[i] > ts) i--; return d[i] <= ts && i < d.length - 1 ? last / v[i] - 1 : NaN; };
+      const ppyS = detectPpy(d, "");
+      return { ret1m: back(30), ret3m: back(91), ret1y: back(365), ret3y: back(1095), volAnn: std(r.slice(-252 * (ppyS / 252))) * Math.sqrt(ppyS), maxDD: maxDrawdown(v.slice(-ppyS * 3)) };
+    });
+    // beta & korelasi vs aset pertama (benchmark = index ke-1 jika ada) memakai tanggal yang sama
+    const map0 = new Map(base.dates.map((x, i) => [x, base.values[i]]));
+    series.forEach((s, j) => {
+      if (j === benchIdx) { out[j].beta = 1; out[j].corr = 1; return; }
+      const common = s.dates.filter((x) => map0.has(x)).slice(-500);
+      const sm = new Map(s.dates.map((x, i) => [x, s.values[i]]));
+      const a = [], b = [];
+      for (let i = 1; i < common.length; i++) { a.push(Math.log(sm.get(common[i]) / sm.get(common[i - 1]))); b.push(Math.log(map0.get(common[i]) / map0.get(common[i - 1]))); }
+      if (a.length < 30) { out[j].beta = NaN; out[j].corr = NaN; return; }
+      const ma = mean(a), mb = mean(b); let cov = 0, va = 0, vb = 0;
+      for (let i = 0; i < a.length; i++) { cov += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; }
+      out[j].beta = cov / vb; out[j].corr = cov / Math.sqrt(va * vb); out[j].nCommon = a.length;
+    });
+    return out;
+  }
+
   function runPrice(cfg, progress = () => {}) {
     const px = cfg.prices, r = logReturns(px), ppy = cfg.ppy || detectPpy(cfg.dates, cfg.type);
     const rng = makeRng(cfg.seed || 42), s0 = px[px.length - 1], mu = driftPerStep(r, cfg.drift, cfg.customDrift, ppy);
+    if (cfg.keepPaths) { CACHE.s0 = s0; CACHE.days = cfg.days; CACHE.models = {}; }
     const res = { mode: "price", s0, ppy, nObs: r.length,
       stats: { volAnn: std(r) * Math.sqrt(ppy), retAnn: Math.exp(mean(r) * ppy) - 1, skew: skew(r), exKurt: exKurt(r), muUsed: mu * ppy, maxDD: maxDrawdown(px) },
       models: {} };
@@ -323,7 +466,11 @@
       const M = PRICE_MODELS[m], ctx = M.prep(r);
       const paths = M.sim(ctx, cfg.days, cfg.sims, mu, rng);
       const end = paths.map((p) => s0 * Math.exp(p[p.length - 1]));
-      res.models[m] = { label: M.label, info: M.info(ctx, ppy), fan: fanFromPaths(paths, (v) => s0 * Math.exp(v)), summary: priceSummary(end, s0), hist: histogram(end),
+      if (cfg.keepPaths) storePaths(m, paths);
+      const probUp = new Array(cfg.days).fill(0);
+      for (const p of paths) for (let t = 0; t < cfg.days; t++) if (p[t] > 0) probUp[t]++;
+      for (let t = 0; t < cfg.days; t++) probUp[t] /= paths.length;
+      res.models[m] = { label: M.label, probUp, horizonVol: m === "garch" || m === "arch" ? condVolHorizon(ctx, cfg.days, ppy) : std(r) * Math.sqrt(ppy), info: M.info(ctx, ppy), fan: fanFromPaths(paths, (v) => s0 * Math.exp(v)), summary: priceSummary(end, s0), hist: histogram(end),
         samplePaths: paths.slice(0, 25).map((p) => Array.from(p, (v) => s0 * Math.exp(v))) };
     });
     if (cfg.backtest) {
@@ -338,10 +485,10 @@
   function trainSlice(px, o, win = 1000) { return logReturns(px.slice(Math.max(0, o - win), o + 1)); }
   function backtestPriceModel(m, px, h, mu, seed, nsim = 1500) {
     const M = PRICE_MODELS[m], rng = makeRng(seed);
-    return pitBacktest({ nObs: px.length, h, minTrain: 250, maxOrigins: 60, refitEvery: m === "garch" ? 6 : 1,
+    return pitBacktest({ nObs: px.length, h, minTrain: 250, maxOrigins: 60, refitEvery: m === "garch" || m === "arch" ? 6 : 1,
       simTerminal(o, hh, cache) {
         const r = trainSlice(px, o);
-        const ctx = M.prep(r, cache); if (m === "garch") cache.params = ctx.p;
+        const ctx = M.prep(r, cache); if (m === "garch" || m === "arch") cache.params = ctx.p;
         const paths = M.sim(ctx, hh, nsim, mu, rng);
         return Float64Array.from(paths, (p) => p[hh - 1]);
       },
@@ -353,8 +500,9 @@
     let hits = 0, cnt = 0, params = null;
     for (let o = n - 1 - nTest, k = 0; o < n - 1; o++, k++) {
       const r = trainSlice(px, o);
-      const ctx = M.prep(r, m === "garch" && k % 20 !== 0 ? { params } : null);
-      if (m === "garch") params = ctx.p;
+      const vv = m === "garch" || m === "arch";
+      const ctx = M.prep(r, vv && k % 20 !== 0 ? { params } : null);
+      if (vv) params = ctx.p;
       const sims = Float64Array.from(M.sim(ctx, 1, nsim, 0, rng), (p) => p[0]).sort();
       if (Math.log(px[o + 1] / px[o]) < quantileSorted(sims, 0.05)) hits++;
       cnt++;
@@ -393,6 +541,234 @@
     return res;
   }
 
-  const api = { makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // =====================================================================
+  // ANALISIS KUANTITATIF: opsi (Black-Scholes, binomial CRR), metrik risiko, ARDL
+  // =====================================================================
+  function ncdf(x) { // Φ(x), presisi ~1e-7
+    const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989422804014327 * Math.exp(-x * x / 2);
+    const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    return x > 0 ? 1 - p : p;
+  }
+  const npdf = (x) => 0.3989422804014327 * Math.exp(-x * x / 2);
+  // Black–Scholes–Merton (q = dividend/convenience yield kontinu)
+  function blackScholes(S, K, T, r, sig, q = 0) {
+    const sq = sig * Math.sqrt(T), d1 = (Math.log(S / K) + (r - q + 0.5 * sig * sig) * T) / sq, d2 = d1 - sq;
+    const dq = Math.exp(-q * T), dr = Math.exp(-r * T);
+    const call = S * dq * ncdf(d1) - K * dr * ncdf(d2), put = K * dr * ncdf(-d2) - S * dq * ncdf(-d1);
+    return { call, put, d1, d2, deltaC: dq * ncdf(d1), deltaP: dq * (ncdf(d1) - 1), gamma: dq * npdf(d1) / (S * sq), vega: S * dq * npdf(d1) * Math.sqrt(T) / 100,
+      thetaC: (-S * dq * npdf(d1) * sig / (2 * Math.sqrt(T)) - r * K * dr * ncdf(d2) + q * S * dq * ncdf(d1)) / 365,
+      thetaP: (-S * dq * npdf(d1) * sig / (2 * Math.sqrt(T)) + r * K * dr * ncdf(-d2) - q * S * dq * ncdf(-d1)) / 365,
+      probITMcall: ncdf(d2), probITMput: ncdf(-d2) };
+  }
+  // Binomial Cox–Ross–Rubinstein, Eropa & Amerika
+  function binomialCRR(S, K, T, r, sig, q = 0, N = 300) {
+    const dt = T / N, u = Math.exp(sig * Math.sqrt(dt)), d = 1 / u, disc = Math.exp(-r * dt), p = (Math.exp((r - q) * dt) - d) / (u - d);
+    const run = (isCall, american) => {
+      const v = new Float64Array(N + 1);
+      for (let i = 0; i <= N; i++) { const st = S * Math.pow(u, N - i) * Math.pow(d, i); v[i] = Math.max(isCall ? st - K : K - st, 0); }
+      for (let n = N - 1; n >= 0; n--) for (let i = 0; i <= n; i++) {
+        let val = disc * (p * v[i] + (1 - p) * v[i + 1]);
+        if (american) { const st = S * Math.pow(u, n - i) * Math.pow(d, i); val = Math.max(val, isCall ? st - K : K - st); }
+        v[i] = val;
+      }
+      return v[0];
+    };
+    return { callEU: run(true, false), putEU: run(false, false), callUS: run(true, true), putUS: run(false, true), u, d, p, N };
+  }
+  // peluang dunia-nyata dari simulasi (model terpilih) bahwa harga akhir > K, dan nilai harapan payoff
+  function probEnd(model, K, r, T) {
+    const C = CACHE.models[model]; if (!C) return null;
+    let above = 0, payC = 0, payP = 0; const s0 = CACHE.s0;
+    for (let i = 0; i < C.n; i++) { const st = s0 * Math.exp(C.flat[i * C.days + C.days - 1]); if (st > K) above++; payC += Math.max(st - K, 0); payP += Math.max(K - st, 0); }
+    const df = Math.exp(-r * T);
+    return { probAbove: above / C.n, callMC: df * payC / C.n, putMC: df * payP / C.n };
+  }
+
+  // ---------- metrik risiko gaya institusi (vs benchmark, tanggal bersama, maks 3 tahun) ----------
+  function riskMetrics(a, b, rfAnn, ppy) {
+    const mb = new Map(b.dates.map((d, i) => [d, b.values[i]]));
+    const common = a.dates.map((d, i) => [d, a.values[i], mb.get(d)]).filter((x) => x[2] != null);
+    const use = common.slice(-(ppy * 3 + 1));
+    const ra = [], rb = [];
+    for (let i = 1; i < use.length; i++) { ra.push(use[i][1] / use[i - 1][1] - 1); rb.push(use[i][2] / use[i - 1][2] - 1); }
+    const n = ra.length; if (n < 60) return null;
+    const ppyC = n / ((new Date(use[use.length - 1][0]) - new Date(use[0][0])) / (365.25 * 864e5)); // periode per tahun dari data bersama
+    const rfp = Math.pow(1 + rfAnn, 1 / ppyC) - 1;
+    const one = (r, px0, px1) => {
+      const yrs = n / ppyC, cagr = Math.pow(px1 / px0, 1 / yrs) - 1, vol = std(r) * Math.sqrt(ppyC);
+      const ex = r.map((v) => v - rfp), down = Math.sqrt(ex.reduce((s, v) => s + Math.min(v, 0) ** 2, 0) / ex.length) * Math.sqrt(ppyC);
+      let pk = 1, eq = 1, dd = 0; for (const v of r) { eq *= 1 + v; pk = Math.max(pk, eq); dd = Math.min(dd, eq / pk - 1); }
+      const s = Float64Array.from(r).sort(), var95 = -quantileSorted(s, 0.05); let es = 0, c = 0; for (const v of s) { if (v <= -var95) { es += v; c++; } else break; }
+      const muA = mean(r) * ppyC;
+      return { cagr, vol, sharpe: (mean(ex) * ppyC) / vol, sortino: (mean(ex) * ppyC) / down, calmar: dd < 0 ? cagr / -dd : NaN, maxDD: dd,
+        var95, es95: -(es / Math.max(c, 1)), skew: skew(r), kurt: exKurt(r), hit: r.filter((v) => v > 0).length / n,
+        kelly: (muA - rfAnn) / (vol * vol) };
+    };
+    const A = one(ra, use[0][1], use[use.length - 1][1]), B = one(rb, use[0][2], use[use.length - 1][2]);
+    const ma = mean(ra), mbb = mean(rb); let cov = 0, vb = 0; for (let i = 0; i < n; i++) { cov += (ra[i] - ma) * (rb[i] - mbb); vb += (rb[i] - mbb) ** 2; }
+    const beta = cov / vb, alpha = ((ma - rfp) - beta * (mbb - rfp)) * ppyC;
+    const act = ra.map((v, i) => v - rb[i]), te = std(act) * Math.sqrt(ppyC), ir = (mean(act) * ppyC) / te;
+    const upI = rb.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0), dnI = rb.map((v, i) => (v < 0 ? i : -1)).filter((i) => i >= 0);
+    const cap = (I) => mean(I.map((i) => ra[i])) / mean(I.map((i) => rb[i]));
+    return { asset: A, bench: B, beta, alpha, te, ir, upCap: cap(upI), downCap: cap(dnI), n, from: use[0][0], to: use[use.length - 1][0], ppy: ppyC };
+  }
+
+  // ---------- OLS ----------
+  function ols(X, y) { // X: array baris (sudah termasuk konstanta)
+    const n = X.length, k = X[0].length, XtX = Array.from({ length: k }, () => new Float64Array(k)), Xty = new Float64Array(k);
+    for (let i = 0; i < n; i++) for (let a = 0; a < k; a++) { Xty[a] += X[i][a] * y[i]; for (let b = 0; b < k; b++) XtX[a][b] += X[i][a] * X[i][b]; }
+    const inv = invert(XtX); if (!inv) return null;
+    const beta = inv.map((row) => row.reduce((s, v, j) => s + v * Xty[j], 0));
+    const res = y.map((v, i) => v - X[i].reduce((s, x, j) => s + x * beta[j], 0));
+    const sse = res.reduce((s, v) => s + v * v, 0), s2 = sse / (n - k), my = mean(y), sst = y.reduce((s, v) => s + (v - my) ** 2, 0);
+    const se = inv.map((row, j) => Math.sqrt(Math.max(row[j] * s2, 0)));
+    return { beta, se, t: beta.map((b, j) => b / se[j]), s2, sse, r2: 1 - sse / sst, n, k, aic: n * Math.log(sse / n) + 2 * k, res };
+  }
+  function invert(M) {
+    const k = M.length, A = M.map((r, i) => [...r, ...Array.from({ length: k }, (_, j) => (i === j ? 1 : 0))]);
+    for (let c = 0; c < k; c++) {
+      let p = c; for (let r = c + 1; r < k; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+      if (Math.abs(A[p][c]) < 1e-14) return null; [A[c], A[p]] = [A[p], A[c]];
+      const piv = A[c][c]; for (let j = 0; j < 2 * k; j++) A[c][j] /= piv;
+      for (let r = 0; r < k; r++) if (r !== c) { const f = A[r][c]; if (f) for (let j = 0; j < 2 * k; j++) A[r][j] -= f * A[c][j]; }
+    }
+    return A.map((r) => r.slice(k));
+  }
+  // student-t two-sided p-value (aproksimasi normal untuk df besar, cukup untuk n > 60)
+  const pval = (t, df) => { const z = Math.abs(t) * (1 - 1 / (4 * df)) / Math.sqrt(1 + t * t / (2 * df)); return 2 * (1 - ncdf(z)); };
+
+  // ---------- ARDL(p,q) pada return mingguan: y_t = c + Σφ_i y_{t-i} + Σβ_j x_{t-j} ----------
+  // mode prediktif: j mulai 1 (x_t belum diketahui saat meramal); mode penjelas: j mulai 0
+  function weekly(dates, values) {
+    const out = []; let k = null;
+    dates.forEach((d, i) => { const t = new Date(d + "T00:00:00Z"); const wd = (t.getUTCDay() + 6) % 7; t.setUTCDate(t.getUTCDate() - wd);
+      const kk = t.toISOString().slice(0, 10); if (kk !== k) { out.push([kk, values[i]]); k = kk; } else out[out.length - 1][1] = values[i]; });
+    return out;
+  }
+  function ardl(a, xs, maxP = 4, maxQ = 4) {
+    // a, xs[]: {dates, values, symbol}; return mingguan pada minggu yang sama
+    const wa = weekly(a.dates, a.values), wx = xs.map((x) => new Map(weekly(x.dates, x.values)));
+    const rows = wa.filter(([w]) => wx.every((m) => m.has(w)));
+    const y = [], X = xs.map(() => []);
+    for (let i = 1; i < rows.length; i++) { const w0 = rows[i - 1][0], w1 = rows[i][0];
+      y.push(Math.log(rows[i][1] / rows[i - 1][1])); xs.forEach((_, j) => X[j].push(Math.log(wx[j].get(w1) / wx[j].get(w0)))); }
+    const N = y.length; if (N < 80) return null;
+    const build = (p, q, contemp, from, to) => { const Xr = [], yr = [];
+      const start = Math.max(p, q, 1);
+      for (let t = Math.max(start, from); t < to; t++) { const row = [1]; for (let i = 1; i <= p; i++) row.push(y[t - i]);
+        xs.forEach((_, j) => { for (let l = contemp ? 0 : 1; l <= q; l++) row.push(X[j][t - l]); }); Xr.push(row); yr.push(y[t]); }
+      return { Xr, yr }; };
+    const names = (p, q, contemp) => { const n = ["Konstanta"]; for (let i = 1; i <= p; i++) n.push(`${a.symbol} (t-${i})`);
+      xs.forEach((x) => { for (let l = contemp ? 0 : 1; l <= q; l++) n.push(`${x.symbol} (t${l ? "-" + l : ""})`); }); return n; };
+    // seleksi lag dengan AIC pada sampel estimasi (70% awal)
+    const split = Math.floor(N * 0.7);
+    let best = null;
+    for (let p = 0; p <= maxP; p++) for (let q = 1; q <= maxQ; q++) {
+      const { Xr, yr } = build(p, q, false, maxP > maxQ ? maxP : maxQ, split); const f = ols(Xr, yr);
+      if (f && (!best || f.aic < best.aic)) best = { p, q, aic: f.aic };
+    }
+    const { p, q } = best;
+    // evaluasi out-of-sample: expanding window, ramalan 1 minggu
+    const st0 = Math.max(p, q, 1), oos = [];
+    for (let t = split; t < N; t++) {
+      const { Xr, yr } = build(p, q, false, st0, t); const f = ols(Xr, yr); if (!f) continue;
+      const row = [1]; for (let i = 1; i <= p; i++) row.push(y[t - i]); xs.forEach((_, j) => { for (let l = 1; l <= q; l++) row.push(X[j][t - l]); });
+      const fc = row.reduce((s, v, j) => s + v * f.beta[j], 0), hm = mean(y.slice(0, t));
+      oos.push({ fc, hm, act: y[t] });
+    }
+    const sse = oos.reduce((s, o) => s + (o.act - o.fc) ** 2, 0), sseH = oos.reduce((s, o) => s + (o.act - o.hm) ** 2, 0), sse0 = oos.reduce((s, o) => s + o.act ** 2, 0);
+    const hit = oos.filter((o) => Math.sign(o.fc) === Math.sign(o.act) && o.act !== 0).length / oos.length;
+    const upShare = oos.filter((o) => o.act > 0).length / oos.length;
+    // model akhir (seluruh sampel) — prediktif & penjelas
+    const fin = build(p, q, false, st0, N), fP = ols(fin.Xr, fin.yr);
+    const ex = build(p, Math.max(q, 1), true, st0, N), fE = ols(ex.Xr, ex.yr);
+    const row = [1]; for (let i = 1; i <= p; i++) row.push(y[N - i + 0 - 0]); // y[N-1] = minggu terakhir
+    row.length = 1; for (let i = 1; i <= p; i++) row.push(y[N - i]); xs.forEach((_, j) => { for (let l = 1; l <= q; l++) row.push(X[j][N - l]); });
+    // catatan: y[N-i] dengan i=1 adalah minggu terakhir yang sudah terjadi
+    const nextFc = row.reduce((s, v, j) => s + v * fP.beta[j], 0), sdE = Math.sqrt(fP.s2);
+    const coef = (f, nm) => f.beta.map((b, j) => ({ name: nm[j], b, se: f.se[j], t: f.t[j], p: pval(f.t[j], f.n - f.k) }));
+    return { p, q, N, nOOS: oos.length, oosR2: 1 - sse / sseH, oosR2zero: 1 - sse / sse0, hit, upShare,
+      pred: { coef: coef(fP, names(p, q, false)), r2: fP.r2, n: fP.n }, expl: { coef: coef(fE, names(p, Math.max(q, 1), true)), r2: fE.r2, n: fE.n },
+      nextFc, nextLo: nextFc - 1.2816 * sdE, nextHi: nextFc + 1.2816 * sdE, sdE, lastWeek: rows[rows.length - 1][0] };
+  }
+
+
+  // =====================================================================
+  // VALUASI ALA DAMODARAN
+  //  - non-keuangan: DCF FCFF 10 tahun (growth & margin konvergen, reinvestasi via sales-to-capital)
+  //  - bank/keuangan: excess return model (nilai = BV + PV[(ROE − COE) × BV])
+  // =====================================================================
+  function costOfCapital(v) { // v: rf, beta, erp, crp, kdSpread, taxMarg, dWeight
+    const coe = v.rf + v.beta * (v.erp + v.crp);
+    const kd = (v.rf + v.kdSpread) * (1 - v.taxMarg);
+    return { coe, kd, wacc: (1 - v.dWeight) * coe + v.dWeight * kd };
+  }
+  function dcfFCFF(v) {
+    // v: revenue, g1 (th 1–5), gT (terminal), m0 (margin kini), mT (margin target), convYear, tax0 (efektif), taxMarg, s2c,
+    //    rf, beta, erp, crp, kdSpread, dWeight, rocT (terminal ROC; default = WACC terminal), cash, debt, shares, price
+    const cc = costOfCapital(v), waccT = (1 - v.dWeight) * (v.rf + 1 * (v.erp + v.crp)) + v.dWeight * (v.rf + v.kdSpread) * (1 - v.taxMarg);
+    const rows = []; let R = v.revenue, cum = 1, pv = 0;
+    for (let t = 1; t <= 10; t++) {
+      const g = t <= 5 ? v.g1 : v.g1 - ((v.g1 - v.gT) * (t - 5)) / 5;
+      const Rn = R * (1 + g);
+      const m = t >= v.convYear ? v.mT : v.m0 + ((v.mT - v.m0) * t) / v.convYear;
+      const tax = t <= 5 ? v.tax0 : v.tax0 + ((v.taxMarg - v.tax0) * (t - 5)) / 5;
+      const ebit = Rn * m, nopat = ebit * (1 - tax), reinv = (Rn - R) / v.s2c, fcff = nopat - reinv;
+      const w = t <= 5 ? cc.wacc : cc.wacc + ((waccT - cc.wacc) * (t - 5)) / 5;
+      cum *= 1 + w; const pvt = fcff / cum; pv += pvt;
+      rows.push({ t, g, rev: Rn, m, ebit, tax, nopat, reinv, fcff, wacc: w, df: 1 / cum, pv: pvt });
+      R = Rn;
+    }
+    const last = rows[9], rocT = v.rocT || waccT;
+    const nopat11 = last.rev * (1 + v.gT) * v.mT * (1 - v.taxMarg), reinvRate = v.gT / rocT;
+    const fcff11 = nopat11 * (1 - reinvRate), tv = fcff11 / (waccT - v.gT), pvTV = tv / cum;
+    const ops = pv + pvTV, equity = ops + v.cash - v.debt, perShare = equity / v.shares;
+    return { cc, waccT, rows, tv, pvTV, pvFCFF: pv, ops, equity, perShare, upside: perShare / v.price - 1, tvShare: pvTV / ops, reinvRateT: reinvRate };
+  }
+  function excessReturn(v) {
+    // v: bvps, roe1 (th 1–5), roeT, g1, gT, rf, beta, erp, crp, price
+    const coe = v.rf + v.beta * (v.erp + v.crp), rows = []; let bv = v.bvps, cum = 1, pv = 0;
+    for (let t = 1; t <= 10; t++) {
+      const roe = t <= 5 ? v.roe1 : v.roe1 + ((v.roeT - v.roe1) * (t - 5)) / 5;
+      const g = t <= 5 ? v.g1 : v.g1 - ((v.g1 - v.gT) * (t - 5)) / 5;
+      const ni = bv * roe, exc = (roe - coe) * bv;
+      cum *= 1 + coe; const pvt = exc / cum; pv += pvt;
+      const payout = Math.max(0, 1 - g / roe);
+      rows.push({ t, roe, g, bv, ni, exc, payout, pv: pvt });
+      bv *= 1 + g;
+    }
+    const tv = ((v.roeT - coe) * bv) / (coe - v.gT), pvTV = tv / cum;
+    const perShare = v.bvps + pv + pvTV;
+    return { coe, rows, pvExcess: pv, pvTV, perShare, upside: perShare / v.price - 1, justifiedPB: perShare / v.bvps, stablePB: (v.roeT - v.gT) / (coe - v.gT) };
+  }
+  // reverse: cari nilai satu input yang membuat nilai = harga pasar (bisection)
+  function solveImplied(fn, v, key, lo, hi) {
+    const f = (x) => fn({ ...v, [key]: x }).perShare - v.price;
+    let a = lo, b = hi, fa = f(a), fb = f(b);
+    if (!isFinite(fa) || !isFinite(fb) || fa * fb > 0) return NaN;
+    for (let i = 0; i < 80; i++) { const m = (a + b) / 2, fm = f(m); if (fa * fm <= 0) { b = m; fb = fm; } else { a = m; fa = fm; } }
+    return (a + b) / 2;
+  }
+  // simulasi input (Damodaran: "simulations in valuation")
+  function valuationMC(kind, v, n = 5000, seed = 5) {
+    const rng = makeRng(seed), out = [];
+    for (let i = 0; i < n; i++) {
+      const w = { ...v };
+      if (kind === "fcff") {
+        w.g1 = v.g1 + v.sdG * rng.normal(); w.mT = Math.max(0.005, v.mT + v.sdM * rng.normal());
+        w.s2c = v.s2c * Math.exp(0.2 * rng.normal()); w.erp = Math.max(0.01, v.erp + 0.005 * rng.normal()); w.beta = Math.max(0.3, v.beta + 0.15 * rng.normal());
+        const r = dcfFCFF(w); if (isFinite(r.perShare) && r.waccT > w.gT) out.push(r.perShare);
+      } else {
+        w.roe1 = v.roe1 + v.sdR * rng.normal(); w.roeT = v.roeT + v.sdR * 0.7 * rng.normal(); w.g1 = v.g1 + v.sdG * rng.normal();
+        w.erp = Math.max(0.01, v.erp + 0.005 * rng.normal()); w.beta = Math.max(0.3, v.beta + 0.15 * rng.normal());
+        const r = excessReturn(w); if (isFinite(r.perShare) && r.coe > w.gT) out.push(r.perShare);
+      }
+    }
+    const s = Float64Array.from(out).sort();
+    return { n: s.length, q: [0.05, 0.25, 0.5, 0.75, 0.95].map((p) => quantileSorted(s, p)), probUnder: out.filter((x) => x > v.price).length / s.length, hist: histogram(Array.from(s), 40) };
+  }
+
+  const api = { dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

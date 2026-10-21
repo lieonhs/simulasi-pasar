@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simulasi Pasar</title>
-<meta name="description" content="Simulasi Monte Carlo harga saham, kripto, emas, FX, dan yield obligasi dengan GARCH, jump-diffusion, bootstrap, Vasicek/CIR, plus backtest kalibrasi.">
+<meta name="description" content="Simulasi Monte Carlo harga saham, kripto, emas, FX, dan yield obligasi: prediksi per periode, rencana jual per lot, perbandingan dengan indeks, dan uji keyakinan.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <header class="top">
@@ -19,15 +20,30 @@
 </header>
 
 <main class="wrap">
+  <details class="card guide">
+    <summary>Panduan singkat — baca dulu kalau baru pertama kali</summary>
+    <ol>
+      <li><b>Cari aset</b> dengan kode atau nama: <code>BBCA.JK</code> (saham IDX selalu pakai <code>.JK</code>), <code>BTC-USD</code>, <code>^JKSE</code> (IHSG), <code>GC=F</code> (emas), <code>IDR=X</code> (USD/IDR). Ketik nama seperti “telkom” atau “emas” lalu pilih dari saran.</li>
+      <li><b>Horizon</b> = berapa periode ke depan yang disimulasikan. Saham: hari bursa (21 ≈ 1 bulan). Kripto: hari kalender (30 ≈ 1 bulan).</li>
+      <li>Program membuat ribuan “masa depan” acak yang sifat naik-turunnya mengikuti sejarah aset itu. Hasilnya <b>rentang kemungkinan dan peluangnya</b>, bukan satu angka pasti.</li>
+      <li>Lihat bagian <b>Seberapa bisa dipercaya?</b> dulu. Pakai model dengan nilai “Baik”; model “Buruk” sebaiknya diabaikan.</li>
+      <li>Pakai <b>Rencana jual per lot</b> untuk melihat peluang tiap target harga tercapai dan hasil bersih setelah biaya broker.</li>
+      <li>Pakai <b>Perbandingan</b> untuk melihat aset ini terhadap IHSG/indeks lain: lebih berisiko atau tidak, ikut pasar atau tidak.</li>
+      <li><b>Analisis kuantitatif</b>: Sharpe, alpha, beta, Kelly (gaya hedge fund), uji ARDL apakah return bisa ditebak, dan harga opsi Black-Scholes/binomial.</li>
+      <li><b>Valuasi intrinsik</b> (metode Damodaran) untuk saham: berapa nilai wajarnya menurut arus kas dan berapa pertumbuhan yang sudah “dihargai” pasar.</li>
+      <li><b>Berita</b>: judul, ringkasan, sentimen, dan seberapa besar harga bereaksi di hari berita (di luar pergerakan indeks).</li>
+    </ol>
+  </details>
+
   <section class="card controls">
     <div class="seg" role="tablist">
       <button class="seg-btn active" data-mode="price">Harga aset</button>
       <button class="seg-btn" data-mode="bond">Yield obligasi</button>
     </div>
 
-    <label class="lbl" for="q">Cari ticker</label>
+    <label class="lbl" for="q">Cari ticker atau nama</label>
     <div class="search">
-      <input id="q" autocomplete="off" spellcheck="false" placeholder="mis. BTC-USD, BBCA.JK, emas, telkom">
+      <input id="q" autocomplete="off" spellcheck="false" placeholder="mis. BBCA.JK, bitcoin, emas, telkom">
       <ul id="sugg" class="sugg" hidden></ul>
     </div>
     <div id="chips" class="chips"></div>
@@ -52,6 +68,7 @@
         <label><input type="checkbox" value="garch" checked> GARCH-t</label>
         <label><input type="checkbox" value="jump" checked> Jump</label>
         <label><input type="checkbox" value="bootstrap" checked> Bootstrap</label>
+        <label><input type="checkbox" value="arch"> ARCH-t</label>
       </div>
     </div>
 
@@ -62,6 +79,7 @@
 
     <button id="run" class="run">Jalankan simulasi</button>
     <div id="status" class="status" aria-live="polite"></div>
+    <div id="didYouMean" class="dym" hidden></div>
     <div class="bar"><div id="barFill"></div></div>
   </section>
 
@@ -76,6 +94,36 @@
 
     <div id="kpis" class="kpis"></div>
 
+    <div class="card" id="candleCard">
+      <div class="card-h">
+        <h2>Pergerakan harga</h2>
+        <div class="tabs" id="tfTabs"><button class="tab active" data-tf="D">Harian</button><button class="tab" data-tf="W">Mingguan</button><button class="tab" data-tf="M">Bulanan</button></div>
+      </div>
+      <div class="toolbar">
+        <div class="tabs" id="rgTabs"><button class="tab" data-rg="90">3B</button><button class="tab active" data-rg="182">6B</button><button class="tab" data-rg="365">1T</button><button class="tab" data-rg="1095">3T</button><button class="tab" data-rg="0">Semua</button></div>
+        <div class="checks small" id="indChecks">
+          <label><input type="checkbox" value="ma20" checked> MA20</label>
+          <label><input type="checkbox" value="ma50" checked> MA50</label>
+          <label><input type="checkbox" value="bb"> Bollinger</label>
+          <label><input type="checkbox" value="vol" checked> Volume</label>
+          <label><input type="checkbox" value="rsi" checked> RSI</label>
+        </div>
+      </div>
+      <div id="ohlcLegend" class="ohlc-legend"></div>
+      <div id="candle" class="candle-box"></div>
+      <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
+      <div id="techStats" class="tech-stats"></div>
+      <p id="techText" class="lead small-lead"></p>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Candle</b>: badan hijau = harga tutup lebih tinggi dari harga buka (naik), merah = turun. Sumbu tipis di atas/bawah menunjukkan harga tertinggi dan terendah di periode itu.</li>
+        <li><b>MA20 / MA50</b>: rata-rata harga 20 dan 50 periode terakhir. Harga di atas keduanya = tren sedang naik; di bawah = tren turun. MA20 memotong MA50 ke atas sering disebut <i>golden cross</i>.</li>
+        <li><b>Bollinger Band</b>: MA20 ± 2 standar deviasi. Pita menyempit = pasar tenang dan sering mendahului gerakan besar; harga menembus pita = gerakan kuat.</li>
+        <li><b>Volume</b>: berapa banyak yang diperdagangkan. Kenaikan harga dengan volume besar lebih meyakinkan daripada dengan volume tipis.</li>
+        <li><b>RSI 14</b>: di atas 70 = sudah naik sangat cepat (jenuh beli), di bawah 30 = turun sangat cepat (jenuh jual). Ini bukan sinyal pasti berbalik; di tren kuat RSI bisa bertahan di atas 70 lama.</li>
+        <li>Semua indikator ini <b>menggambarkan masa lalu</b>. Daya prediksinya lemah jika dipakai sendirian; gabungkan dengan bagian simulasi dan uji keyakinan.</li></ul>
+      </details>
+    </div>
+
     <div class="card">
       <div class="card-h">
         <h2 id="fanTitle">Proyeksi</h2>
@@ -83,11 +131,159 @@
       </div>
       <div class="chart-box tall"><canvas id="fan"></canvas></div>
       <div class="legend-note">Pita gelap = 50% kemungkinan · pita terang = 90% · garis = median<label class="mini"><input type="checkbox" id="showPaths"> tampilkan 25 path contoh</label></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <p>Garis hitam adalah harga historis. Area biru adalah kemungkinan harga ke depan menurut model yang dipilih di tab kanan atas.</p>
+        <ul><li><b>Garis biru (median)</b>: separuh simulasi berakhir di atas garis ini, separuh di bawahnya. Ini bukan “harga yang akan terjadi”.</li>
+        <li><b>Pita gelap</b>: 50% simulasi ada di dalamnya. <b>Pita terang</b>: 90%. Makin lebar pita, makin tidak pasti.</li>
+        <li>Pita yang melebar seperti terompet itu normal: makin jauh ke depan, makin banyak yang bisa terjadi.</li>
+        <li>Tab yang terpilih otomatis adalah model yang paling lolos uji keyakinan.</li></ul>
+      </details>
     </div>
 
+    <div class="card price-only" id="predCard">
+      <h2>Prediksi per periode</h2>
+      <div class="table-wrap"><table id="predTable"></table></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Median</b> & <b>%</b>: titik tengah simulasi dan perubahannya dari harga sekarang.</li>
+        <li><b>Rentang 80%</b>: 8 dari 10 simulasi berakhir di antara dua angka ini. 1 dari 10 lebih rendah, 1 dari 10 lebih tinggi.</li>
+        <li><b>Peluang naik</b>: persentase simulasi yang harganya di atas harga sekarang pada tanggal itu. Angka di sekitar 50% berarti model tidak melihat arah, hanya besarnya risiko. Ini wajar dan jujur, karena arah harga memang hampir tidak bisa diprediksi.</li>
+        <li>Model yang dipakai mengikuti tab yang terpilih di grafik proyeksi.</li></ul>
+      </details>
+    </div>
+
+    <div class="card price-only" id="planCard">
+      <h2>Rencana posisi & jual per lot</h2>
+      <div class="grid">
+        <div><label class="lbl" for="pEntry">Harga beli</label><input id="pEntry" type="number" step="any"></div>
+        <div><label class="lbl" for="pLots" id="pLotsLbl">Jumlah lot</label><input id="pLots" type="number" min="1" value="10"></div>
+        <div><label class="lbl" for="pUnit" id="pUnitLbl">Lembar per lot</label><input id="pUnit" type="number" min="0.00000001" step="any" value="100"></div>
+        <div><label class="lbl" for="pFeeB">Fee beli (%)</label><input id="pFeeB" type="number" step="0.01" value="0.15"></div>
+        <div><label class="lbl" for="pFeeS">Fee jual (%)</label><input id="pFeeS" type="number" step="0.01" value="0.25"></div>
+      </div>
+      <div class="row">
+        <div class="seg small" id="pModeSeg"><button class="seg-btn active" data-pm="auto">Target otomatis</button><button class="seg-btn" data-pm="manual">Atur sendiri</button></div>
+      </div>
+      <div class="table-wrap"><table id="planInput" class="plan-in"></table></div>
+      <button id="planRun" class="run alt">Hitung rencana</button>
+      <div id="planOut"></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Target otomatis</b> memilih 3 harga jual yang peluang tersentuhnya ±50%, ±30%, dan ±15% dalam horizon, dengan lot dibagi 40/30/30. Stop loss dipilih di level yang peluang tersentuhnya ±20%. Ini titik awal, bukan level optimal; ubah lewat “Atur sendiri”.</li>
+        <li><b>Peluang tersentuh</b>: persentase simulasi yang harga penutupannya pernah mencapai level itu. <b>Hari ke-</b>: median kapan level itu pertama kali tercapai.</li>
+        <li>Simulasi berjalan hari per hari: target dijual saat tercapai; jika stop loss tersentuh lebih dulu, semua sisa lot dijual. Lot yang belum terjual di akhir horizon dinilai di harga akhir.</li>
+        <li><b>Rencana vs tahan</b>: jual bertahap biasanya menaikkan peluang untung tapi memotong potensi naik besar. Lihat P95 dan rata-rata untuk melihat harga dari trade-off ini.</li>
+        <li><b>Laba/rugi bersih</b> sudah dipotong fee beli dan jual (default 0,15% / 0,25%, sesuaikan dengan broker kamu).</li></ul>
+      </details>
+    </div>
+
+    <div class="card price-only" id="cmpCard">
+      <h2>Perbandingan dengan indeks / aset lain</h2>
+      <label class="lbl" for="cmpQ">Bandingkan dengan (pisahkan dengan koma, maks 4)</label>
+      <div class="cmp-row"><input id="cmpQ" spellcheck="false" placeholder="^JKSE, BMRI.JK"><button id="cmpRun" class="btn">Bandingkan</button></div>
+      <div id="cmpChips" class="chips"></div>
+      <div id="cmpStatus" class="status"></div>
+      <div id="cmpOut" hidden>
+        <div class="chart-box"><canvas id="cmpChart"></canvas></div>
+        <div class="table-wrap"><table id="cmpTable"></table></div>
+      </div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Grafik</b>: semua aset dimulai dari 100 setahun lalu. Angka 120 berarti naik 20% dalam setahun.</li>
+        <li><b>Beta</b> (terhadap indeks pertama di daftar): 1,2 berarti saat indeks naik/turun 1%, aset ini rata-rata bergerak 1,2%. Di bawah 1 berarti lebih tenang dari pasar.</li>
+        <li><b>Korelasi</b>: seberapa searah dengan indeks (1 = selalu searah, 0 = tidak berhubungan). Korelasi rendah berarti bagus untuk diversifikasi.</li>
+        <li><b>Proyeksi</b>: hasil simulasi untuk horizon dan model yang sama, sehingga risikonya bisa dibandingkan apel ke apel.</li>
+        <li>Return masa lalu tidak menjamin masa depan; pakai ini untuk membandingkan <b>risiko</b>, bukan memilih “pemenang”.</li></ul>
+      </details>
+    </div>
+
+
+    <div class="card price-only" id="quantCard">
+      <h2>Analisis kuantitatif <span class="tag">gaya hedge fund</span></h2>
+      <div class="grid"><div><label class="lbl" for="rf">Risk-free rate (%/th)</label><input id="rf" type="number" step="0.05"></div><div><label class="lbl">Benchmark</label><div id="qBench" class="meta pad"></div></div></div>
+      <div id="qStatus" class="status"></div>
+
+      <div class="subh">1 · Kinerja tersesuaikan risiko</div>
+      <div class="table-wrap"><table id="riskTable"></table></div>
+      <p id="riskText" class="lead small-lead"></p>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Sharpe</b>: return di atas bunga bebas risiko per unit volatilitas. &gt;1 bagus, &lt;0 = kalah dari deposito/SBN. <b>Sortino</b> sama, tapi hanya menghukum volatilitas turun.</li>
+        <li><b>Calmar</b>: CAGR dibagi drawdown terburuk; seberapa sakit untuk mendapat return itu.</li>
+        <li><b>Alpha (Jensen)</b>: return tahunan di luar yang “dijelaskan” beta pasar. <b>Information ratio</b>: konsistensi mengalahkan benchmark.</li>
+        <li><b>Up / down capture</b>: saat indeks naik, ikut naik berapa %; saat turun, ikut turun berapa %. Ideal: up &gt; 100%, down &lt; 100%.</li>
+        <li><b>Kelly</b>: porsi modal yang secara teori memaksimalkan pertumbuhan jika return & volatilitas historis berulang. Hedge fund biasanya memakai ≤ ½ Kelly karena estimasinya sangat sensitif; angka negatif berarti “jangan pegang posisi beli”.</li></ul>
+      </details>
+
+      <div class="subh">2 · ARDL — apakah return bisa ditebak dari masa lalu?</div>
+      <div id="ardlOut"></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li>Model: return mingguan aset = konstanta + lag return-nya sendiri + lag return benchmark. Panjang lag (p, q) dipilih otomatis dengan AIC.</li>
+        <li><b>Model penjelas</b> memakai return benchmark minggu yang sama (t). Koefisien itu ≈ beta mingguan: menjelaskan, tapi <i>tidak bisa dipakai meramal</i> karena return indeks minggu depan belum diketahui.</li>
+        <li><b>Model prediktif</b> hanya memakai lag (t-1, t-2, …). Lihat <b>R² out-of-sample</b>: &gt; 0 berarti mengalahkan tebakan “rata-rata historis” di data yang tidak dipakai untuk estimasi. Di pasar likuid angka ini hampir selalu ≈ 0 atau negatif. Itu temuan yang jujur, bukan error.</li>
+        <li><b>Akurasi arah</b> perlu dibandingkan dengan “selalu tebak naik” (persentase minggu naik). Selisih beberapa poin saja masih bisa kebetulan.</li>
+        <li>Untuk uji kointegrasi level (bounds test Pesaran), pakai data level & software ekonometrik; di sini fokus pada daya ramal jangka pendek.</li></ul>
+      </details>
+
+      <div class="subh">3 · Opsi: Black-Scholes & binomial</div>
+      <div class="grid">
+        <div><label class="lbl" for="oK">Strike</label><input id="oK" type="number" step="any"></div>
+        <div><label class="lbl" for="oT">Jatuh tempo (hari kalender)</label><input id="oT" type="number" min="1" value="30"></div>
+        <div><label class="lbl" for="oVolSrc">Volatilitas</label><select id="oVolSrc"><option value="model">Model terpilih (horizon)</option><option value="hist">Historis</option><option value="custom">Custom</option></select></div>
+        <div id="oVolWrap" hidden><label class="lbl" for="oVol">Vol (%/th)</label><input id="oVol" type="number" step="0.5" value="30"></div>
+        <div><label class="lbl" for="oQ">Dividend yield (%/th)</label><input id="oQ" type="number" step="0.1" value="0"></div>
+      </div>
+      <div id="optOut"></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Black-Scholes</b> dan <b>binomial (Cox-Ross-Rubinstein)</b> menghitung <i>harga wajar opsi</i>, bukan meramal harga saham. Binomial juga menghitung opsi gaya Amerika (bisa dieksekusi lebih awal).</li>
+        <li><b>Peluang risk-neutral</b> (N(d2)) adalah peluang “versi pasar opsi” yang berasumsi saham tumbuh sebesar bunga bebas risiko. <b>Peluang simulasi</b> berasal dari model Monte Carlo yang dipilih. Selisih keduanya menunjukkan perbedaan asumsi, bukan peluang profit.</li>
+        <li><b>Delta</b>: perubahan harga opsi per Rp1/1 unit perubahan saham (juga jumlah saham untuk hedging per opsi). <b>Vega</b>: perubahan per 1% vol. <b>Theta</b>: penyusutan nilai per hari.</li>
+        <li>Opsi saham di BEI sangat terbatas; pakai ini sebagai alat analisis risiko atau untuk aset yang punya pasar opsi (saham AS, BTC).</li></ul>
+      </details>
+    </div>
+
+
+    <div class="card price-only" id="valCard">
+      <h2>Valuasi intrinsik <span class="tag">metode Aswath Damodaran</span></h2>
+      <div id="valStatus" class="status"></div>
+      <div id="valBody" hidden>
+        <div class="row"><div class="seg small" id="valKind"><button class="seg-btn" data-k="fcff">DCF (FCFF)</button><button class="seg-btn" data-k="bank">Bank / keuangan (excess return)</button></div></div>
+        <div class="subh">Cerita → angka (ubah sesuai pandanganmu)</div>
+        <div class="grid" id="valInputs"></div>
+        <div class="subh">Biaya modal</div>
+        <div class="grid" id="valRisk"></div>
+        <button id="valRun" class="run alt">Hitung nilai</button>
+        <div id="valOut"></div>
+      </div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li>Damodaran: nilai perusahaan = arus kas masa depan yang didiskonto dengan risikonya. Setiap angka harus punya <b>cerita</b> (“TLKM tumbuh 5% karena data center”) dan cerita harus masuk akal.</li>
+        <li><b>Biaya ekuitas</b> = risk-free + beta × (ERP pasar matang + <b>country risk premium</b> Indonesia). Risk-free rupiah = yield SBN 10 tahun dikurangi default spread Indonesia, karena SBN sendiri tidak bebas risiko.</li>
+        <li><b>DCF FCFF</b>: pendapatan tumbuh g selama 5 tahun lalu turun ke g terminal; margin bergerak ke margin target; reinvestasi = tambahan pendapatan ÷ <b>sales-to-capital</b>. Arus kas = laba operasi setelah pajak − reinvestasi.</li>
+        <li><b>Bank</b> tidak dinilai dengan FCFF (utang adalah bahan baku). Dipakai <b>excess return</b>: nilai = book value + nilai kini dari (ROE − biaya ekuitas) × book value. ROE di atas biaya ekuitas → P/BV wajar &gt; 1.</li>
+        <li><b>Reverse DCF</b>: pertumbuhan/ROE yang <i>sudah diasumsikan</i> oleh harga pasar sekarang. Kalau angkanya tidak masuk akal (terlalu tinggi), harga terlalu optimis.</li>
+        <li><b>Simulasi</b>: input utama diacak sesuai ketidakpastiannya, menghasilkan rentang nilai dan peluang harga di bawah nilai intrinsik. Rentang ini hanya selebar ketidakpastian yang kamu masukkan.</li>
+        <li>Terminal growth tidak boleh melebihi risk-free rate (ekonomi tidak bisa tumbuh lebih cepat dari itu selamanya). Kalau porsi terminal value &gt; 75%, nilainya sangat bergantung pada asumsi jangka panjang.</li>
+        <li>BTC, emas, dan indeks <b>tidak punya arus kas</b>, jadi tidak bisa divaluasi seperti ini. Kata Damodaran, yang bisa dilakukan hanya <i>pricing</i>, bukan <i>valuing</i>.</li></ul>
+      </details>
+    </div>
+    <div class="card price-only" id="newsCard">
+      <h2>Berita & dampaknya ke harga</h2>
+      <div id="newsStatus" class="status"></div>
+      <div id="newsSummary"></div>
+      <div class="row"><div class="tabs" id="newsFilter"><button class="tab active" data-f="all">Semua</button><button class="tab" data-f="big">Reaksi signifikan</button><button class="tab" data-f="pos">Sentimen +</button><button class="tab" data-f="neg">Sentimen −</button></div></div>
+      <div id="newsList" class="news-list"></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>Reaksi abnormal</b> = return saham di hari berita dikurangi return yang “seharusnya” terjadi karena pergerakan indeks (alpha + beta × return indeks). Inilah perkiraan <b>pengaruh %</b> berita. Berita yang terbit setelah bursa tutup dihitung ke hari bursa berikutnya.</li>
+        <li><b>3 hari</b> = jumlah reaksi abnormal hari itu + 2 hari bursa berikutnya (berita sering dicerna bertahap).</li>
+        <li><b>Signifikan</b> jika reaksinya lebih dari ±1,96 standar deviasi harian biasa (peluang < 5% terjadi kebetulan pada hari tanpa berita).</li>
+        <li><b>Sentimen judul</b> dihitung dari kamus kata (naik, laba, buyback vs turun, rugi, gugatan, dst.). Ini kasar; selalu baca beritanya sendiri.</li>
+        <li><b>Penting:</b> jika ada beberapa berita di hari yang sama, reaksinya sama untuk semua. Pengaruh ini <i>korelasi waktu</i>, bukan bukti bahwa berita itu penyebabnya.</li></ul>
+      </details>
+    </div>
     <div class="card">
       <h2>Distribusi di akhir horizon</h2>
       <div class="table-wrap"><table id="sumTable"></table></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>P5 / P95</b>: hanya 5% simulasi yang lebih rendah dari P5 dan 5% yang lebih tinggi dari P95. Anggap ini skenario buruk dan bagus yang masih realistis.</li>
+        <li><b>VaR 95%</b>: dalam 95 dari 100 kasus, kerugian tidak lebih dari angka ini. <b>CVaR 95%</b>: rata-rata kerugian pada 5 kasus terburuk. Ini lebih jujur soal crash.</li>
+        <li>Kalau antar-model angkanya jauh berbeda, ketidakpastian modelnya besar. Percayai model yang lolos uji keyakinan.</li></ul>
+      </details>
     </div>
 
     <div class="card" id="confCard">
@@ -101,11 +297,20 @@
     <div class="card">
       <h2 id="histTitle">Histogram nilai akhir</h2>
       <div class="chart-box"><canvas id="hist"></canvas></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <p>Tinggi batang = berapa banyak simulasi yang berakhir di harga itu. Merah = di bawah harga sekarang, biru = di atas. Ekor kiri yang panjang berarti risiko turun tajam lebih besar daripada peluang naik tajam.</p>
+      </details>
     </div>
 
     <div class="card">
       <h2>Parameter model</h2>
       <div id="params" class="params"></div>
+      <details class="howto"><summary>Cara baca</summary>
+        <ul><li><b>GARCH persistence</b> mendekati 1 = guncangan volatilitas bertahan lama. <b>Half-life</b> = berapa hari sampai guncangan tinggal separuh.</li>
+        <li><b>nu (ekor)</b> kecil (3–6) = sering terjadi pergerakan ekstrem. Di atas 30 hampir normal.</li>
+        <li><b>Vol saat ini vs jangka panjang</b>: kalau vol saat ini lebih tinggi, pasar sedang bergejolak dan rentang GARCH lebih lebar dari GBM.</li>
+        <li><b>Jump per tahun</b>: berapa kali rata-rata terjadi lompatan harga di luar 3 standar deviasi.</li></ul>
+      </details>
     </div>
 
     <details class="card caveats" open>

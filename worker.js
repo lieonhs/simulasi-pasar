@@ -1,11 +1,26 @@
 importScripts("engine.js");
 self.onmessage = (e) => {
-  const { id, cfg } = e.data;
+  const { id, type, cfg } = e.data;
   const progress = (msg, frac) => self.postMessage({ id, type: "progress", msg, frac });
   try {
-    const res = cfg.mode === "bond" ? MCEngine.runBond(cfg, progress) : MCEngine.runPrice(cfg, progress);
+    let res;
+    if (type === "plan") res = MCEngine.evalPlan(cfg);
+    else if (type === "probEnd") res = MCEngine.probEnd(cfg.model, cfg.K, cfg.r, cfg.T);
+    else if (type === "ardl") res = MCEngine.ardl(cfg.a, cfg.xs);
+    else if (type === "compare") {
+      // cfg.series: [{dates, values, type, name}], cfg.benchIdx, cfg.sim: {days, sims, models, drift, customDrift}
+      const stats = MCEngine.compareStats(cfg.series, cfg.benchIdx);
+      const sims = cfg.series.map((s, i) => {
+        progress(`Simulasi pembanding ${i + 1}/${cfg.series.length}…`, i / cfg.series.length);
+        const r = MCEngine.runPrice({ ...cfg.sim, prices: s.values, dates: s.dates, type: s.type, backtest: false, keepPaths: false, seed: 101 + i });
+        const out = {};
+        for (const [k, m] of Object.entries(r.models)) out[k] = { label: m.label, summary: m.summary, probUp: m.probUp[m.probUp.length - 1] };
+        return { s0: r.s0, models: out };
+      });
+      res = { stats, sims };
+    } else res = cfg.mode === "bond" ? MCEngine.runBond(cfg, progress) : MCEngine.runPrice(cfg, progress);
     self.postMessage({ id, type: "done", res });
   } catch (err) {
-    self.postMessage({ id, type: "error", msg: String(err && err.message || err) });
+    self.postMessage({ id, type: "error", msg: String((err && err.message) || err) });
   }
 };

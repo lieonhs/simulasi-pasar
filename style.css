@@ -92,3 +92,49 @@ td { font-family: var(--mono); }
 .caveats li { margin-bottom: 6px; }
 .foot { color: var(--muted); font-size: 12px; text-align: center; padding: 10px 0 30px; }
 @media (max-width: 520px) { .chart-box.tall { height: 270px; } .last { font-size: 20px; } }
+.guide summary, .howto summary { cursor: pointer; font-weight: 600; }
+.guide ol { margin: 10px 0 0; padding-left: 20px; } .guide li { margin-bottom: 6px; }
+code { font-family: var(--mono); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+.howto { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; font-size: 13.5px; }
+.howto summary { font-size: 13px; color: var(--accent); }
+.howto ul { margin: 8px 0 0; padding-left: 18px; } .howto li { margin-bottom: 5px; } .howto p { margin: 8px 0 0; }
+.sugg .hdr { font: 600 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px 4px; cursor: default; }
+.sugg .hdr:hover { background: none; }
+.sugg .badge { font: 500 10.5px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+.sugg .left { display: flex; align-items: center; min-width: 0; }
+.dym { font-size: 13px; margin-top: 6px; } .dym button { margin: 4px 6px 0 0; }
+.btn { font: 600 14px var(--sans); background: var(--ink); color: var(--card); border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; white-space: nowrap; }
+.run.alt { background: var(--ink); color: var(--card); }
+.cmp-row { display: flex; gap: 8px; }
+.seg.small { display: inline-grid; } .seg.small .seg-btn { font-size: 13px; padding: 7px 12px; }
+.plan-in input { padding: 7px 9px; font-family: var(--mono); font-size: 13px; min-width: 90px; }
+.plan-in input[readonly] { opacity: .75; }
+.plan-in td { font-family: var(--sans); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.subh { font-size: 14px; margin: 16px 0 8px; font-weight: 600; }
+.verdict { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; }
+.toolbar { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.checks.small label { font-size: 12.5px; }
+.candle-box { height: 340px; position: relative; }
+.rsi-box { height: 110px; } .rsi-lbl { font: 500 11px var(--mono); color: var(--muted); margin-top: 6px; }
+.ohlc-legend { font: 12px var(--mono); color: var(--muted); min-height: 18px; margin-bottom: 4px; }
+.tech-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 12px; }
+.tech-stats div { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+.tech-stats b { display: block; font: 600 14px var(--mono); color: var(--ink); }
+.small-lead { font-size: 14px; margin-top: 12px; }
+@media (max-width: 520px) { .candle-box { height: 280px; } }
+.pad { padding: 10px 0; }
+.news-list { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.news { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.news a { color: var(--ink); text-decoration: none; font-weight: 600; line-height: 1.35; }
+.news a:hover { color: var(--accent); }
+.news .nm { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.news .ns { font-size: 13.5px; margin-top: 6px; color: var(--ink); opacity: .85; }
+.news .imp { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pill { font: 600 11.5px var(--mono); border-radius: 99px; padding: 3px 9px; border: 1px solid var(--line); }
+.pill.pos { color: var(--good); border-color: var(--good); } .pill.neg { color: var(--bad); border-color: var(--bad); } .pill.sig { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.sub-d { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.stars { color: var(--accent); }
+.kpis.compact { margin: 10px 0 0; } .kpis.compact .v { font-size: 16px; }
+.chart-box.short { height: 160px; margin-top: 10px; }
+td:first-child { white-space: normal; min-width: 110px; max-width: 190px; }
