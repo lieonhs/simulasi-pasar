@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261021172156">
+<link rel="stylesheet" href="style.css?v=20261021172847">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -38,8 +38,10 @@
 </header>
 
 <div class="topbar">
+<div id="fnPanel" class="fn-panel" hidden tabindex="-1"><div class="fn-box" role="dialog" aria-modal="true"><div class="fn-head"><span id="fnTitle"></span><span class="note">Esc = tutup</span><button class="cmd-btn" id="fnClose">✕</button></div><div id="fnBody" class="fn-body"></div></div></div>
+<div id="toasts" class="toasts"></div>
 <div class="tape" id="tape"><div class="tape-inner" id="tapeInner"><span class="tape-item">MEMUAT HARGA…</span></div></div>
-<div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="KETIK TICKER / NAMA lalu ENTER  ⟨GO⟩"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><span class="cmd-user" id="cmdUser"></span><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
+<div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><span class="cmd-user" id="cmdUser"></span><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
 <nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
@@ -693,8 +695,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261021172156";</script>
-<script src="engine.js?v=20261021172156"></script>
-<script src="app.js?v=20261021172156"></script>
+<script>window.APP_V = "20261021172847";</script>
+<script src="engine.js?v=20261021172847"></script>
+<script src="app.js?v=20261021172847"></script>
 </body>
 </html>

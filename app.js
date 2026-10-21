@@ -287,7 +287,7 @@
     const pad = (arr, start) => new Array(histN - 1).fill(null).concat([start], arr);
     const s0 = bond ? res.y0 * 100 : res.s0;
     const [p5, , p25, p50, p75, , p95] = m.fan;
-    const acc = css("--accent"), soft = css("--accent-soft"), mid = css("--accent-mid"), ink = css("--hist"), grid = css("--line"), muted = css("--muted");
+    const acc = css("--accent"), soft = css("--accent-soft"), mid = css("--accent-mid"), ink = css("--hist"), grid = css("--grid"), muted = css("--muted");
     const ds = [
       { label: "Historis", data: hv.concat(new Array(days).fill(null)), borderColor: ink, borderWidth: 1.4, pointRadius: 0 },
       { label: "P5", data: pad(p5, s0), borderColor: "transparent", pointRadius: 0 },
@@ -296,7 +296,7 @@
       { label: "P75", data: pad(p75, s0), borderColor: "transparent", backgroundColor: mid, fill: "-1", pointRadius: 0 },
       { label: "Median", data: pad(p50, s0), borderColor: acc, borderWidth: 2, pointRadius: 0 },
     ];
-    if ($("showPaths").checked) m.samplePaths.forEach((p) => ds.push({ label: "path", data: pad(p, s0), borderColor: muted, borderWidth: 0.6, pointRadius: 0, _path: true }));
+    if ($("showPaths").checked) m.samplePaths.forEach((p) => ds.push({ label: "path", data: pad(p, s0), borderColor: muted + "aa", borderWidth: 0.9, pointRadius: 0, _path: true }));
     drawChart("fan", { type: "line", data: { labels, datasets: ds },
       options: baseOpts({ plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false, filter: (i) => !i.dataset._path && i.raw != null,
         callbacks: { label: (c) => `${c.dataset.label}: ${bond ? nf(2).format(c.raw) + "%" : fmtNum(c.raw)}` } } },
@@ -428,7 +428,7 @@
   }
   function renderCompare() {
     if (!state.cmp) return;
-    const { series, benchIdx, res } = state.cmp, grid = css("--line"), muted = css("--muted");
+    const { series, benchIdx, res } = state.cmp, grid = css("--grid"), muted = css("--muted");
     $("cmpOut").hidden = false;
     // grafik dirascale ke 100, 1 tahun terakhir, forward-fill tanggal libur yang berbeda
     const end = state.data.dates[state.data.dates.length - 1], st = new Date(end); st.setDate(st.getDate() - 365);
@@ -548,7 +548,7 @@
     const bars = intra ? state.intra.bars.map((b) => [b[0] + off, b[1], b[2], b[3], b[4], b[5]]) : aggregate(d.ohlc, state.tf), closes = bars.map((b) => b[4]);
     const tLabel = (t) => (typeof t === "number" ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") : t);
     const show = new Set([...document.querySelectorAll("#indChecks input:checked")].map((x) => x.value));
-    const ink = css("--ink"), muted = css("--muted"), line = css("--line"), card = css("--card"), up = css("--good"), dn = css("--bad");
+    const ink = css("--ink"), muted = css("--muted"), line = css("--grid"), card = css("--card"), up = css("--good"), dn = css("--bad");
     const opts = (h) => ({ height: h, layout: { background: { color: card }, textColor: muted, fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
       grid: { vertLines: { color: line }, horzLines: { color: line } }, rightPriceScale: { borderColor: line }, timeScale: { borderColor: line },
       crosshair: { mode: 0 }, localization: { priceFormatter: (p) => fmtNum(p), locale: "id-ID" } });
@@ -685,7 +685,7 @@
       return `<tr class="${k === best ? "best" : ""}"><td>${esc(m.label)}</td>${t.cov.map((c) => `<td>${pct(c.actual, 0)}</td>`).join("")}<td>${pct(t.breachRate, 0)}</td><td>${t.medianBias > 0 ? "+" : ""}${nf(2).format(t.medianBias)}</td>` +
         (res.mode === "price" ? `<td>${m.var1d ? pct(m.var1d.rate) : "–"}</td><td>${m.var1d ? nf(2).format(m.var1d.p) : "–"}</td>` : "") + `<td class="g-${t.grade}">${t.grade}</td></tr>`; }).join("");
     $("confTable").innerHTML = head + "<tbody>" + body + "</tbody>";
-    const grid = css("--line"), muted = css("--muted");
+    const grid = css("--grid"), muted = css("--muted");
     drawChart("calib", { type: "bar", data: { labels: ["50%", "80%", "90%", "95%"], datasets: [
       { label: "Target", data: [50, 80, 90, 95], backgroundColor: grid, borderWidth: 0 },
       ...entries.map(([, m], i) => ({ label: m.label, data: m.backtest.cov.map((c) => c.actual * 100), backgroundColor: COLORS[i % COLORS.length], borderWidth: 0 })) ] },
@@ -724,7 +724,9 @@
     $("caveats").innerHTML = L.map((x) => `<li>${x}</li>`).join("");
   }
 
-  function baseOpts(extra) { return Object.assign({ responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false } }, extra); }
+  function chartTheme() { if (typeof Chart === "undefined") return; Chart.defaults.color = css("--muted"); Chart.defaults.borderColor = css("--grid"); Chart.defaults.font.size = 12;
+    Chart.defaults.elements.point.borderColor = css("--ink"); Chart.defaults.elements.point.borderWidth = 1; }
+  function baseOpts(extra) { chartTheme(); return Object.assign({ responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false } }, extra); }
   function drawChart(id, cfg) { if (state.charts[id]) state.charts[id].destroy(); state.charts[id] = new Chart($(id), cfg); }
 
   // =====================================================================
@@ -1133,13 +1135,13 @@
       bad.map((r) => `<tr class="err-row"><td><b>${esc(r.symbol)}</b><div class="nm">${esc(r.error)}</div></td><td colspan="${cols.length}"></td></tr>`).join("") + "</tbody>";
   }
   function renderWlMap() {
-    const ok = wl.rows.filter((r) => !r.error && isFinite(r.m.ret1y)), grid = css("--line"), muted = css("--muted");
+    const ok = wl.rows.filter((r) => !r.error && isFinite(r.m.ret1y)), grid = css("--grid"), muted = css("--muted");
     const col = (t) => (t > 0 ? css("--good") : t < 0 ? css("--bad") : muted);
     const labels = { id: "lbl", afterDatasetsDraw(ch) { const ctx = ch.ctx; ctx.save(); ctx.font = "11px IBM Plex Mono, monospace"; ctx.fillStyle = css("--ink");
       ch.getDatasetMeta(0).data.forEach((pt, i) => ctx.fillText(ok[i].symbol.replace(/\.JK$/, ""), pt.x + 6, pt.y - 6)); ctx.restore(); } };
     if (state.charts.wlMap) state.charts.wlMap.destroy();
     state.charts.wlMap = new Chart($("wlMap"), { type: "scatter", plugins: [labels],
-      data: { datasets: [{ data: ok.map((r) => ({ x: r.m.horizonVol * 100, y: r.m.ret1y * 100 })), pointBackgroundColor: ok.map((r) => col(r.m.trend)), pointRadius: 6, pointHoverRadius: 8 }] },
+      data: { datasets: [{ data: ok.map((r) => ({ x: r.m.horizonVol * 100, y: r.m.ret1y * 100 })), pointBackgroundColor: ok.map((r) => col(r.m.trend)), pointBorderColor: css("--ink"), pointBorderWidth: 1.5, pointRadius: 7, pointHoverRadius: 9 }] },
       options: baseOpts({ interaction: { mode: "nearest", intersect: true }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${ok[c.dataIndex].symbol}: vol ${nf(1).format(c.raw.x)}%, 1T ${nf(1).format(c.raw.y)}%` } } },
         scales: { x: { title: { display: true, text: "Volatilitas tahunan ke depan (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } },
           y: { title: { display: true, text: "Return 1 tahun (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } } } }) });
@@ -1192,7 +1194,7 @@
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
     if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
   }
-  function openDetail(sym) { setView("detail"); setMode("price", true); pick(sym); $("horizon").value = wl.days || $("horizon").value; run(); scrollTo({ top: 0, behavior: "smooth" }); }
+  function openDetail(sym) { setView("detail"); setMode("price", true); pick(sym); $("horizon").value = wl.days || $("horizon").value; const p = run(); scrollTo({ top: 0, behavior: "smooth" }); return p; }
 
   // =====================================================================
   // HARGA LIVE (Binance WS untuk kripto, Yahoo WS + polling untuk lainnya)
@@ -1443,7 +1445,7 @@
   }
   const short = (s) => s.replace(/\.JK$/, "");
   function renderQuantLab() {
-    const R = ql.res, S = ql.syms, N = S.length, grid = css("--line"), muted = css("--muted");
+    const R = ql.res, S = ql.syms, N = S.length, grid = css("--grid"), muted = css("--muted");
     // korelasi
     const heat = (v) => { const a = Math.min(1, Math.abs(v)); return v >= 0 ? `rgba(239,83,80,${(a * 0.5).toFixed(2)})` : `rgba(74,163,223,${(a * 0.5).toFixed(2)})`; };
     $("qlCorr").innerHTML = `<thead><tr><th></th>${S.map((s) => `<th>${esc(short(s))}</th>`).join("")}</tr></thead><tbody>` +
@@ -1458,17 +1460,17 @@
       `<tr><td>Sharpe</td><td></td><td></td>${M.map(([k]) => `<td>${nf(2).format(R.res[k].sharpe)}</td>`).join("")}</tr></tbody>`;
     renderQuantMethod();
     // frontier
-    const pts = M.map(([k, l], i) => ({ label: l, data: [{ x: R.res[k].vol * 100, y: R.res[k].ret * 100 }], backgroundColor: COLORS[i % COLORS.length], pointRadius: k === ql.method ? 9 : 6, pointStyle: "rectRot" }));
+    const pts = M.map(([k, l], i) => ({ label: l, data: [{ x: R.res[k].vol * 100, y: R.res[k].ret * 100 }], backgroundColor: COLORS[i % COLORS.length], pointBorderColor: css("--ink"), pointBorderWidth: 1.5, pointRadius: k === ql.method ? 10 : 7, pointStyle: "rectRot" }));
     if (state.charts.qlFront) state.charts.qlFront.destroy();
     state.charts.qlFront = new Chart($("qlFront"), { type: "scatter", data: { datasets: [
-        { label: "Portofolio acak", data: R.cloud.map(([v, r]) => ({ x: v * 100, y: r * 100 })), backgroundColor: grid, pointRadius: 2 },
-        { label: "Aset tunggal", data: S.map((s, i) => ({ x: R.volAsset[i] * 100, y: R.muShr[i] * 100, s })), backgroundColor: muted, pointRadius: 4 }, ...pts] },
+        { label: "Portofolio acak", data: R.cloud.map(([v, r]) => ({ x: v * 100, y: r * 100 })), backgroundColor: muted + "66", pointRadius: 2.5, pointBorderWidth: 0 },
+        { label: "Aset tunggal", data: S.map((s, i) => ({ x: R.volAsset[i] * 100, y: R.muShr[i] * 100, s })), backgroundColor: css("--ink"), pointBorderColor: css("--bg"), pointBorderWidth: 1.5, pointRadius: 6 }, ...pts] },
       options: baseOpts({ interaction: { mode: "nearest", intersect: true }, plugins: { legend: { labels: { color: muted, boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: (c) => `${c.raw.s ? short(c.raw.s) : c.dataset.label}: vol ${nf(1).format(c.raw.x)}%, return ${nf(1).format(c.raw.y)}%` } } },
         scales: { x: { title: { display: true, text: "Volatilitas tahunan (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } }, y: { title: { display: true, text: "Return harapan/th (%, shrink)", color: muted }, ticks: { color: muted }, grid: { color: grid } } } }) });
   }
   async function renderQuantMethod() {
-    const R = ql.res, S = ql.syms, P = R.res[ql.method], muted = css("--muted"), grid = css("--line");
+    const R = ql.res, S = ql.syms, P = R.res[ql.method], muted = css("--muted"), grid = css("--grid");
     document.querySelectorAll("#qlMethod .tab").forEach((t) => t.classList.toggle("active", t.dataset.m === ql.method));
     // alokasi: hitung ulang lot untuk metode terpilih (cepat, di thread utama)
     const capital = parseFloat($("qlCapital").value) || 0; let spent = 0;
@@ -1521,7 +1523,7 @@
         ${row("CAGR", (x) => `<span class="${cls(x.cagr)}">${spct(x.cagr)}</span>`)}${row("Volatilitas", (x) => pct(x.vol))}${row("Sharpe", (x) => f2(x.sharpe))}${row("Max drawdown", (x) => pct(x.maxDD))}${row("Total return", (x) => spct(x.total, 0))}</tbody></table></div>
         <p class="note">Pemisah in/out-of-sample: ${b.splitDate}. Rata-rata eksposur ${pct(b.exposure, 0)} · turnover ${nf(1).format(b.turnoverYr)}×/th · ${b.tradeDays} hari ada transaksi · hari untung ${pct(b.hit, 0)} saat berposisi.</p>
         <div class="verdict">${verdict}</div><div class="chart-box tall"><canvas id="btEq"></canvas></div>`;
-      const step = Math.max(1, Math.floor(b.eqS.length / 500)), lab = b.dates.filter((_, i) => i % step === 0), muted = css("--muted"), grid = css("--line");
+      const step = Math.max(1, Math.floor(b.eqS.length / 500)), lab = b.dates.filter((_, i) => i % step === 0), muted = css("--muted"), grid = css("--grid");
       const splitIdx = lab.findIndex((d) => d >= b.splitDate);
       const splitLine = { id: "split", afterDatasetsDraw(ch) { if (splitIdx < 0) return; const x = ch.scales.x.getPixelForValue(splitIdx), ctx = ch.ctx; ctx.save(); ctx.strokeStyle = muted; ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(x, ch.chartArea.top); ctx.lineTo(x, ch.chartArea.bottom); ctx.stroke(); ctx.fillStyle = muted; ctx.font = "11px IBM Plex Sans"; ctx.fillText("out-of-sample →", x + 4, ch.chartArea.top + 12); ctx.restore(); } };
@@ -1571,7 +1573,7 @@
     $("finTable").innerHTML = `<thead><tr><th>Tahun buku</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr></thead><tbody>` +
       rows.map(([n, f]) => `<tr><td>${n}</td>${years.map((y, i) => `<td>${f(y, i)}</td>`).join("")}</tr>`).join("") + "</tbody>";
     $("finCard").hidden = false;
-    const muted = css("--muted"), grid = css("--line"), sc = cur === "IDR" ? 1e9 : 1e6;
+    const muted = css("--muted"), grid = css("--grid"), sc = cur === "IDR" ? 1e9 : 1e6;
     drawChart("finChart", { type: "bar", data: { labels: years, datasets: [
       { label: `Pendapatan (${cur === "IDR" ? "Rp M" : cur + " jt"})`, data: years.map((y) => (get("TotalRevenue", y) ?? NaN) / sc), backgroundColor: css("--c1") },
       { label: "Laba bersih", data: years.map((y) => (get("NetIncome", y) ?? NaN) / sc), backgroundColor: css("--c2") },
@@ -1787,6 +1789,165 @@
   }
 
   // =====================================================================
+  // GAYA BLOOMBERG: perintah mnemonic, panel fungsi (DES, HP, ALRT, HELP)
+  // =====================================================================
+  const FN = {
+    GP: ["Grafik harga (candlestick)", "aset"], GIP: ["Grafik intraday 5 menit", "aset"], DES: ["Deskripsi & statistik kunci", "aset"], HP: ["Riwayat harga harian (tabel + CSV)", "aset"],
+    FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
+    PLAN: ["Rencana jual per lot", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
+    ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], HELP: ["Daftar perintah", ""],
+  };
+  const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
+    CAL: "ECO", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+  const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
+  function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
+    const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
+    if (/^[A-Z]{4}$/.test(t) && !/^(BTC|ETH|SOL|BNB|XRP)/.test(t)) return t + ".JK"; // kode saham IDX 4 huruf
+    if (/^(BTC|ETH|SOL|BNB|XRP|DOGE|ADA)$/.test(t)) return t + "-USD";
+    return t; }
+  const fnHist = [];
+  async function runCommand(raw) {
+    const toks = String(raw).trim().toUpperCase().split(/\s+/).filter((x) => x && !YELLOW.has(x) || x === "CMDTY" || x === "GOVT");
+    if (!toks.length) return;
+    let fn = null, last = toks[toks.length - 1]; last = FN_ALIAS[last] || last;
+    const first = FN_ALIAS[toks[0]] || toks[0];
+    if (FN[last] || last === "MENU") { fn = last; toks.pop(); }
+    else if (FN[first] && toks.length > 1) { fn = first; toks.shift(); } // juga terima urutan FUNGSI TICKER
+    let us = false; if (toks.length > 1 && toks[toks.length - 1] === "US") { us = true; toks.pop(); }
+    const sym = toks.length ? normTicker(toks.join(""), us) : null;
+    fnHist.unshift(String(raw).toUpperCase()); fnHist.length = Math.min(fnHist.length, 20);
+    if (fn === "MENU") { closeFn(); return; }
+    if (fn === "HELP") return showHelp();
+    if (fn === "ALRT") return showAlerts(sym);
+    const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
+    if (market[fn]) { closeFn(); setView("market"); if (fn === "MOST") { mk.mov = "value"; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.m === "value")); if (mk.at) renderMovers(); }
+      setTimeout(() => { const el = $(market[fn]); (el.closest(".card") || el).scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el.closest(".card") || el); }, 400); return; }
+    if (fn === "W" || fn === "EQS") { closeFn(); setView("screen"); if (fn === "EQS") setTimeout(() => { const t = document.querySelector('#wlCols .tab[data-c="sinyal"]'); if (t) t.click(); }, 300); return; }
+    if (fn === "PORT") { closeFn(); setView("pf"); return; }
+    if (fn === "QL") { closeFn(); setView("quant"); return; }
+    const target = sym || state.symbol;
+    if (fn === "DES") return showDes(target);
+    if (fn === "HP") return showHp(target);
+    closeFn();
+    const focus = { GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust" }[fn] || "all";
+    const need = sym && (sym !== state.symbol || !state.res);
+    if (need) { setFocus(focus); await openDetail(sym); } else { setView("detail"); }
+    setFocus(focus);
+    if (fn === "GIP") { const t = document.querySelector('#tfTabs .tab[data-tf="5m"]'); if (t) t.click(); }
+    else if (fn === "GP" && isIntra()) { const t = document.querySelector('#tfTabs .tab[data-tf="D"]'); if (t) t.click(); }
+  }
+  function flashCard(el) { if (!el) return; el.classList.remove("flash-card"); void el.offsetWidth; el.classList.add("flash-card"); }
+  function openFn(title, html) { $("fnTitle").innerHTML = title; $("fnBody").innerHTML = html; $("fnPanel").hidden = false; $("fnPanel").focus(); }
+  function closeFn() { $("fnPanel").hidden = true; }
+  function showHelp() {
+    const row = (k) => `<tr><td><span class="fn-key">${k}</span></td><td class="txt">${FN[k][0]}</td><td class="note">${FN[k][1] === "aset" ? "BBCA " + k : FN[k][1] === "opsional" ? k + " / BBCA " + k : k}</td></tr>`;
+    openFn("HELP <span class='note'>· daftar perintah</span>", `<p class="note">Ketik di baris perintah paling atas lalu <b>Enter</b> (= &lt;GO&gt;). Format seperti Bloomberg: <code>TICKER FUNGSI</code>. Kode saham IDX 4 huruf otomatis jadi <code>.JK</code> (saham AS tambahkan <code>US</code>, mis. <code>AAPL US DES</code>); <code>EQUITY</code>, <code>IJ</code>, <code>GO</code> boleh ditulis atau tidak. <b>Esc</b> = &lt;MENU&gt; (tutup panel). <b>/</b> = fokus ke baris perintah. F1–F5 = pindah layar.</p>
+      <div class="fn-cols"><div><div class="subh">Satu aset</div><table>${Object.keys(FN).filter((k) => FN[k][1] === "aset").map(row).join("")}</table></div>
+      <div><div class="subh">Pasar & alat</div><table>${Object.keys(FN).filter((k) => FN[k][1] !== "aset").map(row).join("")}</table></div></div>
+      <p class="note">Contoh: <code>BBCA DES</code>, <code>TLKM HP</code>, <code>BBRI GIP</code>, <code>ANTM N</code>, <code>WEI</code>, <code>MOST</code>, <code>SHIP</code>, <code>ALRT</code>. ${fnHist.length ? "Terakhir: " + fnHist.slice(0, 6).map((x) => `<code>${esc(x)}</code>`).join(" ") : ""}</p>`);
+  }
+  async function showDes(sym) {
+    openFn(`${esc(sym)} <span class="note">DES · deskripsi</span>`, '<p class="status">Memuat…</p>');
+    try {
+      const d = await fetchSymbol(sym, "2y"); const v = d.values, n = v.length, last = v[n - 1];
+      const eq = !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
+      let F = {}; if (eq) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
+      const back = (days) => { const t = new Date(d.dates[n - 1]); t.setDate(t.getDate() - days); const ts = t.toISOString().slice(0, 10); let i = n - 1; while (i > 0 && d.dates[i] > ts) i--; return last / v[i] - 1; };
+      const yi = d.dates.findIndex((x) => x >= d.dates[n - 1].slice(0, 4) + "-01-01"), yr = (d.ohlc.length ? d.ohlc : v.map((x) => [0, x, x, x, x, 0])).slice(-252);
+      const hi = Math.max(...yr.map((b) => b[2])), lo = Math.min(...yr.map((b) => b[3])), liq = liquidity(d), sg = quickSignal(d, DAMO.biRate, 252);
+      const r = MCEngine.logReturns(v.slice(-253)), vol = MCEngine.std(r) * Math.sqrt(252), cur = d.currency;
+      const kv = (k, val) => `<div><span>${k}</span><b>${val}</b></div>`;
+      const pos52 = hi > lo ? (last - lo) / (hi - lo) : NaN;
+      openFn(`${esc(d.symbol)} <span class="note">DES · ${esc(d.name || "")}</span>`, `
+        <div class="des-top"><div><div class="des-px">${fmtNum(last)} <span class="note">${esc(cur)}</span></div><div>${pc(v[n - 1] / v[n - 2] - 1, 2)} hari ini · ${esc(F.sector || TYPE_ID[d.type] || d.type || "")}${F.industry ? " · " + esc(F.industry) : ""}</div></div>
+          <div class="des-range"><div class="note">Rentang 52 minggu</div><div class="r52"><span>${fmtNum(lo)}</span><div class="r52-bar"><i style="left:${isFinite(pos52) ? (pos52 * 100).toFixed(1) : 50}%"></i></div><span>${fmtNum(hi)}</span></div></div></div>
+        <div class="fn-cols">
+          <div class="kvs"><div class="subh">Harga & risiko</div>${kv("1 minggu", pc(back(7)))}${kv("1 bulan", pc(back(30)))}${kv("3 bulan", pc(back(91)))}${kv("YTD", yi > 0 ? pc(last / v[yi - 1] - 1) : "–")}${kv("1 tahun", pc(back(365)))}
+            ${kv("Volatilitas 1T", pct(vol))}${kv("Beta (Yahoo)", F.beta != null ? nf(2).format(F.beta) : "–")}${kv("Sinyal teknikal", sigPill(sg))}${liq ? kv("Nilai transaksi rata-rata 20h", big(liq.avgVal, cur)) + kv("Volume rata-rata 20h", big(liq.avgVol) + (liq.lotDiv === 100 ? " lot" : "")) : ""}</div>
+          <div class="kvs"><div class="subh">Valuasi & fundamental</div>${kv("Market cap", F.marketCap ? big(F.marketCap, cur) : "–")}${kv("Saham beredar", F.shares ? big(F.shares) : "–")}${kv("P/E (trailing)", F.trailingPE ? nf(1).format(F.trailingPE) : "–")}${kv("P/E (forward)", F.forwardPE ? nf(1).format(F.forwardPE) : "–")}
+            ${kv("P/BV", F.priceToBook ? nf(2).format(F.priceToBook) : "–")}${kv("ROE", F.roe != null ? pct(F.roe) : "–")}${kv("Margin operasi", F.operatingMargin != null ? pct(F.operatingMargin) : "–")}${kv("Pertumbuhan pendapatan", F.revenueGrowth != null ? pc(F.revenueGrowth) : "–")}
+            ${kv("Dividend yield", F.dividendYield != null ? pct(F.dividendYield, 2) : "–")}${kv("Payout ratio", F.payoutRatio != null ? pct(F.payoutRatio, 0) : "–")}${kv("Utang / kas", F.totalDebt != null ? `${big(F.totalDebt, cur)} / ${big(F.totalCash, cur)}` : "–")}</div></div>
+        <div class="fn-actions">${["GP", "GIP", "HP", "FA", "N", "SIG", "MC", "COMP"].map((k) => `<button class="fn-key" data-cmd="${esc(d.symbol)} ${k}">${k}</button>`).join("")}<button class="fn-key" data-cmd="ALRT ${esc(d.symbol)}">ALRT</button></div>
+        <p class="note">Sumber: Yahoo Finance. ${eq ? "" : "Aset ini bukan saham, jadi tidak ada data fundamental."}</p>`);
+    } catch (e) { openFn(`${esc(sym)} <span class="note">DES</span>`, `<p class="status err">${esc(e.message)}</p>`); }
+  }
+  const hp = { sym: null, n: 63, d: null };
+  async function showHp(sym, n) {
+    hp.sym = sym; if (n) hp.n = n;
+    openFn(`${esc(sym)} <span class="note">HP · riwayat harga</span>`, '<p class="status">Memuat…</p>');
+    try {
+      const d = await fetchSymbol(sym, "2y"); hp.d = d; const lotDiv = /\.JK$/i.test(d.symbol) ? 100 : 1;
+      const rows = (d.ohlc.length ? d.ohlc : d.dates.map((x, i) => [x, NaN, NaN, NaN, d.values[i], 0])).slice(-hp.n - 1);
+      const body = rows.slice(1).map((b, i) => [b, b[4] / rows[i][4] - 1]).reverse();
+      const up = body.filter((x) => x[1] > 0).length;
+      openFn(`${esc(d.symbol)} <span class="note">HP · ${esc(d.name || "")}</span>`, `
+        <div class="toolbar"><div class="tabs" id="hpRange">${[[21, "1B"], [63, "3B"], [126, "6B"], [252, "1T"], [500, "2T"]].map(([k, l]) => `<button class="tab ${k === hp.n ? "active" : ""}" data-n="${k}">${l}</button>`).join("")}</div>
+          <button class="fn-key" id="hpCsv">Unduh CSV</button></div>
+        <p class="note">${body.length} hari bursa · ${up} hari naik, ${body.length - up} hari turun · harga mentah (belum disesuaikan dividen/split)${lotDiv === 100 ? " · volume dalam lot" : ""}</p>
+        <div class="table-wrap hp-wrap"><table><thead><tr><th>Tanggal</th><th>Buka</th><th>Tertinggi</th><th>Terendah</th><th>Tutup</th><th>Perubahan</th><th>Volume</th><th>Nilai</th></tr></thead><tbody>
+        ${body.map(([b, c]) => `<tr><td>${b[0]}</td><td>${fmtNum(b[1])}</td><td>${fmtNum(b[2])}</td><td>${fmtNum(b[3])}</td><td><b>${fmtNum(b[4])}</b></td><td>${pc(c, 2)}</td><td>${big(b[5] / lotDiv)}</td><td>${big(b[4] * b[5], d.currency)}</td></tr>`).join("")}</tbody></table></div>`);
+    } catch (e) { openFn(`${esc(sym)} <span class="note">HP</span>`, `<p class="status err">${esc(e.message)}</p>`); }
+  }
+  function hpCsv() { const d = hp.d; if (!d) return; const rows = (d.ohlc.length ? d.ohlc : d.dates.map((x, i) => [x, "", "", "", d.values[i], ""])).slice(-hp.n);
+    const csv = "date,open,high,low,close,volume\n" + rows.map((b) => b.join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `${d.symbol}_HP.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+
+  // ---------- alarm harga (ALRT) ----------
+  const AL_KEY = "sp_alerts_v1";
+  const al = { list: [], timer: null };
+  function alLoad() { try { al.list = JSON.parse(localStorage.getItem(AL_KEY) || "[]"); } catch { al.list = []; } }
+  function alSave() { try { localStorage.setItem(AL_KEY, JSON.stringify(al.list)); } catch { /* */ } saveSettings({ alerts: al.list }); updateAlBadge(); }
+  function updateAlBadge() { const n = al.list.filter((a) => a.on).length, h = al.list.filter((a) => a.hit && !a.seen).length;
+    $("alBtn").textContent = `ALRT ${n}${h ? " · " + h + " ✓" : ""}`; $("alBtn").classList.toggle("hot", h > 0); }
+  function showAlerts(sym) {
+    al.list.forEach((a) => { if (a.hit) a.seen = true; }); alSave();
+    const perm = "Notification" in window ? Notification.permission : "unsupported";
+    openFn("ALRT <span class='note'>· alarm harga</span>", `
+      <div class="grid al-form"><div><label class="lbl">Ticker</label><input id="alSym" value="${esc(sym || state.symbol || "")}" autocomplete="off"></div>
+        <div><label class="lbl">Kondisi</label><select id="alOp"><option value=">=">harga ≥</option><option value="<=">harga ≤</option><option value="pct+">naik ≥ % hari ini</option><option value="pct-">turun ≥ % hari ini</option></select></div>
+        <div><label class="lbl">Nilai</label><input id="alVal" type="number" step="any"></div><div><label class="lbl">Catatan</label><input id="alNote" placeholder="mis. area beli"></div></div>
+      <div class="fn-actions"><button class="fn-key" id="alAdd">Tambah alarm</button>${perm === "default" ? '<button class="fn-key" id="alPerm">Izinkan notifikasi browser</button>' : perm === "denied" ? '<span class="note">Notifikasi browser diblokir; alarm tetap muncul di layar.</span>' : ""}<button class="fn-key" id="alCheck">Cek sekarang</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Ticker</th><th>Kondisi</th><th>Harga terakhir</th><th>Status</th><th>Catatan</th><th></th></tr></thead><tbody>
+      ${al.list.length ? al.list.map((a, i) => `<tr><td><span class="pf-sym" data-cmd="${esc(a.s)} DES">${esc(a.s)}</span></td><td>${a.op === ">=" ? "≥ " + fmtNum(a.v) : a.op === "<=" ? "≤ " + fmtNum(a.v) : (a.op === "pct+" ? "naik ≥ " : "turun ≥ ") + nf(1).format(a.v) + "%"}</td>
+        <td>${a.px != null ? fmtNum(a.px) : "–"}</td><td>${a.hit ? `<span class="pill pos">kena ${esc(a.hitAt || "")}</span>` : a.on ? '<span class="pill sig">aktif</span>' : "mati"}</td><td class="txt">${esc(a.note || "")}</td>
+        <td>${a.hit ? `<button class="x-btn" data-al-re="${i}" title="Aktifkan lagi" style="color:var(--accent)">↻</button>` : ""}<button class="x-btn" data-al-del="${i}">✕</button></td></tr>`).join("") : '<tr><td colspan="6" class="note">Belum ada alarm.</td></tr>'}</tbody></table></div>
+      <p class="note">Alarm dicek tiap 60 detik selama web ini terbuka (harga Yahoo tertunda ±10–15 menit untuk saham IDX). Tidak berjalan saat web ditutup karena tidak ada server yang memantau 24 jam. Disimpan di akunmu.</p>`);
+  }
+  function alAdd() { const s = normTicker($("alSym").value.trim()), op = $("alOp").value, v = parseFloat($("alVal").value);
+    if (!s || !isFinite(v)) return; al.list.push({ s, op, v, note: $("alNote").value.trim(), on: true, at: new Date().toISOString().slice(0, 10) }); alSave(); showAlerts(s); checkAlerts(); }
+  async function checkAlerts() {
+    const act = al.list.filter((a) => a.on); if (!act.length || !session) return;
+    const q = await quotesFor([...new Set(act.map((a) => a.s))]); let changed = false;
+    for (const a of act) { const x = q[a.s]; if (!x) continue; a.px = x.price; changed = true; const c = x.prevClose ? (x.price / x.prevClose - 1) * 100 : NaN;
+      const hit = a.op === ">=" ? x.price >= a.v : a.op === "<=" ? x.price <= a.v : a.op === "pct+" ? c >= a.v : -c >= a.v;
+      if (hit) { a.on = false; a.hit = true; a.seen = false; a.hitAt = new Date(Date.now() + 7 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+        const msg = `${a.s} ${a.op === ">=" ? "≥" : a.op === "<=" ? "≤" : a.op === "pct+" ? "naik" : "turun"} ${a.op.startsWith("pct") ? nf(1).format(a.v) + "%" : fmtNum(a.v)} · sekarang ${fmtNum(x.price)}${a.note ? " · " + a.note : ""}`;
+        toast("ALARM: " + msg); beep(); try { if ("Notification" in window && Notification.permission === "granted") new Notification("Simulasi Pasar · alarm", { body: msg }); } catch { /* */ } } }
+    if (changed) { alSave(); if (!$("fnPanel").hidden && /ALRT/.test($("fnTitle").textContent)) showAlerts(); }
+  }
+  function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; $("toasts").appendChild(t); setTimeout(() => t.remove(), 12000); t.onclick = () => t.remove(); }
+  function beep() { try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880; o.connect(g); g.connect(c.destination); g.gain.value = 0.06; o.start(); setTimeout(() => { o.stop(); c.close(); }, 250); } catch { /* */ } }
+  function bindBbg() {
+    alLoad(); updateAlBadge(); al.timer = setInterval(() => { if (!document.hidden) checkAlerts(); }, 60000); setTimeout(checkAlerts, 5000);
+    $("alBtn").onclick = () => showAlerts(); $("helpBtn").onclick = showHelp; $("fnClose").onclick = closeFn;
+    $("fnPanel").addEventListener("click", (e) => { if (e.target === $("fnPanel")) closeFn(); });
+    $("fnBody").addEventListener("click", (e) => {
+      const c = e.target.closest("[data-cmd]"); if (c) { runCommand(c.dataset.cmd); return; }
+      const r = e.target.closest("#hpRange .tab"); if (r) { showHp(hp.sym, +r.dataset.n); return; }
+      if (e.target.id === "hpCsv") return hpCsv();
+      if (e.target.id === "alAdd") return alAdd();
+      if (e.target.id === "alCheck") return checkAlerts();
+      if (e.target.id === "alPerm") { Notification.requestPermission().then(() => showAlerts()); return; }
+      const dl = e.target.closest("[data-al-del]"); if (dl) { al.list.splice(+dl.dataset.alDel, 1); alSave(); showAlerts(); return; }
+      const re = e.target.closest("[data-al-re]"); if (re) { const a = al.list[+re.dataset.alRe]; a.on = true; a.hit = false; alSave(); showAlerts(); } });
+    $("fnBody").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.closest(".al-form")) alAdd(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("fnPanel").hidden) { e.preventDefault(); closeFn(); } });
+    // baris perintah: <GO> = Enter; panah atas = perintah sebelumnya
+    $("cmdQ").addEventListener("keydown", (e) => { if (e.key === "ArrowUp" && $("cmdQ").parentElement.querySelector(".sugg").hidden && fnHist.length) { e.preventDefault(); $("cmdQ").value = fnHist[0]; } });
+  }
+
+  // =====================================================================
   // TERMINAL: ticker berjalan, jam, baris perintah, tema, tombol fungsi
   // =====================================================================
   const TAPE = ["^JKSE", "^JKLQ45", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "^GSPC", "^IXIC", "GC=F", "CL=F", "IDR=X", "BTC-USD", "ETH-USD", "^TNX"];
@@ -1810,7 +1971,7 @@
     syncTopbar(); addEventListener("resize", syncTopbar); new ResizeObserver(syncTopbar).observe(document.querySelector(".topbar"));
     $("themeBtn").onclick = () => applyTheme(nextTheme(document.documentElement.getAttribute("data-theme")));
     themeBtnLbl();
-    attachAC($("cmdQ"), { onPick: (sym) => openDetail(sym) });
+    attachAC($("cmdQ"), { onPick: (sym) => runCommand(sym) }); bindBbg();
     $("tape").addEventListener("click", (e) => { const t = e.target.closest(".tape-item[data-s]"); if (t) openDetail(t.dataset.s); });
     document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf" }, k = e.altKey && /^[1-5]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf"][+e.key - 1] : map[e.key];
       if (k && $("authGate").hidden) { e.preventDefault(); setView(k); }
@@ -2027,6 +2188,7 @@
     if (settings.focus) setFocus(settings.focus, false);
     if (Array.isArray(settings.portfolio)) { pf.list = settings.portfolio.filter((p) => p && p.s && p.avg > 0 && p.qty > 0); try { localStorage.setItem(PF_KEY, JSON.stringify(pf.list)); } catch { /* */ } }
     if (settings.pfCash != null) $("pfCash").value = settings.pfCash;
+    if (Array.isArray(settings.alerts)) { al.list = settings.alerts; try { localStorage.setItem(AL_KEY, JSON.stringify(al.list)); } catch { /* */ } updateAlBadge(); }
   }
   let authMode = "login";
   function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];
