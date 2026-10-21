@@ -173,3 +173,21 @@ textarea:focus { border-color: var(--accent); }
 @keyframes fu { 0% { background: rgba(15,138,95,.28); } 100% { background: transparent; } }
 @keyframes fd { 0% { background: rgba(200,50,43,.28); } 100% { background: transparent; } }
 .last { border-radius: 6px; padding: 0 4px; }
+
+.candle-grid { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 12px; }
+@media (max-width: 760px) { .candle-grid { grid-template-columns: 1fr; } }
+.book-side { border-left: 1px solid var(--line); padding-left: 12px; min-width: 0; }
+@media (max-width: 760px) { .book-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 10px; } }
+.small-tabs { margin: 6px 0; } .small-tabs .tab { font-size: 11px; padding: 3px 8px; }
+.book-body { font: 11.5px var(--mono); max-height: 430px; overflow-y: auto; }
+.bk-row { display: grid; grid-template-columns: 62px 1fr 60px; align-items: center; gap: 6px; padding: 1px 0; position: relative; }
+.bk-row .p { text-align: right; } .bk-row .q { text-align: right; color: var(--muted); }
+.bk-bar { height: 12px; border-radius: 2px; display: flex; overflow: hidden; background: transparent; }
+.bk-bar i { display: block; height: 100%; }
+.bk-row.cur { background: var(--accent-soft); border-radius: 4px; } .bk-row.poc .p { font-weight: 700; }
+.bk-hdr { display: grid; grid-template-columns: 62px 1fr 60px; gap: 6px; color: var(--muted); font-size: 10.5px; padding-bottom: 4px; border-bottom: 1px solid var(--line); margin-bottom: 3px; }
+.ob-row { display: grid; grid-template-columns: 1fr 1fr; position: relative; padding: 1px 4px; }
+.ob-row span:last-child { text-align: right; } .ob-row .bgb { position: absolute; top: 0; bottom: 0; right: 0; opacity: .18; z-index: 0; } .ob-row span { position: relative; z-index: 1; }
+.ob-spread { text-align: center; padding: 4px; color: var(--muted); border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); margin: 3px 0; }
+table.heat td { text-align: center; font-size: 12px; } table.heat td:first-child { text-align: left; }
+.rcbar { display: inline-block; height: 8px; background: var(--accent); border-radius: 2px; vertical-align: middle; margin-right: 4px; }

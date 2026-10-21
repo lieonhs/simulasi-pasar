@@ -502,6 +502,7 @@
     drawCandle(keepView);
   }
   function drawCandle(keepView) {
+    if (!keepView) setTimeout(renderBook, 0);
     const d = state.data;
     if (!d.ohlc || d.ohlc.length <= 30 || typeof LightweightCharts === "undefined") { $("candleCard").hidden = true; return; }
     const intra = isIntra() && state.intra, off = intra ? state.intra.data.gmtoffset || 0 : 0;
@@ -1048,7 +1049,9 @@
   }
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
-    $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail";
+    $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
+    if (v !== "detail") stopOB();
+    if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
     if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
   }
@@ -1089,7 +1092,7 @@
     const m = sym.toUpperCase().match(/^([A-Z0-9]+)-USDT?$/);
     if (m) wsBinance(m[1].toLowerCase()); else wsYahoo(sym);
     live.guard = setTimeout(() => { if (!live.gotWs) startPolling(); }, 8000);
-    live.refetch = setInterval(async () => { if (isIntra() && !document.hidden) { try { await loadIntraday(); renderCandle(true); } catch { /* */ } } }, 120000);
+    live.refetch = setInterval(async () => { if (document.hidden) return; if (isIntra()) { try { await loadIntraday(); renderCandle(true); } catch { /* */ } } if (book.tab === "vp") { book.vp = null; renderVP(); } }, 120000);
   }
   function startPolling() { clearInterval(live.poll); live.poll = setInterval(() => { if (!document.hidden) pollOnce(); }, 15000); }
   async function pollOnce() {
@@ -1188,6 +1191,204 @@
   }
   function startWlLive() { clearInterval(wlLiveTimer); wlLiveOnce(); wlLiveTimer = setInterval(wlLiveOnce, 30000); }
 
+  // =====================================================================
+  // PANEL SAMPING CANDLE: lot per harga (volume profile) & bid/offer
+  // =====================================================================
+  const book = { tab: "vp", days: 1, ws: null, timer: null, vp: null, ob: null };
+  async function loadVP() {
+    const sym = state.data.symbol, key = sym + "|1m";
+    if (state.intra && state.intra.key === key) return state.intra;
+    if (book.vp && book.vp.key === key && Date.now() - book.vp.at < 60000) return book.vp;
+    const j = await (await fetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=1m`)).json();
+    if (j.error) throw new Error(j.error);
+    book.vp = { key, data: j, bars: j.bars, at: Date.now() }; return book.vp;
+  }
+  async function renderBook() {
+    if (!state.data || $("candleCard").hidden) return;
+    document.querySelectorAll("#bookTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.b === book.tab));
+    $("vpRange").hidden = book.tab !== "vp";
+    if (book.tab === "vp") return renderVP();
+    return renderOB();
+  }
+  async function renderVP() {
+    stopOB();
+    const body = $("bookBody"); body.innerHTML = '<p class="note">Menghitung…</p>';
+    let src; try { src = await loadVP(); } catch (e) { body.innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+    const off = src.data.gmtoffset || 0, idx = isIdx(), unit = idx ? 100 : 1;
+    const day = (t) => new Date((t + off) * 1000).toISOString().slice(0, 10);
+    const days = [...new Set(src.bars.map((b) => day(b[0])))], keep = new Set(days.slice(-book.days));
+    const bars = src.bars.filter((b) => keep.has(day(b[0])) && b[5] > 0);
+    if (!bars.length) { body.innerHTML = '<p class="note">Belum ada transaksi di periode ini.</p>'; return; }
+    const lo = Math.min(...bars.map((b) => b[3])), hi = Math.max(...bars.map((b) => b[2]));
+    // ukuran level: fraksi BEI untuk saham IDX, selain itu ±28 level
+    let step = idx ? MCEngine.idxTick(bars[bars.length - 1][4]) : 0;
+    if (!idx || (hi - lo) / step > 40) { const raw = (hi - lo) / 28 || hi * 0.001, mag = Math.pow(10, Math.floor(Math.log10(raw))); step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw; if (idx) step = Math.max(step, MCEngine.idxTick(lo)); }
+    const lvl = new Map(); let pv = 0, vv = 0;
+    for (const b of bars) { const p = Math.round(b[4] / step) * step, rec = lvl.get(p) || { up: 0, dn: 0 }; if (b[4] >= b[1]) rec.up += b[5]; else rec.dn += b[5]; lvl.set(p, rec); pv += ((b[2] + b[3] + b[4]) / 3) * b[5]; vv += b[5]; }
+    const rows = [...lvl.entries()].sort((a, b) => b[0] - a[0]), maxV = Math.max(...rows.map(([, r]) => r.up + r.dn));
+    const poc = rows.reduce((a, b) => (b[1].up + b[1].dn > a[1].up + a[1].dn ? b : a))[0], vwap = pv / vv;
+    const cur = live.last ? live.last.price : bars[bars.length - 1][4], curL = Math.round(cur / step) * step;
+    const up = isFinite(cur) ? css("--good") : "", dn = css("--bad");
+    const fmtQ = (v) => (idx ? nf(0).format(v / unit) : v >= 1e6 ? nf(2).format(v / 1e6) + "jt" : nf(v < 10 ? 3 : 0).format(v));
+    body.innerHTML = `<div class="bk-hdr"><span style="text-align:right">Harga</span><span>Transaksi</span><span style="text-align:right">${idx ? "Lot" : "Volume"}</span></div>` +
+      rows.map(([p, r]) => { const t = r.up + r.dn, w = (t / maxV) * 100;
+        return `<div class="bk-row ${p === curL ? "cur" : ""} ${p === poc ? "poc" : ""}" title="naik ${fmtQ(r.up)} · turun ${fmtQ(r.dn)}"><span class="p">${fmtNum(p)}${p === poc ? " ◀" : ""}</span>
+          <span class="bk-bar" style="width:${w.toFixed(1)}%"><i style="width:${((r.up / t) * 100).toFixed(1)}%;background:${up}"></i><i style="width:${((r.dn / t) * 100).toFixed(1)}%;background:${dn}"></i></span><span class="q">${fmtQ(t)}</span></div>`; }).join("");
+    $("bookNote").innerHTML = `POC (◀) ${fmtNum(poc)} · VWAP ${fmtNum(vwap)} · total ${fmtQ(vv)} ${idx ? "lot" : ""} · ${book.days === 1 ? days[days.length - 1] : `${Math.min(book.days, days.length)} hari`}. Transaksi yang sudah terjadi, bukan antrean order. Hijau/merah = perkiraan dari arah candle 1 menit.`;
+    const curRow = body.querySelector(".bk-row.cur"); if (curRow) curRow.scrollIntoView({ block: "center" });
+  }
+  function stopOB() { if (book.ws) { try { book.ws.onclose = null; book.ws.close(); } catch { /* */ } book.ws = null; } clearInterval(book.timer); book.timer = null; }
+  function renderOB() {
+    stopOB(); const body = $("bookBody"), m = state.data.symbol.toUpperCase().match(/^([A-Z0-9]+)-USDT?$/);
+    if (m) { // order book kripto real-time
+      body.innerHTML = '<p class="note">Menghubungkan ke Binance…</p>';
+      try { const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${m[1].toLowerCase()}usdt@depth20@1000ms`); book.ws = ws;
+        ws.onmessage = (e) => { const d = JSON.parse(e.data); drawDepth(d.bids.slice(0, 15).map((x) => [+x[0], +x[1]]), d.asks.slice(0, 15).map((x) => [+x[0], +x[1]]), "BTC"); };
+        ws.onerror = () => { body.innerHTML = '<p class="note">Tidak bisa terhubung ke order book Binance dari jaringan ini.</p>'; };
+      } catch { body.innerHTML = '<p class="note">WebSocket tidak didukung.</p>'; }
+      $("bookNote").textContent = "Order book Binance (pasangan USDT), real-time, 15 level teratas. Kolom kanan = jumlah koin.";
+      return;
+    }
+    const poll = async () => { try { const j = await (await fetch(`${API}?action=book&symbol=${encodeURIComponent(state.data.symbol)}`)).json();
+        if (j.bid == null && j.ask == null) { body.innerHTML = '<p class="note">Bid/offer tidak tersedia untuk aset ini dari Yahoo.</p>'; return; }
+        const lot = (v) => (v ? (isIdx() ? nf(0).format(v / 100) + " lot" : nf(0).format(v)) : "—");
+        const spread = j.ask && j.bid ? j.ask - j.bid : NaN;
+        body.innerHTML = `<div class="ob-row"><span class="neg">Offer ${fmtNum(j.ask)}</span><span>${lot(j.askSize)}</span></div>
+          <div class="ob-spread">spread ${fmtNum(spread)}${j.bid ? ` (${pct(spread / j.bid, 2)})` : ""}${isIdx() && j.bid ? ` · ${nf(0).format(spread / MCEngine.idxTick(j.bid))} tick` : ""}</div>
+          <div class="ob-row"><span class="pos">Bid ${fmtNum(j.bid)}</span><span>${lot(j.bidSize)}</span></div>
+          <p class="note" style="margin-top:10px">Status pasar: ${esc(j.marketState || "?")}. Diperbarui tiap 15 detik.</p>`;
+      } catch { body.innerHTML = '<p class="note">Gagal mengambil bid/offer.</p>'; } };
+    body.innerHTML = '<p class="note">Mengambil…</p>'; poll(); book.timer = setInterval(() => { if (!document.hidden) poll(); }, 15000);
+    $("bookNote").innerHTML = "Hanya <b>level teratas</b> dari Yahoo (biasanya tertunda; jumlah lot sering tidak disediakan). Antrean bid/offer lengkap per level saham IDX adalah data berlisensi BEI dan hanya tersedia di aplikasi sekuritas.";
+  }
+  function drawDepth(bids, asks) {
+    const mx = Math.max(...bids.map((x) => x[1]), ...asks.map((x) => x[1]));
+    const row = (p, q, side) => `<div class="ob-row"><span class="${side === "a" ? "neg" : "pos"}">${fmtNum(p)}</span><span>${nf(q < 10 ? 4 : 2).format(q)}</span><i class="bgb" style="width:${((q / mx) * 100).toFixed(1)}%;background:${side === "a" ? css("--bad") : css("--good")}"></i></div>`;
+    const sp = asks[0][0] - bids[0][0];
+    $("bookBody").innerHTML = `<div class="bk-hdr" style="grid-template-columns:1fr 1fr"><span>Harga</span><span style="text-align:right">Jumlah</span></div>` +
+      asks.slice().reverse().map((x) => row(x[0], x[1], "a")).join("") + `<div class="ob-spread">spread ${fmtNum(sp)} (${pct(sp / bids[0][0], 3)})</div>` + bids.map((x) => row(x[0], x[1], "b")).join("");
+  }
+
+  // =====================================================================
+  // QUANT LAB (UI)
+  // =====================================================================
+  const ql = { series: null, res: null, method: "rp", syms: [] };
+  const QL_PRESETS = [["Bank + telko + konsumer", "BBCA.JK, BBRI.JK, BMRI.JK, TLKM.JK, ICBP.JK, UNVR.JK, ASII.JK, AMRT.JK"], ["Lintas aset", "^JKSE, GC=F, BTC-USD, IDR=X, ^GSPC"],
+    ["Komoditas IDX", "ADRO.JK, PTBA.JK, ANTM.JK, INCO.JK, MDKA.JK, MEDC.JK"], ["Kripto", "BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD"]];
+  async function runQuant() {
+    const syms = [...new Set($("qlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 15);
+    if (syms.length < 2) { $("qlStatus").textContent = "Butuh minimal 2 aset."; return; }
+    $("qlRun").disabled = true; $("qlStatus").classList.remove("err"); $("qlStatus").textContent = `Mengambil data ${syms.length} aset…`;
+    try {
+      const range = $("qlRange").value, got = await pool(syms, 4, async (s) => { try { return await fetchSymbol(s, range); } catch { return null; } });
+      const ok = got.filter(Boolean); const failed = syms.filter((_, i) => !got[i]);
+      if (ok.length < 2) throw new Error("Kurang dari 2 aset berhasil dimuat.");
+      ql.series = ok; ql.syms = ok.map((d) => d.symbol);
+      const crypto = ok.every((d) => /CRYPTO/i.test(d.type || ""));
+      const lastPx = ok.map((d) => d.values[d.values.length - 1]);
+      $("qlStatus").textContent = "Mengoptimasi & mensimulasikan…";
+      ql.res = await compute("qport", { series: ok.map((d) => ({ dates: d.dates, values: d.values })), opt: { method: ql.method, cap: (parseFloat($("qlCap").value) || 100) / 100,
+        shrinkMu: (parseFloat($("qlShr").value) || 0) / 100, shrinkCov: 0.3, rf: (parseFloat($("qlRf").value) || 0) / 100, ppy: crypto ? 365 : 252,
+        horizon: parseInt($("qlH").value, 10) || 63, sims: 5000, capital: parseFloat($("qlCapital").value) || 0, prices: lastPx, lotSize: ok.map((d) => (/\.JK$/.test(d.symbol) ? 100 : 1)) } });
+      ql.ppy = crypto ? 365 : 252; ql.lastPx = lastPx; ql.res.simFor = ql.method;
+      $("qlOut").hidden = false; renderQuantLab();
+      $("qlStatus").textContent = `${ok.length} aset · ${ql.res.T} hari bersama (${ql.res.dates[0]} → ${ql.res.dates[ql.res.dates.length - 1]})${failed.length ? ` · gagal: ${failed.join(", ")}` : ""}` +
+        (ok.some((d) => /CRYPTO/i.test(d.type || "")) && !crypto ? " · campuran kripto & saham: hanya hari bursa bersama yang dipakai" : "");
+    } catch (e) { $("qlStatus").textContent = e.message; $("qlStatus").classList.add("err"); }
+    finally { $("qlRun").disabled = false; }
+  }
+  const short = (s) => s.replace(/\.JK$/, "");
+  function renderQuantLab() {
+    const R = ql.res, S = ql.syms, N = S.length, grid = css("--line"), muted = css("--muted");
+    // korelasi
+    const heat = (v) => { const a = Math.min(1, Math.abs(v)); return v >= 0 ? `rgba(200,50,43,${(a * 0.55).toFixed(2)})` : `rgba(31,94,255,${(a * 0.55).toFixed(2)})`; };
+    $("qlCorr").innerHTML = `<thead><tr><th></th>${S.map((s) => `<th>${esc(short(s))}</th>`).join("")}</tr></thead><tbody>` +
+      R.corr.map((row, i) => `<tr><td><b>${esc(short(S[i]))}</b></td>${row.map((v, j) => `<td style="background:${i === j ? "transparent" : heat(v)}">${i === j ? "—" : nf(2).format(v)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    let hiP = null, loP = null; for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) { const v = R.corr[i][j]; if (!hiP || v > hiP[2]) hiP = [i, j, v]; if (!loP || v < loP[2]) loP = [i, j, v]; }
+    $("qlCorrTxt").innerHTML = `Rata-rata korelasi ${nf(2).format(R.rbar)}. Paling searah: <b>${esc(short(S[hiP[0]]))}–${esc(short(S[hiP[1]]))}</b> (${nf(2).format(hiP[2])}); paling independen: <b>${esc(short(S[loP[0]]))}–${esc(short(S[loP[1]]))}</b> (${nf(2).format(loP[2])}).`;
+    // bobot semua metode
+    const M = [["minvar", "Min Var"], ["rp", "Risk Parity"], ["maxsharpe", "Max Sharpe"], ["iv", "Inv Vol"], ["ew", "Equal"]];
+    $("qlW").innerHTML = `<thead><tr><th>Aset</th><th>Vol/th</th><th>Return/th (shrink)</th>${M.map(([k, l]) => `<th class="${k === ql.method ? "sorted" : ""}">${l}</th>`).join("")}</tr></thead><tbody>` +
+      S.map((s, i) => `<tr><td><b>${esc(short(s))}</b></td><td>${pct(R.volAsset[i])}</td><td><span class="${cls(R.muShr[i])}">${spct(R.muShr[i])}</span> <span class="note">(${spct(R.muAsset[i], 0)})</span></td>${M.map(([k]) => `<td>${pct(R.res[k].w[i], 0)}</td>`).join("")}</tr>`).join("") +
+      `<tr><td>Return/th</td><td></td><td></td>${M.map(([k]) => `<td>${pct(R.res[k].ret)}</td>`).join("")}</tr><tr><td>Vol/th</td><td></td><td></td>${M.map(([k]) => `<td>${pct(R.res[k].vol)}</td>`).join("")}</tr>` +
+      `<tr><td>Sharpe</td><td></td><td></td>${M.map(([k]) => `<td>${nf(2).format(R.res[k].sharpe)}</td>`).join("")}</tr></tbody>`;
+    renderQuantMethod();
+    // frontier
+    const pts = M.map(([k, l], i) => ({ label: l, data: [{ x: R.res[k].vol * 100, y: R.res[k].ret * 100 }], backgroundColor: COLORS[i % COLORS.length], pointRadius: k === ql.method ? 9 : 6, pointStyle: "rectRot" }));
+    if (state.charts.qlFront) state.charts.qlFront.destroy();
+    state.charts.qlFront = new Chart($("qlFront"), { type: "scatter", data: { datasets: [
+        { label: "Portofolio acak", data: R.cloud.map(([v, r]) => ({ x: v * 100, y: r * 100 })), backgroundColor: grid, pointRadius: 2 },
+        { label: "Aset tunggal", data: S.map((s, i) => ({ x: R.volAsset[i] * 100, y: R.muShr[i] * 100, s })), backgroundColor: muted, pointRadius: 4 }, ...pts] },
+      options: baseOpts({ interaction: { mode: "nearest", intersect: true }, plugins: { legend: { labels: { color: muted, boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.raw.s ? short(c.raw.s) : c.dataset.label}: vol ${nf(1).format(c.raw.x)}%, return ${nf(1).format(c.raw.y)}%` } } },
+        scales: { x: { title: { display: true, text: "Volatilitas tahunan (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } }, y: { title: { display: true, text: "Return harapan/th (%, shrink)", color: muted }, ticks: { color: muted }, grid: { color: grid } } } }) });
+  }
+  async function renderQuantMethod() {
+    const R = ql.res, S = ql.syms, P = R.res[ql.method], muted = css("--muted"), grid = css("--line");
+    document.querySelectorAll("#qlMethod .tab").forEach((t) => t.classList.toggle("active", t.dataset.m === ql.method));
+    // alokasi: hitung ulang lot untuk metode terpilih (cepat, di thread utama)
+    const capital = parseFloat($("qlCapital").value) || 0; let spent = 0;
+    const rows = P.w.map((w, j) => { const unit = /\.JK$/.test(S[j]) ? 100 : 1, px = ql.lastPx[j], target = capital * w;
+      const lots = unit > 1 ? Math.floor(target / (px * unit)) : Math.floor((target / px) * 1e6) / 1e6, cost = lots * unit * px; spent += cost; return { lots, cost, unit, px, w }; });
+    const rfA = (parseFloat($("qlRf").value) || 0) / 100, allBad = R.muShr.every((u) => u <= rfA);
+    $("qlAllocT").innerHTML = `Alokasi modal Rp ${nf(0).format(capital)} · ${({ minvar: "Min Variance", rp: "Risk Parity", maxsharpe: "Max Sharpe", iv: "Inverse Vol", ew: "Equal" })[ql.method]}` +
+      (ql.method === "maxsharpe" && allBad ? ' <span class="neg" style="font-weight:400">— semua return harapan di bawah risk-free, jadi Max Sharpe tidak bermakna di sini (secara historis, deposito/SBN lebih baik). Pakai Min Variance / Risk Parity.</span>' : "");
+    $("qlAlloc").innerHTML = `<thead><tr><th>Aset</th><th>Bobot</th><th>Harga</th><th>Beli</th><th>Nilai</th><th>Kontribusi risiko</th></tr></thead><tbody>` +
+      rows.map((r, j) => `<tr><td><b>${esc(short(S[j]))}</b></td><td>${pct(r.w, 1)}</td><td>${fmtNum(r.px)}</td><td>${r.unit > 1 ? nf(0).format(r.lots) + " lot" : nf(6).format(r.lots)}</td><td>${nf(0).format(r.cost)}</td>
+        <td><span class="rcbar" style="width:${Math.max(1, P.rc[j] * 120).toFixed(0)}px"></span>${pct(P.rc[j], 0)}</td></tr>`).join("") +
+      `<tr><td>Sisa kas</td><td></td><td></td><td></td><td>${nf(0).format(capital - spent)}</td><td></td></tr></tbody>`;
+    // simulasi untuk metode terpilih (jalankan ulang di worker bila metode berubah)
+    let sim = R.sim;
+    if (R.simFor !== ql.method) { const ok = ql.series; try { const r2 = await compute("qport", { series: ok.map((d) => ({ dates: d.dates, values: d.values })), opt: { method: ql.method,
+        cap: (parseFloat($("qlCap").value) || 100) / 100, shrinkMu: (parseFloat($("qlShr").value) || 0) / 100, shrinkCov: 0.3, rf: (parseFloat($("qlRf").value) || 0) / 100, ppy: ql.ppy, horizon: parseInt($("qlH").value, 10) || 63, sims: 5000 } });
+      R.sim = sim = r2.sim; R.eq = r2.eq; R.simFor = ql.method; } catch { /* */ } }
+    const H = parseInt($("qlH").value, 10) || 63;
+    $("qlSimT").textContent = `Simulasi ${H} hari ke depan (5.000 skenario, block bootstrap)`;
+    $("qlSim").innerHTML = [["Median", spct(sim.q[2])], ["Rentang 90%", `${spct(sim.q[0], 0)} / ${spct(sim.q[4], 0)}`], ["Peluang rugi", pct(sim.probLoss, 0)],
+      ["VaR 95% / CVaR", `${pct(sim.var95)} / ${pct(sim.cvar95)}`], ["Drawdown di tengah jalan", `median ${pct(sim.ddMed)} · buruk ${pct(sim.dd5)}`],
+      ["VaR 95% dalam Rp", "Rp " + nf(0).format(sim.var95 * (parseFloat($("qlCapital").value) || 0))]].map(([a, b]) => `<div class="kpi"><div class="k">${a}</div><div class="v">${b}</div></div>`).join("");
+    drawChart("qlSimH", { type: "bar", data: { labels: sim.hist.edges.map((x) => spct(x, 0)), datasets: [{ data: sim.hist.counts, backgroundColor: sim.hist.edges.map((x) => (x < 0 ? css("--bad") : css("--accent"))), borderWidth: 0, barPercentage: 1, categoryPercentage: 1 }] },
+      options: baseOpts({ plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 7, color: muted }, grid: { display: false } }, y: { display: false } } }) });
+    const step = Math.max(1, Math.floor(R.eq.length / 400)), lab = R.dates.filter((_, i) => i % step === 0);
+    drawChart("qlEq", { type: "line", data: { labels: lab, datasets: [{ label: "Nilai portofolio (awal = 1)", data: R.eq.filter((_, i) => i % step === 0), borderColor: css("--accent"), borderWidth: 1.6, pointRadius: 0 }] },
+      options: baseOpts({ plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 6, color: muted }, grid: { display: false } }, y: { ticks: { color: muted }, grid: { color: grid } } } }) });
+    document.querySelectorAll("#qlW th").forEach((th, i) => th.classList.toggle("sorted", i >= 3 && ["minvar", "rp", "maxsharpe", "iv", "ew"][i - 3] === ql.method));
+  }
+  function btParamsVis() { const s = $("btStrat").value, need = { xsmom: ["look", "topK", "rebal"], tsmom: ["look"], ma: ["fast", "slow"], rsi: ["rsiLo", "rsiHi"], bh: [] }[s];
+    document.querySelectorAll("[data-p]").forEach((el) => (el.hidden = !need.includes(el.dataset.p))); }
+  async function runBacktest() {
+    if (!ql.series) { $("btOut").innerHTML = '<p class="status err">Jalankan analisis portofolio dulu (data diambil di sana).</p>'; return; }
+    const v = (id) => parseFloat($(id).value);
+    const opt = { strat: $("btStrat").value, look: v("btLook"), topK: Math.min(v("btTop"), ql.syms.length), rebal: v("btRebal"), fast: v("btFast"), slow: v("btSlow"), rsiLo: v("btLo"), rsiHi: v("btHi"),
+      costBps: v("btCost"), split: v("btSplit") / 100, ppy: ql.ppy, rf: (parseFloat($("qlRf").value) || 0) / 100 };
+    if (opt.strat === "ma" && opt.fast >= opt.slow) { $("btOut").innerHTML = '<p class="status err">MA cepat harus lebih kecil dari MA lambat.</p>'; return; }
+    $("btOut").innerHTML = '<p class="status">Menjalankan backtest…</p>';
+    try {
+      const b = await compute("qbt", { series: ql.series.map((d) => ({ dates: d.dates, values: d.values })), opt });
+      const f2 = (x) => (isFinite(x) ? nf(2).format(x) : "–");
+      const row = (n, f) => `<tr><td>${n}</td>${["is", "oos", "all"].map((k) => `<td>${f(b[k].strat)}</td><td class="note">${f(b[k].bh)}</td>`).join("")}</tr>`;
+      const oosS = b.oos.strat, oosB = b.oos.bh, isS = b.is.strat;
+      const verdict = oosS.sharpe < 0 ? "Strategi <b>rugi secara risk-adjusted di out-of-sample</b>. Jangan dipakai." :
+        oosS.sharpe < oosB.sharpe - 0.1 ? "Strategi <b>kalah dari buy & hold</b> di out-of-sample. Kalau di in-sample terlihat bagus, itu tanda overfitting." :
+        isS.sharpe - oosS.sharpe > 0.7 ? "Ada <b>penurunan besar dari in-sample ke out-of-sample</b>, jadi hasilnya kemungkinan banyak karena kebetulan. Uji dengan parameter lain dan periode lain sebelum percaya." :
+        oosS.sharpe >= 0.5 ? "Strategi bertahan di out-of-sample dengan Sharpe ≥ 0,5. Menarik untuk diteliti lebih lanjut, tapi ingat bias survivorship dan biaya nyata (slippage, likuiditas)." :
+        "Hasil out-of-sample setara buy & hold. Strategi ini tidak menambah nilai berarti setelah biaya.";
+      $("btOut").innerHTML = `<div class="table-wrap"><table><thead><tr><th></th><th>In-sample</th><th class="note">B&H</th><th>Out-of-sample</th><th class="note">B&H</th><th>Seluruh</th><th class="note">B&H</th></tr></thead><tbody>
+        ${row("CAGR", (x) => `<span class="${cls(x.cagr)}">${spct(x.cagr)}</span>`)}${row("Volatilitas", (x) => pct(x.vol))}${row("Sharpe", (x) => f2(x.sharpe))}${row("Max drawdown", (x) => pct(x.maxDD))}${row("Total return", (x) => spct(x.total, 0))}</tbody></table></div>
+        <p class="note">Pemisah in/out-of-sample: ${b.splitDate}. Rata-rata eksposur ${pct(b.exposure, 0)} · turnover ${nf(1).format(b.turnoverYr)}×/th · ${b.tradeDays} hari ada transaksi · hari untung ${pct(b.hit, 0)} saat berposisi.</p>
+        <div class="verdict">${verdict}</div><div class="chart-box tall"><canvas id="btEq"></canvas></div>`;
+      const step = Math.max(1, Math.floor(b.eqS.length / 500)), lab = b.dates.filter((_, i) => i % step === 0), muted = css("--muted"), grid = css("--line");
+      const splitIdx = lab.findIndex((d) => d >= b.splitDate);
+      const splitLine = { id: "split", afterDatasetsDraw(ch) { if (splitIdx < 0) return; const x = ch.scales.x.getPixelForValue(splitIdx), ctx = ch.ctx; ctx.save(); ctx.strokeStyle = muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x, ch.chartArea.top); ctx.lineTo(x, ch.chartArea.bottom); ctx.stroke(); ctx.fillStyle = muted; ctx.font = "11px IBM Plex Sans"; ctx.fillText("out-of-sample →", x + 4, ch.chartArea.top + 12); ctx.restore(); } };
+      if (state.charts.btEq) state.charts.btEq.destroy();
+      state.charts.btEq = new Chart($("btEq"), { type: "line", plugins: [splitLine], data: { labels: lab, datasets: [
+        { label: "Strategi", data: b.eqS.filter((_, i) => i % step === 0), borderColor: css("--accent"), borderWidth: 1.8, pointRadius: 0 },
+        { label: "Buy & hold (equal)", data: b.eqB.filter((_, i) => i % step === 0), borderColor: muted, borderWidth: 1.2, pointRadius: 0 }] },
+        options: baseOpts({ plugins: { legend: { labels: { color: muted, boxWidth: 10 } } }, scales: { x: { ticks: { maxTicksLimit: 6, color: muted }, grid: { display: false } }, y: { type: "logarithmic", ticks: { color: muted }, grid: { color: grid } } } }) });
+    } catch (e) { $("btOut").innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
+  }
+
   // ---------- event ----------
   function bind() {
     document.querySelectorAll(".controls .seg-btn").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
@@ -1248,6 +1449,17 @@
       if (live.on) startLive(); else { stopLive(); setLiveDot("closed", ""); $("liveStats").textContent = "Live dimatikan"; } });
     document.addEventListener("visibilitychange", () => { if (document.hidden) stopLive(); else if (!$("detailView").hidden && state.res) startLive(); else if (!$("screenView").hidden) wlLiveOnce(); });
     attachAC($("cmpQ")); attachAC($("wlQ"));
+    // panel samping & quant lab
+    $("bookTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; book.tab = t.dataset.b; renderBook(); });
+    $("vpRange").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; book.days = +t.dataset.d;
+      document.querySelectorAll("#vpRange .tab").forEach((x) => x.classList.toggle("active", x === t)); renderVP(); });
+    $("qlPresets").innerHTML = QL_PRESETS.map(([n, l]) => `<button class="chip" data-l="${esc(l)}">${esc(n)}</button>`).join("");
+    $("qlPresets").addEventListener("click", (e) => { const c = e.target.closest(".chip"); if (c) { $("qlQ").value = c.dataset.l; ql.res = null; runQuant(); } });
+    $("qlRun").addEventListener("click", runQuant);
+    $("qlMethod").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t || !ql.res) return; ql.method = t.dataset.m; renderQuantLab(); });
+    $("btStrat").addEventListener("change", btParamsVis); btParamsVis();
+    $("btRun").addEventListener("click", runBacktest);
+    attachAC($("qlQ"));
     // candlestick
     $("tfTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.tf = t.dataset.tf;
       document.querySelectorAll("#tfTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); setRangeTabs(); renderCandle(); });

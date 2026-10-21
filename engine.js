@@ -804,6 +804,144 @@
       var95: -quantileSorted(end, 0.05), horizonVol: o.model === "garch" || o.model === "arch" ? condVolHorizon(ctx, o.days, ppy) : std(r) * Math.sqrt(ppy), spark, ppy, nObs: n };
   }
 
-  const api = { screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // =====================================================================
+  // QUANT LAB: portofolio & backtest
+  // =====================================================================
+  // gabungkan banyak seri pada tanggal yang sama (irisan) -> harga & return harian
+  function alignSeries(list) {
+    const maps = list.map((s) => new Map(s.dates.map((d, i) => [d, s.values[i]])));
+    const dates = list[0].dates.filter((d) => maps.every((m) => m.has(d)));
+    const px = list.map((_, j) => dates.map((d) => maps[j].get(d)));
+    const R = []; for (let t = 1; t < dates.length; t++) R.push(px.map((p) => Math.log(p[t] / p[t - 1])));
+    return { dates, px, R }; // R: [T][N]
+  }
+  function covMatrix(R, shrink = 0.3) {
+    const T = R.length, N = R[0].length, mu = new Array(N).fill(0);
+    for (const r of R) for (let j = 0; j < N; j++) mu[j] += r[j] / T;
+    const S = Array.from({ length: N }, () => new Float64Array(N));
+    for (const r of R) for (let a = 0; a < N; a++) { const da = r[a] - mu[a]; for (let b = a; b < N; b++) S[a][b] += (da * (r[b] - mu[b])) / (T - 1); }
+    for (let a = 0; a < N; a++) for (let b = 0; b < a; b++) S[a][b] = S[b][a];
+    // shrinkage ke matriks korelasi konstan (Ledoit-Wolf style, intensitas tetap)
+    const sd = S.map((row, i) => Math.sqrt(row[i])); let rbar = 0, c = 0;
+    for (let a = 0; a < N; a++) for (let b = a + 1; b < N; b++) { rbar += S[a][b] / (sd[a] * sd[b]); c++; }
+    rbar = c ? rbar / c : 0;
+    const C = S.map((row, a) => Float64Array.from(row, (v, b) => (a === b ? v : (1 - shrink) * v + shrink * rbar * sd[a] * sd[b])));
+    const corr = S.map((row, a) => Array.from(row, (v, b) => v / (sd[a] * sd[b])));
+    return { mu, S, C, corr, sd, rbar };
+  }
+  const mv = (M, w) => M.map((row) => row.reduce((s, v, j) => s + v * w[j], 0));
+  const dot = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
+  function projectCapped(w, cap) { // proyeksi ke {w>=0, sum=1, w<=cap} via bisection pada pengali
+    const N = w.length; cap = Math.max(cap, 1 / N + 1e-9); let lo = Math.min(...w) - 1, hi = Math.max(...w) + 1;
+    const f = (t) => w.reduce((s, v) => s + Math.min(cap, Math.max(0, v - t)), 0);
+    for (let i = 0; i < 100; i++) { const m = (lo + hi) / 2; if (f(m) > 1) lo = m; else hi = m; }
+    return w.map((v) => Math.min(cap, Math.max(0, v - (lo + hi) / 2)));
+  }
+  function optimize(method, C, mu, opt = {}) {
+    const N = C.length, cap = opt.cap ?? 1, rf = opt.rf ?? 0;
+    const vol = (w) => Math.sqrt(Math.max(dot(w, mv(C, w)), 1e-18));
+    let w = new Array(N).fill(1 / N);
+    if (method === "ew") return projectCapped(w, cap);
+    if (method === "iv") { const iv = C.map((r, i) => 1 / Math.sqrt(r[i])); const s = iv.reduce((a, b) => a + b, 0); return projectCapped(iv.map((v) => v / s), cap); }
+    if (method === "rp") { // risk parity: kontribusi risiko sama
+      for (let it = 0; it < 500; it++) { const m = mv(C, w), tot = dot(w, m); const nw = w.map((v, i) => v * Math.sqrt((tot / N) / Math.max(v * m[i], 1e-18)));
+        const s = nw.reduce((a, b) => a + b, 0); w = nw.map((v) => v / s); }
+      return projectCapped(w, cap);
+    }
+    // projected gradient dengan langkah ternormalisasi (tidak bergantung skala data)
+    const obj = (x) => (method === "minvar" ? dot(x, mv(C, x)) : -(dot(x, mu) - rf) / vol(x));
+    let best = w.slice(), fbest = obj(w);
+    for (let it = 0; it < 4000; it++) {
+      const m = mv(C, w); let g;
+      if (method === "minvar") g = m.map((v) => 2 * v);
+      else { const s = vol(w), ex = dot(w, mu) - rf; g = mu.map((u, i) => -((u - rf) / s - (ex * m[i]) / (s * s * s))); } // gradien −Sharpe
+      const gn = Math.sqrt(g.reduce((a, b) => a + b * b, 0)) || 1, lr = 0.05 / (1 + it / 150);
+      w = projectCapped(w.map((v, i) => v - (lr * g[i]) / gn), cap);
+      const f = obj(w); if (f < fbest) { fbest = f; best = w.slice(); }
+    }
+    return best;
+  }
+  function portStats(w, C, mu, ppy, rf) {
+    const m = mv(C, w), varp = dot(w, m), vol = Math.sqrt(varp) * Math.sqrt(ppy), ret = dot(w, mu) * ppy;
+    const rc = w.map((v, i) => (v * m[i]) / varp); // kontribusi risiko (sum = 1)
+    return { ret, vol, sharpe: (ret - rf) / vol, rc };
+  }
+  function quantPortfolio(series, opt) {
+    // opt: method, cap, shrinkMu (0..1), shrinkCov, rf, ppy, horizon, sims, capital, prices(last), lotSize[]
+    const A = alignSeries(series), N = series.length, T = A.R.length;
+    if (T < 120) throw new Error(`Hanya ${T} hari data bersama — terlalu sedikit (butuh ≥ 120). Kurangi aset atau perpanjang periode.`);
+    const ppy = opt.ppy || 252, K = covMatrix(A.R, opt.shrinkCov ?? 0.3);
+    const grand = mean(K.mu), muS = K.mu.map((u) => (1 - (opt.shrinkMu ?? 0.5)) * u + (opt.shrinkMu ?? 0.5) * grand); // shrink return ke rata-rata
+    const rfD = (opt.rf || 0) / ppy;
+    const methods = ["minvar", "maxsharpe", "rp", "iv", "ew"], res = {};
+    for (const mth of methods) { const w = optimize(mth, K.C, muS, { cap: opt.cap, rf: rfD }); res[mth] = { w, ...portStats(w, K.C, muS, ppy, opt.rf || 0) }; }
+    // efficient frontier (titik acak Dirichlet + garis frontier via min-var dengan penalti target)
+    const rng = makeRng(17), cloud = [];
+    for (let k = 0; k < 1500; k++) { let w = Array.from({ length: N }, () => -Math.log(rng.u() + 1e-12)); const s = w.reduce((a, b) => a + b, 0); w = w.map((v) => v / s);
+      const st = portStats(w, K.C, muS, ppy, opt.rf || 0); cloud.push([st.vol, st.ret]); }
+    // simulasi portofolio terpilih: block bootstrap baris return bersama (korelasi terjaga)
+    const W = res[opt.method].w, h = opt.horizon || 21, n = opt.sims || 5000, B = 10, ends = new Float64Array(n), dd = new Float64Array(n);
+    const demean = A.R.map((r) => r.map((v, j) => v - K.mu[j] + muS[j]));
+    for (let i = 0; i < n; i++) { let c = 0, pk = 0, mdd = 0, t = 0;
+      while (t < h) { const s0 = rng.int(T - B); for (let k = 0; k < B && t < h; k++, t++) { const r = demean[s0 + k]; let pr = 0; for (let j = 0; j < N; j++) pr += W[j] * (Math.exp(r[j]) - 1); c += Math.log(1 + pr); pk = Math.max(pk, c); mdd = Math.min(mdd, c - pk); } }
+      ends[i] = Math.exp(c) - 1; dd[i] = Math.exp(mdd) - 1; }
+    const se = Float64Array.from(ends).sort(), sdd = Float64Array.from(dd).sort();
+    let cs = 0, cn = 0; const v95 = -quantileSorted(se, 0.05); for (const v of se) { if (v <= -v95) { cs += v; cn++; } else break; }
+    const sim = { q: [0.05, 0.25, 0.5, 0.75, 0.95].map((p) => quantileSorted(se, p)), probLoss: ends.filter((v) => v < 0).length / n, var95: v95, cvar95: -cs / Math.max(cn, 1), ddMed: quantileSorted(sdd, 0.5), dd5: quantileSorted(sdd, 0.05), hist: histogram(Array.from(se), 50) };
+    // alokasi modal -> lot
+    let alloc = null;
+    if (opt.capital > 0 && opt.prices) { let spent = 0;
+      alloc = W.map((w, j) => { const unit = opt.lotSize[j] || 1, px = opt.prices[j], target = opt.capital * w;
+        const lots = unit > 1 ? Math.floor(target / (px * unit)) : Math.floor((target / px) * 1e6) / 1e6; const cost = lots * unit * px; spent += cost; return { lots, cost, target }; });
+      alloc.cash = opt.capital - spent; }
+    // performa historis (in-sample!) dengan rebalancing harian
+    const eq = [1]; for (const r of A.R) { let pr = 0; for (let j = 0; j < N; j++) pr += W[j] * (Math.exp(r[j]) - 1); eq.push(eq[eq.length - 1] * (1 + pr)); }
+    return { dates: A.dates, T, corr: K.corr, rbar: K.rbar, volAsset: K.sd.map((s) => s * Math.sqrt(ppy)), muAsset: K.mu.map((u) => u * ppy), muShr: muS.map((u) => u * ppy), res, cloud, sim, alloc, eq };
+  }
+
+  // ---------- backtest strategi (sinyal di close t, posisi berlaku t+1, biaya per perubahan posisi) ----------
+  function rsiSeries(c, n = 14) { const out = new Array(c.length).fill(null); let g = 0, l = 0;
+    for (let i = 1; i < c.length; i++) { const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0);
+      if (i <= n) { g += up / n; l += dn / n; if (i === n) out[i] = 100 - 100 / (1 + g / (l || 1e-12)); } else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; out[i] = 100 - 100 / (1 + g / (l || 1e-12)); } }
+    return out; }
+  function perfStats(rets, ppy, rf) { // rets: return sederhana harian
+    const n = rets.length; if (!n) return null; let eq = 1, pk = 1, mdd = 0; for (const r of rets) { eq *= 1 + r; pk = Math.max(pk, eq); mdd = Math.min(mdd, eq / pk - 1); }
+    const yrs = n / ppy, cagr = Math.pow(eq, 1 / yrs) - 1, vol = std(rets) * Math.sqrt(ppy);
+    return { cagr, vol, sharpe: vol > 0 ? (mean(rets) * ppy - rf) / vol : NaN, maxDD: mdd, total: eq - 1 };
+  }
+  function backtest(series, opt) {
+    // opt: strat ('ma','tsmom','rsi','xsmom','bh'), fast, slow, look, rsiLo, rsiHi, topK, rebal, costBps, ppy, rf, split (0.7)
+    const A = alignSeries(series), N = series.length, T = A.dates.length, ppy = opt.ppy || 252, cost = (opt.costBps || 0) / 1e4;
+    const pos = Array.from({ length: T }, () => new Array(N).fill(0)); // bobot yang dipegang SELAMA hari t (diputuskan di close t-1)
+    const P = A.px;
+    if (opt.strat === "bh") for (let t = 1; t < T; t++) for (let j = 0; j < N; j++) pos[t][j] = 1 / N;
+    else if (opt.strat === "xsmom") {
+      let cur = new Array(N).fill(0);
+      for (let t = 1; t < T; t++) { const dec = t - 1;
+        if (dec >= opt.look && (dec - opt.look) % opt.rebal === 0) { const sc = P.map((p, j) => [p[dec] / p[dec - opt.look] - 1, j]).sort((a, b) => b[0] - a[0]).slice(0, opt.topK);
+          cur = new Array(N).fill(0); for (const [r, j] of sc) if (!opt.absFilter || r > 0) cur[j] = 1 / opt.topK; }
+        pos[t] = cur.slice(); }
+    } else {
+      for (let j = 0; j < N; j++) { const c = P[j], rs = opt.strat === "rsi" ? rsiSeries(c) : null; let state = 0;
+        for (let t = 1; t < T; t++) { const d = t - 1; let sig = state;
+          if (opt.strat === "ma") { if (d >= opt.slow) { const f = c.slice(d - opt.fast + 1, d + 1).reduce((a, b) => a + b, 0) / opt.fast, s = c.slice(d - opt.slow + 1, d + 1).reduce((a, b) => a + b, 0) / opt.slow; sig = f > s ? 1 : 0; } else sig = 0; }
+          else if (opt.strat === "tsmom") sig = d >= opt.look && c[d] / c[d - opt.look] - 1 > 0 ? 1 : 0;
+          else if (opt.strat === "rsi") { const r = rs[d]; if (r != null) { if (state === 0 && r < opt.rsiLo) sig = 1; else if (state === 1 && r > opt.rsiHi) sig = 0; } }
+          state = sig; pos[t][j] = sig / N; } }
+    }
+    // return harian strategi & buy-and-hold
+    const strat = [], bh = [], expo = [], turn = []; let trades = 0;
+    for (let t = 1; t < T; t++) { let r = 0, rb = 0, tv = 0, ex = 0;
+      for (let j = 0; j < N; j++) { const rj = P[j][t] / P[j][t - 1] - 1; r += pos[t][j] * rj; rb += rj / N; tv += Math.abs(pos[t][j] - (t > 1 ? pos[t - 1][j] : 0)); ex += pos[t][j]; }
+      if (tv > 1e-9) trades++; r -= tv * cost; strat.push(r); bh.push(rb); expo.push(ex); turn.push(tv); }
+    const k = Math.floor(strat.length * (opt.split ?? 0.7));
+    const seg = (a, b) => ({ strat: perfStats(strat.slice(a, b), ppy, opt.rf || 0), bh: perfStats(bh.slice(a, b), ppy, opt.rf || 0) });
+    const eqS = [1], eqB = [1]; for (let i = 0; i < strat.length; i++) { eqS.push(eqS[i] * (1 + strat[i])); eqB.push(eqB[i] * (1 + bh[i])); }
+    return { dates: A.dates, eqS, eqB, all: seg(0, strat.length), is: seg(0, k), oos: seg(k, strat.length), splitDate: A.dates[k + 1],
+      exposure: mean(expo), turnoverYr: mean(turn) * ppy, tradeDays: trades, hit: strat.filter((r) => r > 0).length / Math.max(1, expo.filter((e) => e > 0).length), T };
+  }
+
+  const api = { quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

@@ -19,7 +19,7 @@
   </div>
 </header>
 
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen">Watchlist (banyak saham)</button><button class="view-btn active" data-v="detail">Analisis 1 aset</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen">Watchlist (banyak saham)</button><button class="view-btn" data-v="quant">Quant Lab</button><button class="view-btn active" data-v="detail">Analisis 1 aset</button></nav>
 
 <section class="wrap" id="screenView" hidden>
   <section class="card">
@@ -70,6 +70,87 @@
         <li>Semua angka historis dan simulasi, bukan janji. Pakai untuk <b>menyaring</b> mana yang perlu dipelajari lebih dalam, lalu ketuk sahamnya.</li>
       </ol>
     </details>
+  </div>
+</section>
+
+<section class="wrap" id="quantView" hidden>
+  <section class="card">
+    <h2>Quant Lab <span class="tag">portofolio & strategi sistematis</span></h2>
+    <label class="lbl" for="qlQ">Aset (pisahkan koma, 2–15)</label>
+    <div class="search"><textarea id="qlQ" rows="2" spellcheck="false" autocomplete="off"></textarea><ul class="sugg" hidden></ul></div>
+    <div class="chips" id="qlPresets"></div>
+    <div class="grid">
+      <div><label class="lbl" for="qlRange">Data historis</label><select id="qlRange"><option value="2y">2 tahun</option><option value="5y" selected>5 tahun</option><option value="10y">10 tahun</option></select></div>
+      <div><label class="lbl" for="qlCap">Bobot maks per aset (%)</label><input id="qlCap" type="number" min="5" max="100" value="40"></div>
+      <div><label class="lbl" for="qlShr">Shrink return ke rata-rata (%)</label><input id="qlShr" type="number" min="0" max="100" value="50"></div>
+      <div><label class="lbl" for="qlRf">Risk-free (%/th)</label><input id="qlRf" type="number" step="0.05" value="5.75"></div>
+      <div><label class="lbl" for="qlCapital">Modal (Rp)</label><input id="qlCapital" type="number" step="1000000" value="100000000"></div>
+      <div><label class="lbl" for="qlH">Horizon simulasi (hari bursa)</label><input id="qlH" type="number" min="5" max="252" value="63"></div>
+    </div>
+    <button id="qlRun" class="run">Jalankan analisis portofolio</button>
+    <div id="qlStatus" class="status"></div>
+  </section>
+
+  <div id="qlOut" hidden>
+    <div class="card">
+      <h2>1 · Korelasi</h2>
+      <div class="table-wrap"><table id="qlCorr" class="heat"></table></div>
+      <p id="qlCorrTxt" class="note"></p>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li>Angka −1 sampai 1: seberapa searah return harian dua aset. Merah (mendekati 1) = bergerak bersama, jadi tidak saling melindungi. Biru (≤ 0) = cenderung berlawanan, bagus untuk diversifikasi.</li>
+        <li>Saham bank besar IDX biasanya berkorelasi tinggi satu sama lain. Memegang lima bank bukan diversifikasi yang sesungguhnya.</li>
+        <li>Korelasi naik saat krisis. Angka di sini rata-rata periode, bukan jaminan saat pasar jatuh.</li></ul></details>
+    </div>
+
+    <div class="card">
+      <h2>2 · Optimasi portofolio</h2>
+      <div class="table-wrap"><table id="qlW"></table></div>
+      <div class="row"><div class="tabs" id="qlMethod"><button class="tab" data-m="minvar">Min Variance</button><button class="tab active" data-m="rp">Risk Parity</button><button class="tab" data-m="maxsharpe">Max Sharpe</button><button class="tab" data-m="iv">Inverse Vol</button><button class="tab" data-m="ew">Equal</button></div></div>
+      <div class="subh" id="qlAllocT">Alokasi modal</div>
+      <div class="table-wrap"><table id="qlAlloc"></table></div>
+      <div class="subh">Efficient frontier</div>
+      <div class="chart-box tall"><canvas id="qlFront"></canvas></div>
+      <div class="subh" id="qlSimT">Simulasi portofolio</div>
+      <div id="qlSim" class="kpis compact"></div>
+      <div class="chart-box short"><canvas id="qlSimH"></canvas></div>
+      <div class="subh">Kinerja historis bobot ini (in-sample)</div>
+      <div class="chart-box"><canvas id="qlEq"></canvas></div>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li><b>Min Variance</b>: portofolio paling tenang, hanya memakai kovarians (tidak menebak return), sehingga paling stabil di luar sampel.</li>
+        <li><b>Risk Parity</b>: setiap aset menyumbang risiko yang sama, populer di hedge fund (mis. “All Weather”). Kolom <b>kontribusi risiko</b> harus kira-kira sama.</li>
+        <li><b>Max Sharpe</b>: memaksimalkan return per risiko, tapi sangat sensitif terhadap estimasi return. Karena itu return historis di-<b>shrink</b> ke rata-rata dan bobot dibatasi. Jangan mempercayai bobotnya mentah-mentah.</li>
+        <li><b>Inverse Vol / Equal</b>: patokan sederhana. Penelitian (DeMiguel dkk., 2009) menunjukkan 1/N sering sulit dikalahkan di luar sampel.</li>
+        <li><b>Kovarians</b> di-shrink 30% ke korelasi konstan (gaya Ledoit-Wolf) supaya optimizer tidak “mengeksploitasi” noise.</li>
+        <li><b>Alokasi modal</b> dibulatkan ke lot (100 lembar untuk saham IDX); sisanya menjadi kas.</li>
+        <li><b>Frontier</b>: titik abu-abu = 1.500 portofolio acak; titik berwarna = hasil tiap metode. Makin kiri-atas makin efisien (secara historis).</li>
+        <li><b>Simulasi</b> memakai block bootstrap baris return bersama, sehingga korelasi antar saham tetap terjaga.</li>
+        <li><b>Kinerja historis</b> memakai bobot yang dihitung dari data yang sama, sehingga hasilnya pasti terlihat bagus (in-sample). Untuk uji yang jujur, lihat bagian 3.</li></ul></details>
+    </div>
+
+    <div class="card">
+      <h2>3 · Backtest strategi sistematis</h2>
+      <div class="grid">
+        <div><label class="lbl" for="btStrat">Strategi</label><select id="btStrat">
+          <option value="xsmom">Rotasi momentum (top-K antar aset)</option><option value="tsmom">Time-series momentum</option><option value="ma">MA crossover</option><option value="rsi">Mean reversion RSI</option><option value="bh">Buy & hold (equal weight)</option></select></div>
+        <div data-p="look"><label class="lbl" for="btLook">Lookback (hari)</label><input id="btLook" type="number" value="126"></div>
+        <div data-p="topK"><label class="lbl" for="btTop">Top-K aset</label><input id="btTop" type="number" min="1" value="3"></div>
+        <div data-p="rebal"><label class="lbl" for="btRebal">Rebalance tiap (hari)</label><input id="btRebal" type="number" value="21"></div>
+        <div data-p="fast"><label class="lbl" for="btFast">MA cepat</label><input id="btFast" type="number" value="20"></div>
+        <div data-p="slow"><label class="lbl" for="btSlow">MA lambat</label><input id="btSlow" type="number" value="100"></div>
+        <div data-p="rsiLo"><label class="lbl" for="btLo">Beli saat RSI &lt;</label><input id="btLo" type="number" value="30"></div>
+        <div data-p="rsiHi"><label class="lbl" for="btHi">Jual saat RSI &gt;</label><input id="btHi" type="number" value="55"></div>
+        <div><label class="lbl" for="btCost">Biaya per transaksi (bps)</label><input id="btCost" type="number" value="20"></div>
+        <div><label class="lbl" for="btSplit">Porsi in-sample (%)</label><input id="btSplit" type="number" min="30" max="90" value="70"></div>
+      </div>
+      <button id="btRun" class="run alt">Jalankan backtest</button>
+      <div id="btOut"></div>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li>Sinyal dihitung dari harga penutupan hari ini dan posisi baru berlaku besok, jadi tidak ada “mengintip masa depan” (look-ahead). Setiap perubahan posisi dikenai biaya (20 bps ≈ fee beli+jual broker ritel per sisi).</li>
+        <li><b>In-sample</b> = periode awal, tempat kamu bebas mengutak-atik parameter. <b>Out-of-sample</b> = periode akhir yang “tidak dilihat”. Strategi yang bagus di in-sample tapi jeblok di out-of-sample = <b>overfitting</b>.</li>
+        <li>Bandingkan selalu dengan <b>buy & hold</b> pada aset yang sama. Strategi yang Sharpe-nya tidak lebih baik dari buy & hold setelah biaya tidak ada gunanya.</li>
+        <li>Setiap kali kamu mencoba parameter lain lalu memilih yang terbaik, peluang hasilnya kebetulan naik. Quant fund memakai koreksi seperti <i>deflated Sharpe ratio</i> untuk ini. Pegangan kasar: jangan percaya Sharpe out-of-sample &lt; 0,5.</li>
+        <li><b>Bias yang belum ditangani</b>: survivorship (daftar saham hari ini sudah “selamat”), dividen (harga sudah disesuaikan Yahoo), likuiditas, dan ARA/ARB.</li></ul></details>
+    </div>
   </div>
 </section>
 
@@ -173,12 +254,24 @@
       </div>
       <div id="liveRow" class="live-row" hidden><label class="mini" hidden><input type="checkbox" id="liveChk"> Live</label><span id="liveInfo" class="note"></span></div>
       <div id="ohlcLegend" class="ohlc-legend"></div>
-      <div id="candle" class="candle-box"></div>
-      <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
+      <div class="candle-grid">
+        <div class="candle-main">
+          <div id="candle" class="candle-box"></div>
+          <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
+        </div>
+        <aside class="book-side">
+          <div class="tabs" id="bookTabs"><button class="tab active" data-b="vp">Lot per harga</button><button class="tab" data-b="ob">Bid / Offer</button></div>
+          <div class="tabs small-tabs" id="vpRange"><button class="tab active" data-d="1">Hari ini</button><button class="tab" data-d="5">5 hari</button></div>
+          <div id="bookBody" class="book-body"></div>
+          <div id="bookNote" class="note"></div>
+        </aside>
+      </div>
       <div id="techStats" class="tech-stats"></div>
       <p id="techText" class="lead small-lead"></p>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Timeframe</b>: 1m/5m/15m/30m/1j = satu candle per menit/jam (intraday); 1H/1Mg/1B = harian/mingguan/bulanan. Data 1 menit hanya ±5 hari terakhir, 5–30 menit ±1 bulan, 1 jam ±6 bulan. Harga saham IDX dari Yahoo biasanya tertunda ±10–15 menit, jadi jangan dipakai untuk scalping.</li>
+        <li><b>Lot per harga</b> (panel samping): jumlah lot yang <i>sudah tertransaksi</i> di tiap level harga, dihitung dari candle 1 menit. Hijau = terjadi di menit yang naik, merah = di menit yang turun (perkiraan sisi agresor). <b>POC</b> = harga dengan transaksi terbanyak, sering menjadi area support/resistance; <b>VWAP</b> = harga rata-rata tertimbang volume. Ini <b>bukan antrean order</b>.</li>
+        <li><b>Bid / Offer</b>: kripto memakai order book Binance real-time (15 level). Untuk saham IDX hanya bid/offer terbaik (level teratas) dari Yahoo jika tersedia. Antrean lengkap per level hanya ada di aplikasi sekuritas (data berlisensi BEI).</li>
         <li><b>Candle</b>: badan hijau = harga tutup lebih tinggi dari harga buka (naik), merah = turun. Sumbu tipis di atas/bawah menunjukkan harga tertinggi dan terendah di periode itu.</li>
         <li><b>MA20 / MA50</b>: rata-rata harga 20 dan 50 periode terakhir. Harga di atas keduanya = tren sedang naik; di bawah = tren turun. MA20 memotong MA50 ke atas sering disebut <i>golden cross</i>.</li>
         <li><b>Bollinger Band</b>: MA20 ± 2 standar deviasi. Pita menyempit = pasar tenang dan sering mendahului gerakan besar; harga menembus pita = gerakan kuat.</li>

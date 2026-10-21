@@ -7,6 +7,7 @@
 // GET ?action=fundamentals&symbol=TLKM.JK
 // GET ?action=intraday&symbol=BBCA.JK&interval=5m   (1m,2m,5m,15m,30m,60m,90m)
 // GET ?action=quotes&symbols=BBCA.JK,TLKM.JK          (harga terakhir, maks 25)
+// GET ?action=book&symbol=BBCA.JK                       (bid/offer terbaik)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -205,6 +206,15 @@ Deno.serve(async (req) => {
       const j = await r.json();
       const quotes = (j.quotes ?? []).filter((x: any) => x.symbol).map((x: any) => ({ symbol: x.symbol, name: x.longname ?? x.shortname ?? "", exch: x.exchDisp ?? "", type: x.quoteType ?? "" }));
       return json({ quotes }, 200, 3600);
+    }
+    if (action === "book") { // bid/offer terbaik (level teratas) dari Yahoo — antrean lengkap IDX tidak tersedia publik
+      const sym = (u.searchParams.get("symbol") ?? "").trim();
+      if (!SYMBOL_RE.test(sym)) return json({ error: "Simbol tidak valid" }, 400);
+      const { ck, crumb } = await yahooCrumb();
+      const r = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}&crumb=${encodeURIComponent(crumb)}`, { headers: { ...UA, cookie: ck } });
+      const q = r.ok ? (await r.json())?.quoteResponse?.result?.[0] ?? {} : {};
+      return json({ symbol: sym, bid: q.bid ?? null, ask: q.ask ?? null, bidSize: q.bidSize ?? null, askSize: q.askSize ?? null, price: q.regularMarketPrice ?? null,
+        time: q.regularMarketTime ?? null, marketState: q.marketState ?? null }, 200, 10);
     }
     if (action === "quotes") {
       const syms = (u.searchParams.get("symbols") ?? "").split(",").map((x) => x.trim()).filter((x) => SYMBOL_RE.test(x)).slice(0, 25);
