@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulasi Pasar</title>
+<meta name="description" content="Simulasi Monte Carlo harga saham, kripto, emas, FX, dan yield obligasi dengan GARCH, jump-diffusion, bootstrap, Vasicek/CIR, plus backtest kalibrasi.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span>Simulasi Pasar</div>
+    <div class="sub">Monte Carlo · GARCH · Jump · Bootstrap · Vasicek/CIR</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card controls">
+    <div class="seg" role="tablist">
+      <button class="seg-btn active" data-mode="price">Harga aset</button>
+      <button class="seg-btn" data-mode="bond">Yield obligasi</button>
+    </div>
+
+    <label class="lbl" for="q">Cari ticker</label>
+    <div class="search">
+      <input id="q" autocomplete="off" spellcheck="false" placeholder="mis. BTC-USD, BBCA.JK, emas, telkom">
+      <ul id="sugg" class="sugg" hidden></ul>
+    </div>
+    <div id="chips" class="chips"></div>
+
+    <div class="grid">
+      <div><label class="lbl" for="horizon">Horizon (periode)</label><input id="horizon" type="number" min="1" max="365" value="30"></div>
+      <div><label class="lbl" for="range">Data historis</label>
+        <select id="range"><option value="2y">2 tahun</option><option value="5y" selected>5 tahun</option><option value="10y">10 tahun</option><option value="max">Maksimal</option></select></div>
+      <div><label class="lbl" for="sims">Jumlah path</label>
+        <select id="sims"><option>2000</option><option>5000</option><option selected>10000</option><option>20000</option></select></div>
+      <div class="price-only"><label class="lbl" for="drift">Drift (arah)</label>
+        <select id="drift"><option value="zero" selected>Nol (netral)</option><option value="hist">Rata-rata historis</option><option value="custom">Custom / tahun</option></select></div>
+      <div class="price-only" id="customWrap" hidden><label class="lbl" for="customDrift">Return/tahun (%)</label><input id="customDrift" type="number" step="0.5" value="8"></div>
+      <div class="bond-only" hidden><label class="lbl" for="coupon">Kupon (%/th)</label><input id="coupon" type="number" step="0.125" value="6.5"></div>
+      <div class="bond-only" hidden><label class="lbl" for="maturity">Sisa tenor (th)</label><input id="maturity" type="number" step="0.5" value="10"></div>
+    </div>
+
+    <div class="price-only">
+      <span class="lbl">Model</span>
+      <div class="checks" id="models">
+        <label><input type="checkbox" value="gbm" checked> GBM</label>
+        <label><input type="checkbox" value="garch" checked> GARCH-t</label>
+        <label><input type="checkbox" value="jump" checked> Jump</label>
+        <label><input type="checkbox" value="bootstrap" checked> Bootstrap</label>
+      </div>
+    </div>
+
+    <div class="row">
+      <label class="toggle"><input type="checkbox" id="bt" checked> Uji keyakinan (backtest historis)</label>
+      <label class="file">Upload CSV<input type="file" id="csv" accept=".csv,text/csv"></label>
+    </div>
+
+    <button id="run" class="run">Jalankan simulasi</button>
+    <div id="status" class="status" aria-live="polite"></div>
+    <div class="bar"><div id="barFill"></div></div>
+  </section>
+
+  <section id="out" hidden>
+    <div class="card head">
+      <div>
+        <div id="asset" class="asset"></div>
+        <div id="assetMeta" class="meta"></div>
+      </div>
+      <div id="lastPx" class="last"></div>
+    </div>
+
+    <div id="kpis" class="kpis"></div>
+
+    <div class="card">
+      <div class="card-h">
+        <h2 id="fanTitle">Proyeksi</h2>
+        <div id="modelTabs" class="tabs"></div>
+      </div>
+      <div class="chart-box tall"><canvas id="fan"></canvas></div>
+      <div class="legend-note">Pita gelap = 50% kemungkinan · pita terang = 90% · garis = median<label class="mini"><input type="checkbox" id="showPaths"> tampilkan 25 path contoh</label></div>
+    </div>
+
+    <div class="card">
+      <h2>Distribusi di akhir horizon</h2>
+      <div class="table-wrap"><table id="sumTable"></table></div>
+    </div>
+
+    <div class="card" id="confCard">
+      <h2>Seberapa bisa dipercaya? <span class="tag">backtest out-of-sample</span></h2>
+      <p id="confLead" class="lead"></p>
+      <div class="table-wrap"><table id="confTable"></table></div>
+      <div class="chart-box"><canvas id="calib"></canvas></div>
+      <p class="note" id="confNote"></p>
+    </div>
+
+    <div class="card">
+      <h2 id="histTitle">Histogram nilai akhir</h2>
+      <div class="chart-box"><canvas id="hist"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>Parameter model</h2>
+      <div id="params" class="params"></div>
+    </div>
+
+    <details class="card caveats" open>
+      <summary>Batasan yang perlu kamu ingat</summary>
+      <ul id="caveats"></ul>
+    </details>
+  </section>
+
+  <footer class="foot">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
+</main>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
