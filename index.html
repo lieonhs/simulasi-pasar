@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id" data-theme="terminal">
+<html lang="id" data-theme="pro">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261021153602">
+<link rel="stylesheet" href="style.css?v=20261021155946">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -40,7 +40,7 @@
 <div class="topbar">
 <div class="tape" id="tape"><div class="tape-inner" id="tapeInner"><span class="tape-item">MEMUAT HARGA…</span></div></div>
 <div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="KETIK TICKER / NAMA lalu ENTER  ⟨GO⟩"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="themeBtn" title="Ganti tema">TERANG</button></div>
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
   <button class="fchip active" data-f="all">Semua</button>
@@ -82,7 +82,7 @@
 
     <div class="card">
       <div class="card-h"><h2>Tabel perbandingan</h2>
-        <div class="tabs" id="wlCols"><button class="tab active" data-c="ringkas">Ringkas</button><button class="tab" data-c="kinerja">Kinerja</button><button class="tab" data-c="risiko">Risiko</button><button class="tab" data-c="proyeksi">Proyeksi</button><button class="tab" data-c="fund">Fundamental</button></div></div>
+        <div class="tabs" id="wlCols"><button class="tab active" data-c="ringkas">Ringkas</button><button class="tab" data-c="kinerja">Kinerja</button><button class="tab" data-c="risiko">Risiko</button><button class="tab" data-c="proyeksi">Proyeksi</button><button class="tab" data-c="fund">Fundamental</button><button class="tab" data-c="sinyal">Sinyal</button><button class="tab" data-c="likuid">Likuiditas</button></div></div>
       <div class="table-wrap sticky"><table id="wlTable"></table></div>
       <p class="note">Ketuk judul kolom untuk mengurutkan. Ketuk nama aset untuk membuka analisis lengkapnya.</p>
     </div>
@@ -103,10 +103,81 @@
         <li><b>Peluang naik</b> dan <b>rentang 90%</b> berasal dari simulasi model yang kamu pilih untuk horizon yang sama, jadi semua saham dibandingkan dengan aturan yang sama. Peluang naik di sekitar 50% itu normal; yang membedakan saham adalah <b>lebar rentangnya</b> (risiko).</li>
         <li><b>Tab Risiko</b>: volatilitas, drawdown terburuk 1 tahun, <b>beta</b> (seberapa besar ikut gerak indeks), dan <b>Sharpe</b> 1 tahun (imbal hasil per unit risiko di atas bunga bebas risiko).</li>
         <li><b>Tab Fundamental</b>: P/E dan P/BV lebih rendah belum tentu lebih murah. Bandingkan hanya di sektor yang sama dan lihat ROE-nya. Untuk nilai wajar, buka saham itu di <b>Analisis 1 aset → Valuasi Damodaran</b>.</li>
+        <li><b>Tab Sinyal</b>: aturan teknikal yang sama dengan bagian Sinyal beli/jual (tren MA20/MA50 + momentum 3 bulan + RSI, skor −3 s/d +3; BELI ≥ +2, JUAL ≤ −2). Kolom <b>Sharpe OOS aturan / B&amp;H</b> memberi tahu apakah aturan ini pernah lebih baik daripada sekadar menahan saham itu. Kalau angka kiri lebih kecil, abaikan sinyalnya untuk saham tersebut.</li>
+        <li><b>Tab Likuiditas</b>: volume dalam lot (1 lot = 100 lembar) dan nilai transaksi harian. Saham dengan nilai transaksi kecil sulit dijual cepat tanpa menurunkan harga.</li>
         <li><b>Peta risiko</b>: kiri-atas = return tinggi dengan risiko rendah (jarang bertahan lama), kanan-bawah = risiko tinggi tapi return rendah.</li>
         <li>Semua angka historis dan simulasi, bukan janji. Pakai untuk <b>menyaring</b> mana yang perlu dipelajari lebih dalam, lalu ketuk sahamnya.</li>
       </ol>
     </details>
+  </div>
+</section>
+
+<section class="wrap" id="marketView" hidden>
+  <div class="card mk-bar">
+    <div class="card-h"><h2>Pasar hari ini</h2><div class="row" style="margin:0"><span id="mkStatus" class="status" style="margin:0"></span><button id="mkRun" class="btn">Muat ulang</button></div></div>
+    <p class="note" style="margin:0">Harga dari Yahoo Finance (saham IDX tertunda ±10–15 menit). Daftar gainer/loser memakai 50 saham likuid IDX yang tetap (bukan seluruh bursa).</p>
+  </div>
+  <div id="mkOut" class="mk-grid">
+    <div class="card"><h2>Indeks</h2><div class="table-wrap"><table id="mkIdx"></table></div></div>
+    <div class="card"><h2>Kurs rupiah</h2><div class="table-wrap"><table id="mkFx"></table></div><p class="note">Angka = rupiah per 1 unit mata uang asing. Naik = rupiah melemah.</p></div>
+    <div class="card"><h2>Komoditas</h2><div class="table-wrap"><table id="mkCmd"></table></div><p id="mkCmdNote" class="note"></p></div>
+    <div class="card"><h2>Obligasi & suku bunga</h2><div class="table-wrap"><table id="mkBond"></table></div><p class="note">Yield SBN dan BI-Rate tidak tersedia gratis secara real-time; angka Indonesia di atas adalah asumsi aplikasi (bisa kamu ubah di Analisis → Valuasi / Quant Lab). Cek keputusan RDG terbaru di bi.go.id.</p></div>
+    <div class="card span-all"><div class="card-h"><h2>Saham IDX: penggerak hari ini</h2><div class="tabs" id="mkMovTabs"><button class="tab active" data-m="gain">Naik terbesar</button><button class="tab" data-m="lose">Turun terbesar</button><button class="tab" data-m="value">Nilai transaksi terbesar</button><button class="tab" data-m="vol">Volume terbesar</button></div></div>
+      <div class="table-wrap"><table id="mkMov"></table></div><p id="mkBreadth" class="note"></p></div>
+    <div class="card span-all" id="shipCard"><h2>Shipping & freight <span class="tag">biaya angkut global</span></h2>
+      <div id="shipWci" class="kpis compact"></div>
+      <div class="table-wrap"><table id="shipTable"></table></div>
+      <div id="shipRead" class="verdict"></div>
+      <div class="subh">Siapa yang terdampak</div>
+      <div class="table-wrap"><table id="shipImpact"></table></div>
+      <div class="subh">Berita shipping terbaru</div>
+      <div id="shipNews" class="news-list"></div>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li><b>WCI (Drewry World Container Index)</b>: tarif kontainer 40 kaki dari Asia ke rute utama, terbit tiap Kamis. Ini patokan biaya kirim barang jadi & bahan baku impor.</li>
+        <li><b>BDRY</b> = ETF yang memegang kontrak berjangka tarif kapal curah kering (batu bara, bijih besi, gandum), mengikuti Baltic Dry Index. <b>BWET</b> = ETF tarif kapal tanker minyak. Keduanya adalah <i>proksi</i> yang bisa diperdagangkan, bukan indeks resmi.</li>
+        <li>Saham pelayaran (Maersk, Hapag-Lloyd, COSCO, ZIM) bereaksi lebih dulu terhadap perubahan tarif kontainer; saham pelayaran Indonesia (TMAS, SMDR) ikut sebagian.</li>
+        <li>Tarif naik cepat + berita gangguan jalur (Laut Merah/Terusan Suez, Terusan Panama, mogok pelabuhan) biasanya berarti kapasitas tersendat, bukan permintaan yang membaik. Tarif curah naik bersama harga batu bara/bijih besi lebih sering berarti permintaan (terutama China) menguat.</li></ul></details>
+    </div>
+    <div class="card span-all"><h2>Kalender ekonomi</h2><div class="table-wrap"><table id="mkCal"></table></div>
+      <p class="note">Jadwal RDG Bank Indonesia dan FOMC 2026 sesuai jadwal resmi yang diumumkan. Rilis data bulanan memakai pola umum (perkiraan), cek tanggal pastinya di bps.go.id.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="pfView" hidden>
+  <section class="card">
+    <h2>Portofolio saya</h2>
+    <label class="lbl" for="pfSym">Ticker</label>
+    <div class="search"><input id="pfSym" autocomplete="off" spellcheck="false" placeholder="mis. BBCA.JK"><ul class="sugg" hidden></ul></div>
+    <div class="grid">
+      <div><label class="lbl" for="pfAvg">Harga beli rata-rata</label><input id="pfAvg" type="number" step="any" min="0"></div>
+      <div><label class="lbl" for="pfQty" id="pfQtyLbl">Jumlah (lot untuk saham IDX)</label><input id="pfQty" type="number" step="any" min="0"></div>
+    </div>
+    <button id="pfAdd" class="run alt">Tambah / perbarui posisi</button>
+    <div class="table-wrap" style="margin-top:12px"><table id="pfList"></table></div>
+    <div class="grid">
+      <div><label class="lbl" for="pfH">Horizon risiko (hari bursa)</label><input id="pfH" type="number" min="1" max="252" value="21"></div>
+      <div><label class="lbl" for="pfCash">Kas (Rp, opsional)</label><input id="pfCash" type="number" step="100000" min="0" value="0"></div>
+    </div>
+    <button id="pfRun" class="run">Hitung portofolio</button>
+    <div id="pfStatus" class="status"></div>
+    <p class="note">Posisi tersimpan di akunmu (Supabase, hanya bisa dibaca akunmu sendiri). Untuk saham IDX isi jumlah dalam <b>lot</b> (1 lot = 100 lembar); untuk aset lain dalam unit/lembar/koin.</p>
+  </section>
+  <div id="pfOut" hidden>
+    <div class="kpis" id="pfKpi"></div>
+    <div class="card"><h2>Posisi</h2><div class="table-wrap sticky"><table id="pfTable"></table></div><p class="note">Nilai dikonversi ke rupiah memakai kurs terakhir. Ketuk ticker untuk analisis lengkap.</p></div>
+    <div class="card"><h2>Alokasi</h2><div class="chart-box"><canvas id="pfAlloc"></canvas></div><p id="pfAllocTxt" class="note"></p></div>
+    <div class="card"><h2>Risiko portofolio</h2><div class="kpis compact" id="pfRisk"></div><div class="table-wrap"><table id="pfRc"></table></div><p id="pfRiskTxt" class="lead small-lead"></p></div>
+    <div class="card"><h2>Simulasi nilai ke depan</h2><div class="chart-box"><canvas id="pfSim"></canvas></div><p id="pfSimTxt" class="note"></p></div>
+    <details class="card formula"><summary>Rumus</summary><div class="fx">
+      <p>Bobot \( w_i = V_i / \sum_j V_j \); return harian portofolio \( r_{p,t} = \sum_i w_i r_{i,t} \) (dalam rupiah, termasuk efek kurs)</p>
+      <p>Volatilitas \( \sigma_p = \sqrt{w^\top \Sigma w}\,\sqrt{252} \); kontribusi risiko \( RC_i = w_i (\Sigma w)_i / (w^\top \Sigma w) \)</p>
+      <p>VaR 95% 1 hari (historis) \( = -Q_{0.05}(r_p)\cdot V \); simulasi \( h \) hari: bootstrap hari historis, \( V_h = V\prod_{k=1}^{h}(1+r_{p,t_k}) \)</p>
+      <p>Beta vs IHSG \( = \text{Cov}(r_p, r_m)/\text{Var}(r_m) \)</p></div></details>
+    <details class="card howto-card"><summary>Cara baca</summary><ol class="readme">
+      <li><b>Untung/rugi</b> dihitung dari harga beli rata-rata yang kamu isi, belum termasuk fee broker, pajak jual 0,1%, dan dividen yang sudah diterima.</li>
+      <li><b>Kontribusi risiko</b> lebih penting daripada bobot: satu saham dengan bobot 20% bisa menyumbang 40% risiko kalau sangat bergejolak atau bergerak searah dengan yang lain.</li>
+      <li><b>VaR 95%</b>: dalam 1 dari 20 hari, kerugian bisa lebih besar dari angka ini. Bukan batas maksimal kerugian.</li>
+      <li>Simulasi memakai pola return 2 tahun terakhir. Krisis yang belum pernah terjadi di periode itu tidak ikut terhitung.</li></ol></details>
   </div>
 </section>
 
@@ -316,7 +387,8 @@
           <label><input type="checkbox" value="ma50" checked> MA50</label>
           <label><input type="checkbox" value="bb"> Bollinger</label>
           <label><input type="checkbox" value="vol" checked> Volume</label>
-          <label><input type="checkbox" value="rsi" checked> RSI</label>
+          <label><input type="checkbox" value="fib"> Fibonacci</label>
+          <label><input type="checkbox" value="rsi" checked> Osilator</label>
         </div>
       </div>
       <div id="liveRow" class="live-row" hidden><label class="mini" hidden><input type="checkbox" id="liveChk"> Live</label><span id="liveInfo" class="note"></span></div>
@@ -324,7 +396,7 @@
       <div class="candle-grid">
         <div class="candle-main">
           <div id="candle" class="candle-box"></div>
-          <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
+          <div id="rsiWrap"><div class="osc-head"><div class="tabs small-tabs" id="oscTabs"><button class="tab active" data-o="rsi">RSI</button><button class="tab" data-o="macd">MACD</button><button class="tab" data-o="stoch">Stochastic</button></div><span class="rsi-lbl" id="oscLbl">RSI 14</span></div><div id="rsi" class="rsi-box"></div></div>
         </div>
         <aside class="book-side">
           <div class="tabs" id="bookTabs"><button class="tab active" data-b="vp">Lot per harga</button><button class="tab" data-b="ob">Bid / Offer</button></div>
@@ -337,9 +409,14 @@
       <p id="techText" class="lead small-lead"></p>
       <details class="formula"><summary>Rumus · indikator</summary><div class="fx"><p>\( \text{MA}_n = \tfrac1n\sum_{k=0}^{n-1} C_{t-k} \); Bollinger: \( \text{MA}_{20} \pm 2\sigma_{20} \)</p>
 <p>RSI (Wilder): \( \bar G_t = \tfrac{13\bar G_{t-1} + G_t}{14},\ \bar L_t = \tfrac{13\bar L_{t-1} + L_t}{14},\ \text{RSI} = 100 - \dfrac{100}{1 + \bar G_t/\bar L_t} \)</p>
+<p>MACD: \( \text{EMA}_{12}(C) - \text{EMA}_{26}(C) \), sinyal \( = \text{EMA}_9(\text{MACD}) \), \( \text{EMA}_t = \alpha C_t + (1-\alpha)\text{EMA}_{t-1},\ \alpha = \tfrac{2}{n+1} \)</p>
+<p>Stochastic: \( \%K = \text{SMA}_3\!\left(100\,\dfrac{C_t - L_{14}}{H_{14} - L_{14}}\right),\ \%D = \text{SMA}_3(\%K) \)</p>
+<p>Fibonacci: \( P_f = H - f\,(H-L) \) bila puncak terjadi setelah dasar (dan sebaliknya), \( f \in \{0{,}236;\,0{,}382;\,0{,}5;\,0{,}618;\,0{,}786\} \); ATR: \( \tfrac1{14}\sum \max(H-L,\,|H-C_{-1}|,\,|L-C_{-1}|) \)</p>
 <p>VWAP: \( \dfrac{\sum_i \tfrac{H_i+L_i+C_i}{3} V_i}{\sum_i V_i} \); POC \( = \arg\max_{p}\sum_{i: C_i \approx p} V_i \); lot \( = V/100 \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Timeframe</b>: 1m/5m/15m/30m/1j = satu candle per menit/jam (intraday); 1H/1Mg/1B = harian/mingguan/bulanan. Data 1 menit hanya ±5 hari terakhir, 5–30 menit ±1 bulan, 1 jam ±6 bulan. Harga saham IDX dari Yahoo biasanya tertunda ±10–15 menit, jadi jangan dipakai untuk scalping.</li>
+        <li><b>Osilator</b> (panel bawah, pilih RSI / MACD / Stochastic): RSI dan Stochastic mengukur seberapa jauh harga sudah bergerak dalam rentang terakhir. MACD memotong garis sinyal ke atas = momentum membaik, ke bawah = melemah. Semua ini terlambat beberapa hari dan sering salah di pasar sideways.</li>
+        <li><b>Fibonacci</b>: garis putus-putus dari puncak & dasar rentang yang sedang kamu lihat (ganti dengan tab 3B/6B/1T). Level 38,2% dan 61,8% ditandai kuning. Ini <i>konvensi</i> trader, bukan hukum pasar: berguna sebagai titik acuan, bukan alasan beli.</li>
         <li><b>Lot per harga</b> (panel samping): jumlah lot yang <i>sudah tertransaksi</i> di tiap level harga, dihitung dari candle 1 menit. Hijau = terjadi di menit yang naik, merah = di menit yang turun (perkiraan sisi agresor). <b>POC</b> = harga dengan transaksi terbanyak, sering menjadi area support/resistance; <b>VWAP</b> = harga rata-rata tertimbang volume. Ini <b>bukan antrean order</b>.</li>
         <li><b>Bid / Offer</b>: kripto memakai order book Binance real-time (15 level). Untuk saham IDX hanya bid/offer terbaik (level teratas) dari Yahoo jika tersedia. Antrean lengkap per level hanya ada di aplikasi sekuritas (data berlisensi BEI).</li>
         <li><b>Candle</b>: badan hijau = harga tutup lebih tinggi dari harga buka (naik), merah = turun. Sumbu tipis di atas/bawah menunjukkan harga tertinggi dan terendah di periode itu.</li>
@@ -505,6 +582,12 @@ Estimasi MLE: \( \max \sum_t \left[\ln\Gamma\!\left(\tfrac{\nu+1}{2}\right) - \l
     </div>
 
 
+    <div class="card price-only" id="finCard" hidden>
+      <div class="card-h"><h2>Laporan keuangan tahunan</h2><span id="finCur" class="tag"></span></div>
+      <div class="table-wrap sticky"><table id="finTable"></table></div>
+      <div class="chart-box short"><canvas id="finChart"></canvas></div>
+      <p class="note">Sumber: Yahoo Finance (ringkasan laporan tahunan, ±4 tahun). Angka bisa berbeda sedikit dari laporan resmi di idx.co.id karena klasifikasi akun. FCF ≈ laba operasi × (1 − pajak) + penyusutan − capex (perkiraan kasar, tanpa perubahan modal kerja).</p>
+    </div>
     <div class="card price-only" id="valCard">
       <h2>Valuasi intrinsik <span class="tag">metode Aswath Damodaran</span></h2>
       <div id="valStatus" class="status"></div>
@@ -609,9 +692,9 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
-<script>try{var t=localStorage.getItem("sp_theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261021153602";</script>
-<script src="engine.js?v=20261021153602"></script>
-<script src="app.js?v=20261021153602"></script>
+<script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<script>window.APP_V = "20261021155946";</script>
+<script src="engine.js?v=20261021155946"></script>
+<script src="app.js?v=20261021155946"></script>
 </body>
 </html>

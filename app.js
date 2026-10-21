@@ -32,7 +32,7 @@
     ["indofood", "INDF.JK", "Indofood Sukses Makmur", "EQUITY"], ["us10y", "^TNX", "Yield obligasi AS 10 tahun", "INDEX"], ["treasury", "^TNX", "Yield obligasi AS 10 tahun", "INDEX"],
   ];
   const TYPE_ID = { EQUITY: "Saham", CRYPTOCURRENCY: "Kripto", INDEX: "Indeks", ETF: "ETF", CURRENCY: "Mata uang", FUTURE: "Komoditas", MUTUALFUND: "Reksa dana", OPTION: "Opsi" };
-  const COLORS = ["#1f5eff", "#0f8a5f", "#b86e00", "#8b3fd9", "#c8322b"];
+  const COLORS = { get length() { return 6; } }; for (let i = 0; i < 6; i++) Object.defineProperty(COLORS, i, { get: () => css(`--c${i + 1}`) });
 
   const $ = (id) => document.getElementById(id);
   const state = { mode: "price", symbol: "BTC-USD", data: null, res: null, sel: null, charts: {}, csv: null, runId: 0,
@@ -479,6 +479,20 @@
       else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; out[i] = 100 - 100 / (1 + g / (l || 1e-12)); } }
     return out;
   }
+  function ema(a, n) { const k = 2 / (n + 1), out = new Array(a.length).fill(null); let e = null, seed = 0, c = 0;
+    for (let i = 0; i < a.length; i++) { const v = a[i]; if (v == null) continue; if (e == null) { seed += v; c++; if (c === n) { e = seed / n; out[i] = e; } } else { e = v * k + e * (1 - k); out[i] = e; } }
+    return out; }
+  function macd(c, f = 12, sl = 26, sg = 9) { const ef = ema(c, f), es = ema(c, sl), m = c.map((_, i) => (ef[i] != null && es[i] != null ? ef[i] - es[i] : null));
+    const sig = ema(m, sg); return { m, sig, hist: m.map((v, i) => (v != null && sig[i] != null ? v - sig[i] : null)) }; }
+  function stoch(bars, n = 14, sk = 3, sd = 3) { const raw = bars.map((_, i) => { if (i < n - 1) return null; let h = -Infinity, l = Infinity; for (let j = i - n + 1; j <= i; j++) { h = Math.max(h, bars[j][2]); l = Math.min(l, bars[j][3]); }
+      return h > l ? (100 * (bars[i][4] - l)) / (h - l) : 50; });
+    const smooth = (a, k) => a.map((_, i) => { const w = a.slice(Math.max(0, i - k + 1), i + 1); return w.length === k && w.every((v) => v != null) ? w.reduce((x, y) => x + y, 0) / k : null; });
+    const K = smooth(raw, sk); return { K, D: smooth(K, sd) }; }
+  const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  function fibLevels(bars) { if (bars.length < 5) return null; let hi = -Infinity, lo = Infinity, ih = 0, il = 0;
+    bars.forEach((b, i) => { if (b[2] > hi) { hi = b[2]; ih = i; } if (b[3] < lo) { lo = b[3]; il = i; } });
+    const up = ih > il; // naik dari low ke high -> retracement diukur turun dari high
+    return { hi, lo, up, levels: FIB.map((f) => ({ f, price: up ? hi - (hi - lo) * f : lo + (hi - lo) * f })) }; }
   const INTRA_TF = { "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "60m": 3600 };
   const isIntra = () => !!INTRA_TF[state.tf];
   async function loadIntraday() {
@@ -534,22 +548,46 @@
     const lineSer = (vals, color, w = 1.5, style = 0) => { const s = main.addLineSeries({ color, lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       s.setData(bars.map((b, i) => (vals[i] == null ? { time: b[0] } : { time: b[0], value: vals[i] }))); return s; };
     const m20 = sma(closes, 20), m50 = sma(closes, 50);
-    if (show.has("ma20")) lineSer(m20, "#1f5eff");
-    if (show.has("ma50")) lineSer(m50, "#b86e00");
+    if (show.has("ma20")) lineSer(m20, css("--c1"));
+    if (show.has("ma50")) lineSer(m50, css("--c3"));
     if (show.has("bb")) { const sd = closes.map((_, i) => (i < 19 ? null : Math.sqrt(closes.slice(i - 19, i + 1).reduce((s, v) => s + (v - m20[i]) ** 2, 0) / 20)));
-      lineSer(m20.map((v, i) => (v == null ? null : v + 2 * sd[i])), "#8b3fd9", 1, 2); lineSer(m20.map((v, i) => (v == null ? null : v - 2 * sd[i])), "#8b3fd9", 1, 2); }
+      lineSer(m20.map((v, i) => (v == null ? null : v + 2 * sd[i])), css("--c4"), 1, 2); lineSer(m20.map((v, i) => (v == null ? null : v - 2 * sd[i])), css("--c4"), 1, 2); }
     if (show.has("vol")) { const vs = main.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
       main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       vs.setData(bars.map((b) => ({ time: b[0], value: b[5], color: b[4] >= b[1] ? up + "66" : dn + "66" }))); }
     main.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: show.has("vol") ? 0.22 : 0.08 } });
 
+    // Fibonacci retracement pada rentang yang sedang dilihat
+    if (show.has("fib")) { let win = bars;
+      if (!intra && state.rg > 0) { const f = new Date(bars[bars.length - 1][0]); f.setDate(f.getDate() - state.rg); const fs = f.toISOString().slice(0, 10); win = bars.filter((b) => b[0] >= fs); }
+      else if (intra && state.rg > 0) { const days = [...new Set(bars.map((b) => tLabel(b[0]).slice(0, 10)))], first = days[Math.max(0, days.length - state.rg)]; win = bars.filter((b) => tLabel(b[0]).slice(0, 10) >= first); }
+      const F = fibLevels(win); if (F) F.levels.forEach((L) => cs.createPriceLine({ price: L.price, color: L.f === 0.618 || L.f === 0.382 ? css("--c3") : muted, lineStyle: L.f === 0 || L.f === 1 ? 0 : 2, lineWidth: 1, axisLabelVisible: true, title: `Fib ${nf(1).format(L.f * 100)}%` })); }
+
+    // panel osilator: RSI / MACD / Stochastic
+    const osc = state.osc || "rsi";
+    document.querySelectorAll("#oscTabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.o === osc));
     const rWrap = $("rsiWrap"); rWrap.hidden = !show.has("rsi");
     const rel = $("rsi"), rchart = LightweightCharts.createChart(rel, { ...opts(rel.clientHeight || 110), width: rel.clientWidth || el.clientWidth, timeScale: { visible: false, borderColor: line } });
-    const rv = rsi(closes), rs = rchart.addLineSeries({ color: ink, lineWidth: 1.4, priceLineVisible: false });
-    rs.setData(bars.map((b, i) => (rv[i] == null ? { time: b[0] } : { time: b[0], value: rv[i] })));
-    rs.createPriceLine({ price: 70, color: dn, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
-    rs.createPriceLine({ price: 30, color: up, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
-    rchart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+    const ser = (vals, color, w = 1.4) => { const x = rchart.addLineSeries({ color, lineWidth: w, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+      x.setData(bars.map((b, i) => (vals[i] == null ? { time: b[0] } : { time: b[0], value: vals[i] }))); return x; };
+    const rv = rsi(closes), M = macd(closes), ST = stoch(bars);
+    if (osc === "macd") {
+      const h = rchart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+      h.setData(bars.map((b, i) => (M.hist[i] == null ? { time: b[0] } : { time: b[0], value: M.hist[i], color: (M.hist[i] >= 0 ? up : dn) + "99" })));
+      ser(M.m, css("--c1")); ser(M.sig, css("--c3"), 1.2);
+      $("oscLbl").textContent = "MACD (12, 26, 9) · garis biru = MACD, kuning = sinyal, batang = selisih";
+    } else if (osc === "stoch") {
+      const k = ser(ST.K, css("--c1")); ser(ST.D, css("--c3"), 1.2);
+      k.createPriceLine({ price: 80, color: dn, lineStyle: 2, lineWidth: 1, axisLabelVisible: false }); k.createPriceLine({ price: 20, color: up, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
+      rchart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+      $("oscLbl").textContent = "Stochastic (14, 3, 3) · %K biru, %D kuning · > 80 jenuh beli, < 20 jenuh jual";
+    } else {
+      const rs = ser(rv, ink);
+      rs.createPriceLine({ price: 70, color: dn, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
+      rs.createPriceLine({ price: 30, color: up, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
+      rchart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
+      $("oscLbl").textContent = "RSI 14 · > 70 jenuh beli, < 30 jenuh jual";
+    }
     main.timeScale().subscribeVisibleLogicalRangeChange((r) => r && rchart.timeScale().setVisibleLogicalRange(r));
     state.lw = { main, rsi: rchart, cs, n: bars.length };
     applyMarkers();
@@ -567,7 +605,7 @@
       $("liveInfo").innerHTML = `Harga terakhir <b>${fmtNum(lastPx)}</b>${dl ? ` (<span class="${cls(lastPx / dl - 1)}">${spct(lastPx / dl - 1, 2)}</span> vs tutup kemarin)` : ""} · pukul ${pt} ${esc(D.timezone === "Asia/Jakarta" ? "WIB" : D.timezone)}${ago != null && ago > 20 ? ` · data ${ago} menit lalu (pasar tutup / tertunda)` : ""} · diperbarui ${new Date(state.intra.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`; }
 
     const legend = (b, i) => { if (!b) return; const prev = i > 0 ? bars[i - 1][4] : b[1], ch = b[4] / prev - 1;
-      $("ohlcLegend").innerHTML = `${tLabel(b[0])} · O ${fmtNum(b[1])} · H ${fmtNum(b[2])} · L ${fmtNum(b[3])} · C <span class="${cls(ch)}">${fmtNum(b[4])} (${spct(ch, 2)})</span> · Vol ${nf(0).format(b[5])}${rv[i] != null ? ` · RSI ${nf(0).format(rv[i])}` : ""}`; };
+      $("ohlcLegend").innerHTML = `${tLabel(b[0])} · O ${fmtNum(b[1])} · H ${fmtNum(b[2])} · L ${fmtNum(b[3])} · C <span class="${cls(ch)}">${fmtNum(b[4])} (${spct(ch, 2)})</span> · Vol ${nf(0).format(b[5])}${rv[i] != null ? ` · RSI ${nf(0).format(rv[i])}` : ""}${M.m[i] != null ? ` · MACD ${fmtNum(M.m[i])}` : ""}${ST.K[i] != null ? ` · %K ${nf(0).format(ST.K[i])}` : ""}`; };
     const idxOf = new Map(bars.map((b, i) => [b[0], i]));
     legend(bars[bars.length - 1], bars.length - 1);
     main.subscribeCrosshairMove((p) => { if (!p.time) return legend(bars[bars.length - 1], bars.length - 1);
@@ -581,15 +619,26 @@
     const ma20 = d20[d20.length - 1], ma50 = d50[d50.length - 1], ma200 = d200[d200.length - 1], r = dr[dr.length - 1];
     const vol20 = dO.slice(-20).reduce((s, b) => s + b[5], 0) / 20, volT = dO[dO.length - 1][5];
     const chg = (n) => (dc.length > n ? last / dc[dc.length - 1 - n] - 1 : NaN);
+    const dM = macd(dc), dS = stoch(dO), mN = dM.m[dc.length - 1], sN = dM.sig[dc.length - 1], mP = dM.m[dc.length - 2], sP = dM.sig[dc.length - 2], kN = dS.K[dc.length - 1], dN = dS.D[dc.length - 1];
+    const sd20 = dc.length >= 20 ? MCEngine.std(dc.slice(-20), 0) : null, bbU = sd20 != null ? ma20 + 2 * sd20 : null, bbL = sd20 != null ? ma20 - 2 * sd20 : null;
+    const fib6 = fibLevels(dO.slice(-126)), fibN = fib6 ? fib6.levels.slice(1, -1).reduce((a, L) => (!a || Math.abs(L.price - last) < Math.abs(a.price - last) ? L : a), null) : null;
+    const trs = dO.slice(-15).map((b, i, a) => (i ? Math.max(b[2] - b[3], Math.abs(b[2] - a[i - 1][4]), Math.abs(b[3] - a[i - 1][4])) : null)).filter((x) => x != null), atr = trs.length ? trs.reduce((x, y) => x + y, 0) / trs.length : null;
     $("techStats").innerHTML = [["Hari ini", `<span class="${cls(chg(1))}">${spct(chg(1), 2)}</span>`], ["1 minggu", `<span class="${cls(chg(5))}">${spct(chg(5))}</span>`],
       ["Tertinggi 52 mg", fmtNum(hi52)], ["Terendah 52 mg", fmtNum(lo52)], ["Dari puncak 52 mg", `<span class="${cls(last / hi52 - 1)}">${spct(last / hi52 - 1)}</span>`],
-      ["MA20 / MA50", `${fmtNum(ma20)} / ${ma50 != null ? fmtNum(ma50) : "–"}`], ["RSI 14", r != null ? nf(0).format(r) : "–"], ["Volume vs rata-rata 20h", isFinite(volT / vol20) && vol20 > 0 ? nf(1).format(volT / vol20) + "×" : "–"]]
+      ["MA20 / MA50", `${fmtNum(ma20)} / ${ma50 != null ? fmtNum(ma50) : "–"}`], ["MA200", ma200 != null ? fmtNum(ma200) : "–"], ["RSI 14", r != null ? nf(0).format(r) : "–"],
+      ["MACD / sinyal", mN != null ? `<span class="${cls(mN - (sN ?? mN))}">${fmtNum(mN)}</span> / ${sN != null ? fmtNum(sN) : "–"}` : "–"], ["Stochastic %K / %D", kN != null ? `${nf(0).format(kN)} / ${dN != null ? nf(0).format(dN) : "–"}` : "–"],
+      ["Bollinger (20, 2σ)", bbU != null ? `${fmtNum(bbL)} – ${fmtNum(bbU)}` : "–"], ["Posisi di pita Bollinger", bbU != null && bbU > bbL ? pct((last - bbL) / (bbU - bbL), 0) : "–"],
+      ["Fib terdekat (6 bln)", fibN ? `${nf(1).format(fibN.f * 100)}% · ${fmtNum(fibN.price)}` : "–"], ["ATR 14 (rata-rata rentang)", atr != null ? `${fmtNum(atr)} (${pct(atr / last)})` : "–"],
+      ["Volume vs rata-rata 20h", isFinite(volT / vol20) && vol20 > 0 ? nf(1).format(volT / vol20) + "×" : "–"]]
       .map(([a, b]) => `<div>${a}<b>${b}</b></div>`).join("");
     const t = [];
     if (ma20 && ma50) t.push(last > ma20 && ma20 > ma50 ? "Harga di atas MA20 dan MA50 dengan MA20 > MA50: <b>tren jangka pendek naik</b>." :
       last < ma20 && ma20 < ma50 ? "Harga di bawah MA20 dan MA50 dengan MA20 < MA50: <b>tren jangka pendek turun</b>." : "MA20 dan MA50 belum searah: <b>tren belum jelas / sideways</b>.");
     if (ma200) t.push(last > ma200 ? "Harga di atas MA200 (tren jangka panjang masih positif)." : "Harga di bawah MA200 (tren jangka panjang masih negatif).");
     if (r != null) t.push(r > 70 ? `RSI ${nf(0).format(r)}: jenuh beli, kenaikan sudah cepat.` : r < 30 ? `RSI ${nf(0).format(r)}: jenuh jual, penurunan sudah cepat.` : `RSI ${nf(0).format(r)}: netral.`);
+    if (mN != null && sN != null && mP != null && sP != null) t.push(mP <= sP && mN > sN ? "MACD baru memotong ke atas garis sinyal (momentum membaik)." : mP >= sP && mN < sN ? "MACD baru memotong ke bawah garis sinyal (momentum melemah)." : mN > sN ? "MACD di atas garis sinyal." : "MACD di bawah garis sinyal.");
+    if (kN != null) t.push(kN > 80 ? `Stochastic ${nf(0).format(kN)}: dekat puncak rentang 14 hari.` : kN < 20 ? `Stochastic ${nf(0).format(kN)}: dekat dasar rentang 14 hari.` : "");
+    if (fibN && fib6) t.push(`Harga paling dekat dengan level Fibonacci ${nf(1).format(fibN.f * 100)}% (${fmtNum(fibN.price)}) dari ${fib6.up ? "kenaikan" : "penurunan"} 6 bulan terakhir (${fib6.up ? `${fmtNum(fib6.lo)} → ${fmtNum(fib6.hi)}` : `${fmtNum(fib6.hi)} → ${fmtNum(fib6.lo)}`}).`);
     if (vol20 > 0 && volT / vol20 > 2) t.push("Volume hari terakhir lebih dari 2× rata-rata: ada minat besar / berita.");
     $("techText").innerHTML = t.join(" ") + ' <span class="note">Ringkasan ini deskriptif, bukan sinyal beli/jual.</span>';
   }
@@ -843,14 +892,14 @@
     risk: [["rf", "Risk-free (%)", "pct"], ["beta", "Beta", "num"], ["erp", "ERP pasar matang (%)", "pct"], ["crp", "Country risk premium (%)", "pct"], ["kdSpread", "Spread utang perusahaan (%)", "pct", "fcff"], ["dWeight", "Bobot utang D/(D+E) (%)", "pct", "fcff"]],
   };
   async function runValuation() {
-    const d = state.data; state.val = null; $("valBody").hidden = true; $("valOut").innerHTML = "";
+    const d = state.data; state.val = null; $("valBody").hidden = true; $("valOut").innerHTML = ""; $("finCard").hidden = true;
     const eqLike = !isCrypto() && !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
     if (!eqLike || state.csv) { $("valStatus").innerHTML = "Aset ini tidak punya arus kas (kripto, komoditas, kurs, atau indeks), jadi tidak bisa divaluasi secara intrinsik. Damodaran menyebutnya hanya bisa di-<i>pricing</i>, bukan di-<i>valuing</i>."; return; }
     $("valStatus").textContent = "Mengambil laporan keuangan…";
     try {
       const r = await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`); const F = await r.json();
       if (F.error) throw new Error(F.error);
-      state.fund = F; buildValDefaults(F); $("valBody").hidden = false; renderValInputs(); computeValuation();
+      state.fund = F; renderFinancials(F); buildValDefaults(F); $("valBody").hidden = false; renderValInputs(); computeValuation();
     } catch (e) { $("valStatus").textContent = "Data fundamental tidak tersedia: " + e.message; }
   }
   function lastA(F, k) { const a = F.annual && F.annual[k]; return a && a.length ? a[a.length - 1][1] : null; }
@@ -985,7 +1034,7 @@
         const eq = !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
         if (wantFund && eq) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
         tick(`Analisis ${d.symbol} ✓`);
-        return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F };
+        return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F, liq: liquidity(d), sig: quickSignal(d, rf, m.ppy) };
       });
       wl.rows = rows; wl.days = days; wl.model = model;
       $("wlOut").hidden = false; renderWatch(); renderWlMap(); renderHighlights(); startWlLive();
@@ -994,6 +1043,24 @@
     } catch (e) { $("wlStatus").textContent = e.message; $("wlStatus").classList.add("err"); }
     finally { $("wlRun").disabled = false; setTimeout(() => ($("wlBar").style.width = "0"), 600); }
   }
+  // likuiditas dari OHLC mentah (20 hari bursa terakhir)
+  function liquidity(d) {
+    const o = (d.ohlc || []).filter((b) => b[5] > 0).slice(-20); if (o.length < 5) return null;
+    const lotDiv = /\.JK$/i.test(d.symbol) ? 100 : 1, last = o[o.length - 1];
+    const avgVol = o.reduce((s, b) => s + b[5], 0) / o.length, avgVal = o.reduce((s, b) => s + b[4] * b[5], 0) / o.length;
+    return { lotDiv, lastVol: last[5] / lotDiv, avgVol: avgVol / lotDiv, lastVal: last[4] * last[5], avgVal, ratio: avgVol > 0 ? last[5] / avgVol : NaN, date: last[0] };
+  }
+  // sinyal teknikal yang sama dengan bagian "Sinyal beli/jual" (tanpa valuasi & AI)
+  function quickSignal(d, rf, ppy) {
+    try { const B = MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: ppy || 252 }); const c = B.now; if (!c) return null;
+      return { score: c.score, tr: c.tr, mo: c.mo, rs: c.rs, rsi: c.rsi, momRet: c.momRet, verdict: c.score >= 2 ? "BELI" : c.score <= -2 ? "JUAL" : "TAHAN",
+        position: B.position, entryDate: B.entryDate, entryPx: B.entryPx, oosS: B.oos.strat.sharpe, oosB: B.oos.bh.sharpe, trades: B.trades.length, win: B.winRate };
+    } catch { return null; }
+  }
+  const sigPill = (g) => (!g ? "–" : `<span class="pill ${g.verdict === "BELI" ? "pos" : g.verdict === "JUAL" ? "neg" : ""}">${g.verdict}</span>`);
+  function big(v, cur) { if (!isFinite(v)) return "–"; const a = Math.abs(v);
+    const s = a >= 1e12 ? nf(2).format(v / 1e12) + " T" : a >= 1e9 ? nf(2).format(v / 1e9) + " M" : a >= 1e6 ? nf(1).format(v / 1e6) + " jt" : a >= 1e3 ? nf(1).format(v / 1e3) + " rb" : nf(0).format(v);
+    return (cur === "IDR" ? "Rp " : "") + s; }
   const PRICE_LABEL = (k) => (MCEngine.PRICE_MODELS[k] ? MCEngine.PRICE_MODELS[k].label : k);
   function sparkSvg(arr) {
     if (!arr || arr.length < 2) return "";
@@ -1014,7 +1081,20 @@
         ["1B", (r) => r.m.ret1m, (r) => pc(r.m.ret1m)], ["1T", (r) => r.m.ret1y, (r) => pc(r.m.ret1y)], ["Tren", (r) => r.m.trend, (r) => trendIcon(r.m.trend)],
         ["RSI", (r) => r.m.rsi, (r) => `<span class="${r.m.rsi > 70 ? "neg" : r.m.rsi < 30 ? "pos" : ""}">${nf(0).format(r.m.rsi)}</span>`],
         [`Peluang naik (${days}p)`, (r) => r.m.probUp, (r) => pct(r.m.probUp, 0)], [`Rentang 90% (${days}p)`, (r) => r.m.simP95 - r.m.simP5, (r) => `${pc(r.m.simP5, 0)} / ${pc(r.m.simP95, 0)}`],
-        ["VaR 95%", (r) => r.m.var95, (r) => pct(r.m.var95)]],
+        ["VaR 95%", (r) => r.m.var95, (r) => pct(r.m.var95)], ["Sinyal", (r) => (r.sig ? r.sig.score : null), (r) => sigPill(r.sig)]],
+      sinyal: [["Sinyal", (r) => (r.sig ? r.sig.score : null), (r) => sigPill(r.sig)], ["Skor", (r) => (r.sig ? r.sig.score : null), (r) => (r.sig ? `<span class="${cls(r.sig.score)}">${r.sig.score > 0 ? "+" : ""}${r.sig.score}</span> / ±3` : "–")],
+        ["Tren MA", (r) => (r.sig ? r.sig.tr : null), (r) => (r.sig ? trendIcon(r.sig.tr) : "–")], ["Momentum 3B", (r) => (r.sig ? r.sig.momRet : null), (r) => (r.sig ? pc(r.sig.momRet) : "–")],
+        ["RSI", (r) => (r.sig ? r.sig.rsi : null), (r) => (r.sig && r.sig.rsi != null ? `<span class="${r.sig.rsi > 70 ? "neg" : r.sig.rsi < 30 ? "pos" : ""}">${nf(0).format(r.sig.rsi)}</span>` : "–")],
+        ["Sistem sedang", (r) => (r.sig ? r.sig.position : null), (r) => (!r.sig ? "–" : r.sig.position ? `<span class="pos">pegang</span> <span class="note">sejak ${esc(r.sig.entryDate)} (${spct(r.m.last / r.sig.entryPx - 1)})</span>` : '<span class="note">di luar pasar</span>')],
+        ["Sharpe OOS aturan / B&H", (r) => (r.sig ? r.sig.oosS - r.sig.oosB : null), (r) => (!r.sig ? "–" : `<span class="${r.sig.oosS > r.sig.oosB ? "pos" : "neg"}">${nf(2).format(r.sig.oosS)}</span> / ${nf(2).format(r.sig.oosB)}`)],
+        ["Transaksi · menang", (r) => (r.sig ? r.sig.win : null), (r) => (r.sig ? `${r.sig.trades} · ${pct(r.sig.win, 0)}` : "–")]],
+      likuid: [["Volume terakhir", (r) => (r.liq ? r.liq.lastVol : null), (r) => (r.liq ? big(r.liq.lastVol) + (r.liq.lotDiv === 100 ? " lot" : "") : "–")],
+        ["Rata-rata vol 20h", (r) => (r.liq ? r.liq.avgVol : null), (r) => (r.liq ? big(r.liq.avgVol) + (r.liq.lotDiv === 100 ? " lot" : "") : "–")],
+        ["Vol vs rata-rata", (r) => (r.liq ? r.liq.ratio : null), (r) => (r.liq && isFinite(r.liq.ratio) ? `<span class="${r.liq.ratio > 2 ? "pos" : ""}">${nf(1).format(r.liq.ratio)}×</span>` : "–")],
+        ["Nilai transaksi terakhir", (r) => (r.liq ? r.liq.lastVal : null), (r) => (r.liq ? big(r.liq.lastVal, r.currency) : "–")],
+        ["Nilai transaksi rata-rata 20h", (r) => (r.liq ? r.liq.avgVal : null), (r) => (r.liq ? big(r.liq.avgVal, r.currency) : "–")],
+        ["Market cap", (r) => r.F && r.F.marketCap, (r) => (r.F && r.F.marketCap ? big(r.F.marketCap, r.currency) : "–")],
+        ["Sektor", null, (r) => `<span class="nm">${esc(((r.F && (r.F.sector || r.F.industry)) || "–").slice(0, 24))}</span>`]],
       kinerja: [["Harga", (r) => r.m.last, (r) => fmtNum(r.m.last)], ["1H", (r) => r.m.chg1d, (r) => pc(r.m.chg1d, 2)], ["1M", (r) => r.m.ret1w, (r) => pc(r.m.ret1w)], ["1B", (r) => r.m.ret1m, (r) => pc(r.m.ret1m)],
         ["3B", (r) => r.m.ret3m, (r) => pc(r.m.ret3m)], ["YTD", (r) => r.m.ytd, (r) => pc(r.m.ytd)], ["1T", (r) => r.m.ret1y, (r) => pc(r.m.ret1y)], ["Dari puncak 52mg", (r) => r.m.offHigh, (r) => pc(r.m.offHigh)],
         ["Di atas MA200", (r) => (r.m.aboveMa200 == null ? -2 : r.m.aboveMa200 ? 1 : 0), (r) => (r.m.aboveMa200 == null ? "–" : r.m.aboveMa200 ? '<span class="pos">ya</span>' : '<span class="neg">tidak</span>')]],
@@ -1027,7 +1107,10 @@
       fund: [["Sektor", null, (r) => `<span class="nm">${esc(((r.F && (r.F.industry || r.F.sector)) || "–").slice(0, 22))}</span>`], ["P/E", (r) => r.F && r.F.trailingPE, (r) => (r.F && r.F.trailingPE ? nf(1).format(r.F.trailingPE) : "–")],
         ["P/BV", (r) => r.F && r.F.priceToBook, (r) => (r.F && r.F.priceToBook ? nf(2).format(r.F.priceToBook) : "–")], ["ROE", (r) => r.F && r.F.roe, (r) => (r.F && r.F.roe != null ? pct(r.F.roe) : "–")],
         ["Div. yield", (r) => r.F && r.F.dividendYield, (r) => (r.F && r.F.dividendYield != null ? pct(r.F.dividendYield, 2) : "–")], ["Margin operasi", (r) => r.F && r.F.operatingMargin, (r) => (r.F && r.F.operatingMargin != null ? pct(r.F.operatingMargin) : "–")],
-        ["Growth pendapatan", (r) => r.F && r.F.revenueGrowth, (r) => (r.F && r.F.revenueGrowth != null ? pc(r.F.revenueGrowth) : "–")], ["Market cap", (r) => r.F && r.F.marketCap, (r) => (r.F && r.F.marketCap ? money(r.F.marketCap).replace(/^Rp /, "") : "–")]],
+        ["Growth pendapatan", (r) => r.F && r.F.revenueGrowth, (r) => (r.F && r.F.revenueGrowth != null ? pc(r.F.revenueGrowth) : "–")], ["Market cap", (r) => r.F && r.F.marketCap, (r) => (r.F && r.F.marketCap ? big(r.F.marketCap, r.currency) : "–")],
+        ["EPS (laba/saham)", (r) => r.F && r.F.netIncome && r.F.shares ? r.F.netIncome / r.F.shares : null, (r) => (r.F && r.F.netIncome && r.F.shares ? fmtNum(r.F.netIncome / r.F.shares) : "–")],
+        ["Utang / ekuitas", (r) => r.F && r.F.totalDebt != null && r.F.bookValuePerShare && r.F.shares ? r.F.totalDebt / (r.F.bookValuePerShare * r.F.shares) : null,
+          (r) => (r.F && r.F.totalDebt != null && r.F.bookValuePerShare && r.F.shares ? nf(2).format(r.F.totalDebt / (r.F.bookValuePerShare * r.F.shares)) + "×" : "–")]],
     };
     return C[wl.col];
   }
@@ -1060,6 +1143,11 @@
     const os = ok.filter((r) => r.m.rsi < 30); if (os.length) L.push(`RSI di bawah 30 (turun sangat cepat): ${os.map(nm).join(", ")}`);
     const ob = ok.filter((r) => r.m.rsi > 70); if (ob.length) L.push(`RSI di atas 70 (naik sangat cepat): ${ob.map(nm).join(", ")}`);
     const up = ok.filter((r) => r.m.trend > 0), dn = ok.filter((r) => r.m.trend < 0); L.push(`Tren naik: ${up.length ? up.map(nm).join(", ") : "–"} · tren turun: ${dn.length ? dn.map(nm).join(", ") : "–"}`);
+    const sb = ok.filter((r) => r.sig && r.sig.verdict === "BELI"), ss = ok.filter((r) => r.sig && r.sig.verdict === "JUAL");
+    L.push(`Sinyal teknikal BELI: ${sb.length ? sb.map(nm).join(", ") : "–"} · JUAL: ${ss.length ? ss.map(nm).join(", ") : "–"} <span class="note">(lihat tab Sinyal; cek apakah aturannya lolos backtest di saham itu)</span>`);
+    const lq = best((r) => (r.liq ? r.liq.avgVal : NaN)); if (lq && lq.liq) L.push(`Paling likuid (nilai transaksi rata-rata 20h): ${nm(lq)} ${big(lq.liq.avgVal, lq.currency)}/hari`);
+    const il = best((r) => (r.liq ? r.liq.avgVal : NaN), -1); if (il && il !== lq && il.liq && il.currency === "IDR" && il.liq.avgVal < 5e9) L.push(`Kurang likuid: ${nm(il)} hanya ${big(il.liq.avgVal, il.currency)}/hari — order besar bisa menggeser harga`);
+    const sp = ok.filter((r) => r.liq && r.liq.ratio > 2); if (sp.length) L.push(`Volume melonjak (>2× rata-rata): ${sp.map(nm).join(", ")}`);
     const dd = best((r) => r.m.offHigh, -1); if (dd) L.push(`Paling jauh dari puncak 52 minggu: ${nm(dd)} ${spct(dd.m.offHigh)}`);
     const pb = ok.filter((r) => r.F && r.F.priceToBook && r.F.roe != null); if (pb.length > 1) { const x = pb.sort((a, b) => b.F.roe / b.F.priceToBook - a.F.roe / a.F.priceToBook)[0]; L.push(`ROE tertinggi per unit P/BV: ${nm(x)} (ROE ${pct(x.F.roe)}, P/BV ${nf(2).format(x.F.priceToBook)}) — cek valuasinya di Analisis 1 aset`); }
     $("wlHigh").innerHTML = L.map((x) => `<li>${x}</li>`).join("");
@@ -1069,7 +1157,7 @@
 
   // ---------- bilah fokus ----------
   const FOCUS = { signal: ["headCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
-    plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "valCard"], news: ["headCard", "newsCard"],
+    plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"] };
   function setFocus(f, save = true) {
     const out = $("out"), keep = FOCUS[f];
@@ -1084,8 +1172,11 @@
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
+    $("marketView").hidden = v !== "market"; $("pfView").hidden = v !== "pf";
     $("focusBar").hidden = v !== "detail";
     if (v !== "detail") stopOB();
+    if (v === "market") { stopLive(); if (!mk.at || Date.now() - mk.at > 120000) runMarket(); return; }
+    if (v === "pf") { stopLive(); renderPfList(); if (!pf.res && pf.list.length && !$("pfRun").disabled) runPortfolio(); return; }
     if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
     if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
@@ -1343,7 +1434,7 @@
   function renderQuantLab() {
     const R = ql.res, S = ql.syms, N = S.length, grid = css("--line"), muted = css("--muted");
     // korelasi
-    const heat = (v) => { const a = Math.min(1, Math.abs(v)); return v >= 0 ? `rgba(200,50,43,${(a * 0.55).toFixed(2)})` : `rgba(31,94,255,${(a * 0.55).toFixed(2)})`; };
+    const heat = (v) => { const a = Math.min(1, Math.abs(v)); return v >= 0 ? `rgba(239,83,80,${(a * 0.5).toFixed(2)})` : `rgba(74,163,223,${(a * 0.5).toFixed(2)})`; };
     $("qlCorr").innerHTML = `<thead><tr><th></th>${S.map((s) => `<th>${esc(short(s))}</th>`).join("")}</tr></thead><tbody>` +
       R.corr.map((row, i) => `<tr><td><b>${esc(short(S[i]))}</b></td>${row.map((v, j) => `<td style="background:${i === j ? "transparent" : heat(v)}">${i === j ? "—" : nf(2).format(v)}</td>`).join("")}</tr>`).join("") + "</tbody>";
     let hiP = null, loP = null; for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) { const v = R.corr[i][j]; if (!hiP || v > hiP[2]) hiP = [i, j, v]; if (!loP || v < loP[2]) loP = [i, j, v]; }
@@ -1433,6 +1524,258 @@
 
 
   // =====================================================================
+  // LAPORAN KEUANGAN TAHUNAN
+  // =====================================================================
+  function renderFinancials(F) {
+    const A = (F && F.annual) || {}, keys = Object.keys(A);
+    if (!keys.length) { $("finCard").hidden = true; return; }
+    const years = [...new Set(keys.flatMap((k) => A[k].map((x) => x[0].slice(0, 4))))].sort().slice(-5);
+    const get = (k, y) => { const r = (A[k] || []).find((x) => x[0].slice(0, 4) === y); return r ? r[1] : null; };
+    const cur = F.financialCurrency || F.currency || "", B = (v) => (v == null || !isFinite(v) ? "–" : big(v, cur));
+    const ratio = (a, b) => (a == null || b == null || !b ? null : a / b);
+    const taxR = (y) => { const p = get("PretaxIncome", y), t = get("TaxProvision", y); return p > 0 && t != null ? Math.min(0.4, Math.max(0, t / p)) : 0.22; };
+    const fcf = (y) => { const oi = get("OperatingIncome", y), da = get("DepreciationAndAmortization", y), cx = get("CapitalExpenditure", y); return oi == null || cx == null ? null : oi * (1 - taxR(y)) + (da || 0) + cx; };
+    const rows = [
+      ["Pendapatan", (y) => B(get("TotalRevenue", y))],
+      ["Pertumbuhan pendapatan", (y, i) => { const p = i ? get("TotalRevenue", years[i - 1]) : null, v = get("TotalRevenue", y); return p && v ? pc(v / p - 1) : "–"; }],
+      ["Laba operasi", (y) => B(get("OperatingIncome", y))],
+      ["Margin operasi", (y) => { const v = ratio(get("OperatingIncome", y), get("TotalRevenue", y)); return v == null ? "–" : pct(v); }],
+      ["Laba sebelum pajak", (y) => B(get("PretaxIncome", y))],
+      ["Laba bersih", (y) => { const v = get("NetIncome", y); return v == null ? "–" : `<span class="${cls(v)}">${B(v)}</span>`; }],
+      ["Margin bersih", (y) => { const v = ratio(get("NetIncome", y), get("TotalRevenue", y)); return v == null ? "–" : pct(v); }],
+      ["Tarif pajak efektif", (y) => { const v = ratio(get("TaxProvision", y), get("PretaxIncome", y)); return v == null ? "–" : pct(v); }],
+      ["Ekuitas", (y) => B(get("StockholdersEquity", y))],
+      ["ROE", (y) => { const v = ratio(get("NetIncome", y), get("StockholdersEquity", y)); return v == null ? "–" : pct(v); }],
+      ["Kas & setara kas", (y) => B(get("CashAndCashEquivalents", y))],
+      ["Total utang", (y) => B(get("TotalDebt", y))],
+      ["Utang / ekuitas", (y) => { const v = ratio(get("TotalDebt", y), get("StockholdersEquity", y)); return v == null ? "–" : nf(2).format(v) + "×"; }],
+      ["Capex", (y) => B(get("CapitalExpenditure", y))],
+      ["Penyusutan & amortisasi", (y) => B(get("DepreciationAndAmortization", y))],
+      ["FCF (perkiraan)", (y) => { const v = fcf(y); return v == null ? "–" : `<span class="${cls(v)}">${B(v)}</span>`; }],
+      ["Saham beredar", (y) => { const v = get("OrdinarySharesNumber", y); return v == null ? "–" : big(v); }],
+      ["EPS", (y) => { const v = ratio(get("NetIncome", y), get("OrdinarySharesNumber", y)); return v == null ? "–" : fmtNum(v); }],
+      ["Nilai buku / saham", (y) => { const v = ratio(get("StockholdersEquity", y), get("OrdinarySharesNumber", y)); return v == null ? "–" : fmtNum(v); }],
+    ];
+    $("finCur").textContent = cur ? `mata uang laporan: ${cur}` : "";
+    $("finTable").innerHTML = `<thead><tr><th>Tahun buku</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr></thead><tbody>` +
+      rows.map(([n, f]) => `<tr><td>${n}</td>${years.map((y, i) => `<td>${f(y, i)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    $("finCard").hidden = false;
+    const muted = css("--muted"), grid = css("--line"), sc = cur === "IDR" ? 1e9 : 1e6;
+    drawChart("finChart", { type: "bar", data: { labels: years, datasets: [
+      { label: `Pendapatan (${cur === "IDR" ? "Rp M" : cur + " jt"})`, data: years.map((y) => (get("TotalRevenue", y) ?? NaN) / sc), backgroundColor: css("--c1") },
+      { label: "Laba bersih", data: years.map((y) => (get("NetIncome", y) ?? NaN) / sc), backgroundColor: css("--c2") },
+      { label: "FCF (perkiraan)", data: years.map((y) => (fcf(y) ?? NaN) / sc), backgroundColor: css("--c3") }] },
+      options: baseOpts({ plugins: { legend: { labels: { color: muted, boxWidth: 10 } } }, scales: { x: { ticks: { color: muted }, grid: { display: false } }, y: { ticks: { color: muted }, grid: { color: grid } } } }) });
+  }
+
+  // =====================================================================
+  // PASAR HARI INI (F4)
+  // =====================================================================
+  const MK = {
+    idx: [["^JKSE", "IHSG"], ["^JKLQ45", "LQ45"], ["^GSPC", "S&P 500"], ["^IXIC", "Nasdaq"], ["^DJI", "Dow Jones"], ["^N225", "Nikkei 225"], ["^HSI", "Hang Seng"], ["000001.SS", "Shanghai"], ["^STI", "Singapura STI"], ["^KLSE", "Malaysia KLCI"], ["^FTSE", "FTSE 100"], ["^GDAXI", "DAX"]],
+    fx: [["IDR=X", "USD/IDR"], ["EURIDR=X", "EUR/IDR"], ["JPYIDR=X", "JPY/IDR"], ["SGDIDR=X", "SGD/IDR"], ["CNYIDR=X", "CNY/IDR"], ["AUDIDR=X", "AUD/IDR"], ["MYRIDR=X", "MYR/IDR"], ["DX-Y.NYB", "Indeks dolar (DXY)"]],
+    cmd: [["GC=F", "Emas (USD/oz)"], ["SI=F", "Perak"], ["CL=F", "Minyak WTI"], ["BZ=F", "Minyak Brent"], ["NG=F", "Gas alam"], ["HG=F", "Tembaga"], ["MTF=F", "Batu bara Newcastle"], ["ALI=F", "Aluminium"], ["ZW=F", "Gandum"], ["ZS=F", "Kedelai"], ["BTC-USD", "Bitcoin"], ["ETH-USD", "Ethereum"]],
+    bond: [["^IRX", "US 3 bulan"], ["^FVX", "US 5 tahun"], ["^TNX", "US 10 tahun"], ["^TYX", "US 30 tahun"]],
+    stocks: ["BBCA", "BBRI", "BMRI", "BBNI", "BRIS", "BBTN", "ARTO", "TLKM", "EXCL", "ISAT", "TOWR", "ASII", "UNTR", "AMRT", "ICBP", "INDF", "UNVR", "MYOR", "KLBF", "SIDO", "CPIN", "JPFA",
+      "ADRO", "PTBA", "ITMG", "HRUM", "ANTM", "INCO", "MDKA", "MBMA", "AMMN", "MEDC", "PGAS", "AKRA", "BRPT", "TPIA", "INKP", "TKIM", "SMGR", "INTP", "GOTO", "BUKA", "EMTK", "ACES", "MAPI", "ERAA", "CTRA", "BSDE", "PWON", "JSMR"].map((s) => s + ".JK"),
+    ship: [["BDRY", "Tarif kapal curah kering (BDRY, proksi Baltic Dry)"], ["BWET", "Tarif kapal tanker (BWET)"], ["ZIM", "ZIM (kontainer)"], ["MAERSK-B.CO", "Maersk (kontainer)"], ["HLAG.DE", "Hapag-Lloyd (kontainer)"], ["1919.HK", "COSCO Shipping (kontainer)"],
+      ["BZ=F", "Brent (biaya bunker)"], ["TMAS.JK", "Temas (pelayaran IDX)"], ["SMDR.JK", "Samudera Indonesia (IDX)"]],
+  };
+  const mk = { q: {}, mov: "gain", at: 0 };
+  async function quotesFor(syms) {
+    const out = {}; for (let i = 0; i < syms.length; i += 25) { const part = syms.slice(i, i + 25);
+      try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(part.join(","))}`)).json(); (j.quotes || []).forEach((q) => { if (q && q.price != null) out[q.symbol] = q; }); } catch { /* */ } }
+    return out;
+  }
+  const qChg = (q) => (q && q.prevClose ? q.price / q.prevClose - 1 : NaN);
+  function mkTable(id, list, opt = {}) {
+    $(id).innerHTML = `<thead><tr><th></th><th>Harga</th><th>Hari ini</th>${opt.extra ? `<th>${opt.extra[0]}</th>` : ""}</tr></thead><tbody>` + list.map(([s, n]) => { const q = mk.q[s], c = qChg(q);
+      return `<tr><td><span class="pf-sym" data-s="${esc(s)}">${esc(n)}</span></td><td>${q ? (opt.fmt ? opt.fmt(q.price) : fmtNum(q.price)) : "–"}</td><td>${q ? pc(opt.diff ? q.price - q.prevClose : c, 2).replace("%", opt.diff ? " bp" : "%") : '<span class="note">tidak tersedia</span>'}</td>${opt.extra ? `<td>${opt.extra[1](s, q)}</td>` : ""}</tr>`; }).join("") + "</tbody>";
+  }
+  async function runMarket() {
+    $("mkRun").disabled = true; $("mkStatus").textContent = "Mengambil harga…";
+    try {
+      const all = [...new Set([...MK.idx, ...MK.fx, ...MK.cmd, ...MK.bond].map((x) => x[0]).concat(MK.stocks))];
+      mk.q = await quotesFor(all); mk.at = Date.now();
+      mkTable("mkIdx", MK.idx); mkTable("mkFx", MK.fx); mkTable("mkCmd", MK.cmd);
+      $("mkCmdNote").textContent = MK.cmd.filter(([s]) => !mk.q[s]).length ? "Komoditas yang tidak tersedia di Yahoo ditandai 'tidak tersedia' (CPO dan nikel tidak punya kontrak gratis di Yahoo)." : "";
+      $("mkBond").innerHTML = `<thead><tr><th></th><th>Yield</th><th>Hari ini</th></tr></thead><tbody>` + MK.bond.map(([s, n]) => { const q = mk.q[s];
+        return `<tr><td>${n}</td><td>${q ? nf(2).format(q.price) + "%" : "–"}</td><td>${q && q.prevClose ? `<span class="${cls(q.price - q.prevClose)}">${q.price - q.prevClose > 0 ? "+" : ""}${nf(0).format((q.price - q.prevClose) * 100)} bp</span>` : "–"}</td></tr>`; }).join("") +
+        `<tr><td>SBN 10 tahun <span class="note">(asumsi)</span></td><td>${pct(DAMO.sbn10, 2)}</td><td class="note">manual</td></tr><tr><td>BI-Rate <span class="note">(asumsi)</span></td><td>${pct(DAMO.biRate, 2)}</td><td class="note">manual</td></tr>` +
+        (mk.q["^TNX"] ? `<tr><td>Selisih SBN10 − UST10</td><td>${nf(2).format(DAMO.sbn10 * 100 - mk.q["^TNX"].price)} pp</td><td></td></tr>` : "") + "</tbody>";
+      renderMovers(); renderCalendar();
+      $("mkStatus").textContent = `Diperbarui ${new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`;
+      runShipping();
+    } catch (e) { $("mkStatus").textContent = e.message; }
+    finally { $("mkRun").disabled = false; }
+  }
+  function renderMovers() {
+    const rows = MK.stocks.map((s) => mk.q[s]).filter(Boolean).map((q) => ({ s: q.symbol, p: q.price, c: qChg(q), v: q.volume || 0, val: (q.volume || 0) * q.price }));
+    const by = { gain: (a, b) => b.c - a.c, lose: (a, b) => a.c - b.c, value: (a, b) => b.val - a.val, vol: (a, b) => b.v - a.v }[mk.mov];
+    const top = rows.filter((r) => isFinite(r.c)).sort(by).slice(0, 12);
+    $("mkMov").innerHTML = `<thead><tr><th>Saham</th><th>Harga</th><th>Hari ini</th><th>Volume (lot)</th><th>Nilai transaksi</th></tr></thead><tbody>` +
+      top.map((r) => `<tr><td><span class="pf-sym" data-s="${esc(r.s)}">${esc(r.s.replace(/\.JK$/, ""))}</span></td><td>${fmtNum(r.p)}</td><td>${pc(r.c, 2)}</td><td>${big(r.v / 100)}</td><td>${big(r.val, "IDR")}</td></tr>`).join("") + "</tbody>";
+    const up = rows.filter((r) => r.c > 0).length, dn = rows.filter((r) => r.c < 0).length;
+    $("mkBreadth").innerHTML = `Dari ${rows.length} saham likuid: <span class="pos">${up} naik</span>, <span class="neg">${dn} turun</span>, ${rows.length - up - dn} tetap. Total nilai transaksi ${big(rows.reduce((a, r) => a + r.val, 0), "IDR")}.`;
+  }
+  const CAL = [
+    ...[["2026-01-20", "2026-01-21"], ["2026-02-18", "2026-02-19"], ["2026-03-16", "2026-03-17"], ["2026-04-21", "2026-04-22"], ["2026-05-19", "2026-05-20"], ["2026-06-17", "2026-06-18"], ["2026-07-21", "2026-07-22"],
+      ["2026-08-18", "2026-08-19"], ["2026-09-22", "2026-09-23"], ["2026-10-20", "2026-10-21"], ["2026-11-17", "2026-11-18"], ["2026-12-15", "2026-12-16"]].map(([a, b]) => ({ d: b, t: `RDG Bank Indonesia (${a.slice(8)}–${b.slice(8)}) · keputusan BI-Rate`, c: "ID", src: "jadwal resmi BI" })),
+    ...[["2026-01-27", "2026-01-28"], ["2026-03-17", "2026-03-18"], ["2026-04-28", "2026-04-29"], ["2026-06-16", "2026-06-17"], ["2026-07-28", "2026-07-29"], ["2026-09-15", "2026-09-16"], ["2026-10-27", "2026-10-28"], ["2026-12-08", "2026-12-09"]]
+      .map(([a, b]) => ({ d: b, t: `FOMC The Fed (${a.slice(8)}–${b.slice(8)}) · keputusan Fed funds rate`, c: "US", src: "jadwal resmi Fed" })),
+  ];
+  function renderCalendar() {
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), items = CAL.slice();
+    // rilis BPS: hari kerja pertama tiap bulan (perkiraan)
+    for (let k = -1; k <= 3; k++) { const t = new Date(today.slice(0, 7) + "-01T00:00:00Z"); t.setUTCMonth(t.getUTCMonth() + k); while ([0, 6].includes(t.getUTCDay()) || t.toISOString().slice(5, 10) === "01-01") t.setUTCDate(t.getUTCDate() + 1);
+      items.push({ d: t.toISOString().slice(0, 10), t: "BPS: inflasi bulanan & neraca perdagangan (perkiraan: hari kerja awal bulan / pertengahan bulan)", c: "ID", src: "perkiraan" }); }
+    const list = items.filter((x) => x.d >= addDays(today, -14) && x.d <= addDays(today, 75)).sort((a, b) => a.d.localeCompare(b.d));
+    const next = list.find((x) => x.d >= today);
+    $("mkCal").innerHTML = `<thead><tr><th>Tanggal</th><th>Negara</th><th>Acara</th><th>Sumber</th></tr></thead><tbody>` + list.map((x) =>
+      `<tr class="${x.d < today ? "cal-past" : x === next ? "cal-next" : ""}"><td>${x.d}${x.d === today ? ' <span class="pill sig">hari ini</span>' : ""}</td><td>${x.c}</td><td class="txt">${esc(x.t)}</td><td class="note">${x.src}</td></tr>`).join("") + "</tbody>";
+  }
+  const addDays = (d, n) => { const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+
+  // ---------- shipping & freight ----------
+  async function runShipping() {
+    $("shipTable").innerHTML = '<tbody><tr><td>Mengambil data freight…</td></tr></tbody>';
+    const back = (d, days) => { const n = d.values.length, t = new Date(d.dates[n - 1]); t.setDate(t.getDate() - days); const ts = t.toISOString().slice(0, 10); let i = n - 1; while (i > 0 && d.dates[i] > ts) i--; return d.values[n - 1] / d.values[i] - 1; };
+    const [rows, wci] = await Promise.all([
+      pool(MK.ship, 4, async ([s, n]) => { try { const d = await fetchSymbol(s, "1y"), v = d.values, L = v.length;
+        const r = MCEngine.logReturns(v.slice(-64)), z = (() => { const m = []; for (let i = 21; i < v.length; i++) m.push(v[i] / v[i - 21] - 1); const mu = MCEngine.mean(m), sd = MCEngine.std(m, 0); return sd > 0 ? (m[m.length - 1] - mu) / sd : NaN; })();
+        return { s, n, cur: d.currency, last: v[L - 1], d1: v[L - 1] / v[L - 2] - 1, w1: back(d, 7), m1: back(d, 30), m3: back(d, 91), y1: back(d, 365), z, vol: MCEngine.std(r, 0) * Math.sqrt(252), spark: v.slice(-66) }; }
+        catch (e) { return { s, n, error: e.message }; } }),
+      apiFetch(`${API}?action=freight`).then((r) => r.json()).catch(() => ({ error: "tidak tersedia" })),
+    ]);
+    const W = wci && !wci.error && wci.composite ? wci : null;
+    $("shipWci").innerHTML = W ? `<div class="kpi"><div class="k">Drewry WCI komposit (USD / 40ft)</div><div class="v">$${nf(0).format(W.composite)}</div><div class="h"><span class="${cls(W.chg)}">${spct(W.chg, 0)}</span> minggu ini · ${esc(W.date || "")}</div></div>` +
+      (W.routes || []).slice(0, 5).map((x) => `<div class="kpi"><div class="k">${esc(x.route)}</div><div class="v">$${nf(0).format(x.price)}</div><div class="h">${x.chg != null ? `<span class="${cls(x.chg)}">${spct(x.chg, 0)}</span> minggu ini` : ""}</div></div>`).join("")
+      : `<div class="kpi"><div class="k">Drewry WCI</div><div class="v">–</div><div class="h">gagal dibaca dari situs Drewry (${esc((wci && wci.error) || "?")}); pakai proksi di bawah</div></div>`;
+    $("shipTable").innerHTML = `<thead><tr><th>Indikator</th><th>Harga</th><th>1H</th><th>1M</th><th>1B</th><th>3B</th><th>1T</th><th>3 bulan</th><th>Gerak 1B vs biasanya</th></tr></thead><tbody>` +
+      rows.map((r) => r.error ? `<tr class="err-row"><td>${esc(r.n)}</td><td colspan="8">${esc(r.error)}</td></tr>` :
+        `<tr><td><span class="pf-sym" data-s="${esc(r.s)}">${esc(r.n)}</span></td><td>${fmtNum(r.last)}</td><td>${pc(r.d1, 1)}</td><td>${pc(r.w1)}</td><td>${pc(r.m1)}</td><td>${pc(r.m3)}</td><td>${pc(r.y1)}</td><td>${sparkSvg(r.spark)}</td>
+        <td>${isFinite(r.z) ? `<span class="${Math.abs(r.z) > 2 ? (r.z > 0 ? "pos" : "neg") : ""}">${r.z > 0 ? "+" : ""}${nf(1).format(r.z)}σ${Math.abs(r.z) > 2 ? " · tidak biasa" : ""}</span>` : "–"}</td></tr>`).join("") + "</tbody>";
+    const R = Object.fromEntries(rows.filter((r) => !r.error).map((r) => [r.s, r]));
+    const lines = [];
+    const box = ["MAERSK-B.CO", "HLAG.DE", "1919.HK", "ZIM"].map((s) => R[s]).filter(Boolean), boxM = box.length ? MCEngine.mean(box.map((r) => r.m1)) : NaN;
+    if (W && W.chg != null) lines.push(`Tarif kontainer (WCI) ${W.chg > 0.05 ? "<b>naik tajam</b>" : W.chg > 0 ? "naik" : W.chg < -0.05 ? "<b>turun tajam</b>" : "turun"} ${spct(W.chg, 0)} minggu ini ke $${nf(0).format(W.composite)}/40ft.`);
+    if (isFinite(boxM)) lines.push(`Saham pelayaran kontainer global rata-rata ${spct(boxM)} sebulan: ${boxM > 0.08 ? "pasar memperkirakan tarif kontainer tetap tinggi / naik." : boxM < -0.08 ? "pasar memperkirakan tarif kontainer melemah." : "tidak ada perubahan ekspektasi yang besar."}`);
+    if (R.BDRY) lines.push(`Curah kering (BDRY) ${spct(R.BDRY.m1)} sebulan${Math.abs(R.BDRY.z) > 2 ? " (gerak tidak biasa)" : ""}: ${R.BDRY.m1 > 0.1 ? "permintaan angkut batu bara/bijih besi/biji-bijian menguat — biasanya sejalan dengan impor China." : R.BDRY.m1 < -0.1 ? "permintaan angkut komoditas curah melemah." : "relatif stabil."}`);
+    if (R.BWET) lines.push(`Tanker (BWET) ${spct(R.BWET.m1)} sebulan: ${R.BWET.m1 > 0.1 ? "biaya angkut minyak naik — menambah biaya impor BBM Indonesia." : R.BWET.m1 < -0.1 ? "biaya angkut minyak turun." : "relatif stabil."}`);
+    if (R["BZ=F"]) lines.push(`Brent ${spct(R["BZ=F"].m1)} sebulan → biaya bahan bakar kapal (bunker) ${R["BZ=F"].m1 > 0 ? "naik" : "turun"}.`);
+    $("shipRead").innerHTML = (lines.length ? lines.join(" ") : "Data belum cukup untuk dibaca.") + ' <span class="note">Bacaan otomatis berbasis aturan sederhana, bukan prediksi.</span>';
+    const dir = (v) => (!isFinite(v) ? "–" : v > 0.03 ? '<span class="pos">▲</span>' : v < -0.03 ? '<span class="neg">▼</span>' : "◆");
+    $("shipImpact").innerHTML = `<thead><tr><th>Jika naik</th><th>Arah sekarang</th><th>Global</th><th>Indonesia</th></tr></thead><tbody>
+      <tr><td>Tarif kontainer</td><td>${dir(W ? W.chg : boxM)}</td><td class="txt">Biaya barang impor naik → tekanan inflasi barang; untung untuk perusahaan pelayaran kontainer.</td><td class="txt">Biaya impor bahan baku & barang jadi naik (ritel elektronik/otomotif: ERAA, ACES, ASII); eksportir manufaktur kurang kompetitif; positif untuk TMAS, SMDR.</td></tr>
+      <tr><td>Tarif curah kering</td><td>${dir(R.BDRY && R.BDRY.m1)}</td><td class="txt">Sinyal permintaan bahan baku (terutama China) dan kapasitas kapal.</td><td class="txt">Ekspor batu bara & nikel umumnya FOB (ongkos kapal ditanggung pembeli), tapi tarif tinggi bisa menekan harga jual bersih; sentimen untuk ADRO, PTBA, ITMG, INCO.</td></tr>
+      <tr><td>Tarif tanker</td><td>${dir(R.BWET && R.BWET.m1)}</td><td class="txt">Biaya angkut minyak & produk BBM naik.</td><td class="txt">Indonesia net importir minyak: biaya impor BBM dan beban subsidi naik; bisa menekan neraca dagang & rupiah.</td></tr>
+      <tr><td>Harga minyak (bunker)</td><td>${dir(R["BZ=F"] && R["BZ=F"].m1)}</td><td class="txt">Ongkos operasi kapal naik, diteruskan lewat biaya tambahan bahan bakar (BAF).</td><td class="txt">Positif untuk MEDC (produsen), negatif untuk biaya logistik umum.</td></tr></tbody>`;
+    try { const j = await (await apiFetch(`${API}?action=news&symbol=BDRY&q=${encodeURIComponent("freight rates shipping container Red Sea Suez Panama")}`)).json();
+      const kw = /ship|freight|container|vessel|port|tanker|bulk|suez|red sea|panama|maersk|cargo|pelayaran|kapal|pelabuhan|logistik/i;
+      const items = (j.items || []).filter((x) => kw.test(x.title)).slice(0, 8);
+      $("shipNews").innerHTML = items.length ? items.map((x) => `<div class="news"><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="nm">${esc(x.publisher || x.via)} · ${new Date(x.time * 1000).toLocaleDateString("id-ID")}</div>${x.summary ? `<div class="ns">${esc(x.summary.slice(0, 220))}</div>` : ""}</div>`).join("") : '<p class="note">Tidak ada berita shipping yang relevan.</p>';
+    } catch { $("shipNews").innerHTML = '<p class="note">Berita gagal dimuat.</p>'; }
+  }
+
+  // =====================================================================
+  // PORTOFOLIO SAYA (F5)
+  // =====================================================================
+  const PF_KEY = "sp_pf_v1";
+  const pf = { list: [], res: null };
+  function pfLoad() { try { pf.list = JSON.parse(localStorage.getItem(PF_KEY) || "[]"); } catch { pf.list = []; } }
+  function pfSave() { try { localStorage.setItem(PF_KEY, JSON.stringify(pf.list)); } catch { /* */ } saveSettings({ portfolio: pf.list, pfCash: +$("pfCash").value || 0 }); }
+  function renderPfList() {
+    $("pfList").innerHTML = pf.list.length ? `<thead><tr><th>Ticker</th><th>Harga beli</th><th>Jumlah</th><th></th></tr></thead><tbody>` + pf.list.map((p, i) =>
+      `<tr><td><span class="pf-sym" data-edit="${i}">${esc(p.s)}</span></td><td>${fmtNum(p.avg)}</td><td>${nf(p.qty % 1 ? 4 : 0).format(p.qty)} ${/\.JK$/.test(p.s) ? "lot" : "unit"}</td><td><button class="x-btn" data-del="${i}" title="Hapus">✕</button></td></tr>`).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Belum ada posisi. Isi ticker, harga beli, dan jumlah di atas.</td></tr></tbody>';
+  }
+  function pfAdd() {
+    const s = $("pfSym").value.trim().toUpperCase().replace(/,$/, ""), avg = parseFloat($("pfAvg").value), qty = parseFloat($("pfQty").value);
+    if (!s || !(avg > 0) || !(qty > 0)) { $("pfStatus").textContent = "Isi ticker, harga beli (> 0), dan jumlah (> 0)."; $("pfStatus").classList.add("err"); return; }
+    $("pfStatus").classList.remove("err");
+    const i = pf.list.findIndex((p) => p.s === s); if (i >= 0) pf.list[i] = { s, avg, qty }; else pf.list.push({ s, avg, qty });
+    $("pfSym").value = $("pfAvg").value = $("pfQty").value = ""; pfSave(); renderPfList(); $("pfStatus").textContent = `${s} disimpan. Klik Hitung portofolio.`;
+  }
+  async function runPortfolio() {
+    if (!pf.list.length) { $("pfStatus").textContent = "Tambahkan minimal satu posisi."; return; }
+    pfSave(); $("pfRun").disabled = true; $("pfStatus").classList.remove("err"); $("pfStatus").textContent = "Mengambil harga & riwayat…";
+    try {
+      const syms = pf.list.map((p) => p.s);
+      const datas = await pool(syms, 4, async (s) => { try { return await fetchSymbol(s, "2y"); } catch (e) { return { error: e.message, symbol: s }; } });
+      const curs = [...new Set(datas.filter((d) => !d.error && d.currency && d.currency !== "IDR").map((d) => (d.currency === "USDT" ? "USD" : d.currency)))];
+      const fxSym = (c) => (c === "USD" ? "IDR=X" : `${c}IDR=X`);
+      const q = await quotesFor([...syms, "^JKSE", ...curs.map(fxSym)]);
+      const fxHist = {}; for (const c of curs) { try { fxHist[c] = await fetchSymbol(fxSym(c), "2y"); } catch { /* */ } }
+      let ihsg = null; try { ihsg = await fetchSymbol("^JKSE", "2y"); } catch { /* */ }
+      const pos = pf.list.map((p, i) => { const d = datas[i]; if (d.error) return { ...p, error: d.error };
+        const c = d.currency === "USDT" ? "USD" : d.currency || "IDR", fx = c === "IDR" ? 1 : (q[fxSym(c)] || {}).price || (fxHist[c] ? fxHist[c].values[fxHist[c].values.length - 1] : NaN);
+        const units = /\.JK$/i.test(p.s) ? p.qty * 100 : p.qty, qq = q[d.symbol] || q[p.s], px = qq ? qq.price : d.ohlc.length ? d.ohlc[d.ohlc.length - 1][4] : d.values[d.values.length - 1];
+        const val = units * px * fx, cost = units * p.avg * fx, day = qq && qq.prevClose ? qq.price / qq.prevClose - 1 : d.values[d.values.length - 1] / d.values[d.values.length - 2] - 1;
+        return { ...p, name: d.name, cur: c, fx, units, px, val, cost, pl: val - cost, plp: val / cost - 1, day, dayAbs: val - val / (1 + day), d, sig: quickSignal(d, DAMO.biRate, 252) }; });
+      const ok = pos.filter((p) => !p.error && isFinite(p.val)), cash = Math.max(0, +$("pfCash").value || 0), total = ok.reduce((a, p) => a + p.val, 0) + cash;
+      if (!ok.length) throw new Error("Tidak ada posisi yang datanya berhasil diambil.");
+      ok.forEach((p) => (p.w = p.val / total));
+      // seri harga dalam rupiah
+      const idrSeries = ok.map((p) => { if (p.cur === "IDR" || !fxHist[p.cur]) return { dates: p.d.dates, values: p.d.values };
+        const m = new Map(fxHist[p.cur].dates.map((x, i) => [x, fxHist[p.cur].values[i]])), dts = [], vs = []; let lastFx = null;
+        p.d.dates.forEach((x, i) => { const f = m.get(x) ?? lastFx; if (f != null) { lastFx = f; dts.push(x); vs.push(p.d.values[i] * f); } }); return { dates: dts, values: vs }; });
+      const A = MCEngine.alignSeries(idrSeries), R = A.R.slice(-504), T = R.length, N = ok.length;
+      const wInv = ok.map((p) => p.val / (total - cash)), wTot = ok.map((p) => p.w);
+      const rp = R.map((r) => r.reduce((s, x, j) => s + wTot[j] * (Math.exp(x) - 1), 0));
+      const mu = new Array(N).fill(0); R.forEach((r) => r.forEach((x, j) => (mu[j] += x / T)));
+      const S = Array.from({ length: N }, (_, a) => Array.from({ length: N }, (_, b) => R.reduce((s, r) => s + (r[a] - mu[a]) * (r[b] - mu[b]), 0) / (T - 1)));
+      const Sw = S.map((row) => row.reduce((s, v, j) => s + v * wTot[j], 0)), varP = wTot.reduce((s, w, i) => s + w * Sw[i], 0), volP = Math.sqrt(varP * 252);
+      const rc = wTot.map((w, i) => (varP > 0 ? (w * Sw[i]) / varP : NaN));
+      const sorted = Float64Array.from(rp).sort(), var1 = -sorted[Math.floor(0.05 * sorted.length)] * total, cvar1 = -MCEngine.mean(Array.from(sorted.slice(0, Math.max(1, Math.floor(0.05 * sorted.length))))) * total;
+      let beta = NaN; if (ihsg) { const m = new Map(ihsg.dates.map((x, i) => [x, ihsg.values[i]])), dts = A.dates.slice(-T - 1), a = [], b = [];
+        for (let t = 1; t < dts.length; t++) { const v0 = m.get(dts[t - 1]), v1 = m.get(dts[t]); if (v0 && v1) { a.push(rp[t - 1]); b.push(v1 / v0 - 1); } }
+        if (a.length > 40) { const ma = MCEngine.mean(a), mb = MCEngine.mean(b); let c = 0, vb = 0; for (let i = 0; i < a.length; i++) { c += (a[i] - ma) * (b[i] - mb); vb += (b[i] - mb) ** 2; } beta = c / vb; } }
+      let eq = 1, pk = 1, mdd = 0; rp.slice(-252).forEach((r) => { eq *= 1 + r; pk = Math.max(pk, eq); mdd = Math.max(mdd, 1 - eq / pk); });
+      const H = Math.max(1, Math.min(252, parseInt($("pfH").value, 10) || 21)), rng = MCEngine.makeRng(42), sims = 5000, end = new Float64Array(sims);
+      for (let k = 0; k < sims; k++) { let v = 1; for (let h = 0; h < H; h++) v *= 1 + rp[rng.int(rp.length)]; end[k] = v; } end.sort();
+      let maxC = { v: -2 }; for (let a = 0; a < N; a++) for (let b = a + 1; b < N; b++) { const c = S[a][b] / Math.sqrt(S[a][a] * S[b][b]); if (c > maxC.v) maxC = { v: c, a, b }; }
+      pf.res = { pos, ok, cash, total, volP, rc, var1, cvar1, beta, mdd, H, end, T, maxC, wInv, from: A.dates[Math.max(0, A.dates.length - T - 1)] };
+      $("pfOut").hidden = false; renderPortfolio();
+      const bad = pos.filter((p) => p.error).map((p) => p.s);
+      $("pfStatus").textContent = `${ok.length} posisi dihitung · risiko dari ${T} hari bersama sejak ${pf.res.from}${bad.length ? ` · gagal: ${bad.join(", ")}` : ""}`;
+    } catch (e) { $("pfStatus").textContent = e.message; $("pfStatus").classList.add("err"); }
+    finally { $("pfRun").disabled = false; }
+  }
+  function renderPortfolio() {
+    const P = pf.res; if (!P) return; const { ok, total, cash } = P, R = (v) => big(v, "IDR");
+    const cost = ok.reduce((a, p) => a + p.cost, 0), val = ok.reduce((a, p) => a + p.val, 0), pl = val - cost, day = ok.reduce((a, p) => a + p.dayAbs, 0);
+    const q = (p) => P.end[Math.floor(p * (P.end.length - 1))];
+    $("pfKpi").innerHTML = [["Nilai portofolio", R(total), cash ? `termasuk kas ${R(cash)}` : "tanpa kas"], ["Modal (harga beli)", R(cost), `${ok.length} posisi`],
+      ["Untung / rugi belum terealisasi", `<span class="${cls(pl)}">${pl > 0 ? "+" : ""}${R(pl)}</span>`, `<span class="${cls(pl)}">${spct(pl / cost)}</span> dari modal`],
+      ["Hari ini", `<span class="${cls(day)}">${day > 0 ? "+" : ""}${R(day)}</span>`, `<span class="${cls(day)}">${spct(day / (total - day), 2)}</span>`],
+      ["Volatilitas tahunan", pct(P.volP), "dari pola 2 tahun"], [`VaR 95% 1 hari`, R(P.var1), `${pct(P.var1 / total, 2)} dari nilai`]]
+      .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
+    const rows = P.pos.map((p) => { if (p.error) return `<tr class="err-row"><td><b>${esc(p.s)}</b></td><td colspan="10">${esc(p.error)}</td></tr>`; const i = ok.indexOf(p);
+      return `<tr><td><span class="pf-sym" data-s="${esc(p.s)}">${esc(p.s)}</span><div class="nm">${esc((p.name || "").slice(0, 26))}</div></td><td>${fmtNum(p.px)}${p.cur !== "IDR" ? ` <span class="note">${p.cur}</span>` : ""}</td><td>${pc(p.day, 2)}</td><td>${fmtNum(p.avg)}</td>
+        <td>${nf(p.qty % 1 ? 4 : 0).format(p.qty)} ${/\.JK$/.test(p.s) ? "lot" : ""}</td><td>${R(p.val)}</td><td><span class="${cls(p.pl)}">${p.pl > 0 ? "+" : ""}${R(p.pl)}</span></td><td>${pc(p.plp)}</td>
+        <td>${pct(p.w)}</td><td>${pct(P.rc[i])}</td><td>${sigPill(p.sig)}</td></tr>`; }).join("");
+    $("pfTable").innerHTML = `<thead><tr><th>Aset</th><th>Harga</th><th>Hari ini</th><th>Harga beli</th><th>Jumlah</th><th>Nilai (Rp)</th><th>Untung/rugi</th><th>%</th><th>Bobot</th><th>Porsi risiko</th><th>Sinyal</th></tr></thead><tbody>${rows}</tbody>`;
+    const labels = ok.map((p) => p.s.replace(/\.JK$/, "")).concat(cash ? ["Kas"] : []), data = ok.map((p) => p.val).concat(cash ? [cash] : []);
+    drawChart("pfAlloc", { type: "doughnut", data: { labels, datasets: [{ data, backgroundColor: labels.map((_, i) => COLORS[i % COLORS.length]), borderColor: css("--card"), borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: "right", labels: { color: css("--muted"), boxWidth: 10 } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${R(c.raw)} (${pct(c.raw / total)})` } } } } });
+    const top = ok.slice().sort((a, b) => b.w - a.w)[0], hhi = ok.reduce((a, p) => a + p.w * p.w, 0);
+    $("pfAllocTxt").innerHTML = `Posisi terbesar <b>${esc(top.s)}</b> ${pct(top.w)}. Jumlah posisi efektif ${nf(1).format(1 / hhi)} (1/Σw²)${top.w > 0.4 ? " — <b>sangat terkonsentrasi</b>." : "."}`;
+    $("pfRisk").innerHTML = [["Beta vs IHSG", isFinite(P.beta) ? nf(2).format(P.beta) : "–", isFinite(P.beta) ? (P.beta > 1.1 ? "lebih agresif dari indeks" : P.beta < 0.9 ? "lebih tenang dari indeks" : "mirip indeks") : ""],
+      ["CVaR 95% 1 hari", R(P.cvar1), "rata-rata rugi di 5% hari terburuk"], ["Max drawdown 1T", pct(P.mdd), "dengan bobot sekarang"],
+      ["Korelasi tertinggi", P.maxC.v > -2 ? nf(2).format(P.maxC.v) : "–", P.maxC.v > -2 ? `${esc(ok[P.maxC.a].s)} & ${esc(ok[P.maxC.b].s)}` : "butuh ≥ 2 posisi"]]
+      .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
+    const rcRows = ok.map((p, i) => ({ p, w: p.w, rc: P.rc[i] })).sort((a, b) => b.rc - a.rc);
+    $("pfRc").innerHTML = `<thead><tr><th>Aset</th><th>Bobot</th><th>Porsi risiko</th><th></th></tr></thead><tbody>` + rcRows.map((x) => `<tr><td>${esc(x.p.s)}</td><td>${pct(x.w)}</td><td>${pct(x.rc)}</td><td style="text-align:left"><span class="rcbar" style="width:${Math.max(0, Math.min(100, x.rc * 100)).toFixed(0)}px"></span>${x.rc > x.w * 1.5 ? '<span class="note">risiko jauh di atas bobotnya</span>' : ""}</td></tr>`).join("") + "</tbody>";
+    const hot = rcRows[0];
+    $("pfRiskTxt").innerHTML = `Sumber risiko terbesar: <b>${esc(hot.p.s)}</b> (${pct(hot.rc)} risiko dari bobot ${pct(hot.w)}). ${P.maxC.v > 0.7 ? `${esc(ok[P.maxC.a].s)} dan ${esc(ok[P.maxC.b].s)} bergerak sangat searah (korelasi ${nf(2).format(P.maxC.v)}), jadi diversifikasinya kecil.` : ""}`;
+    const bins = 40, lo = q(0.005), hi = q(0.995), wdt = (hi - lo) / bins || 1, cnt = new Array(bins).fill(0); P.end.forEach((v) => { const b = Math.floor((v - lo) / wdt); if (b >= 0 && b < bins) cnt[b]++; });
+    drawChart("pfSim", { type: "bar", data: { labels: cnt.map((_, i) => R(total * (lo + (i + 0.5) * wdt))), datasets: [{ data: cnt, backgroundColor: cnt.map((_, i) => (lo + (i + 0.5) * wdt < 1 ? css("--bad") : css("--good"))), borderWidth: 0, barPercentage: 1, categoryPercentage: 1 }] },
+      options: baseOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { title: (c) => "Nilai ≈ " + c[0].label, label: (c) => c.raw + " skenario" } } }, scales: { x: { ticks: { maxTicksLimit: 6, color: css("--muted") }, grid: { display: false } }, y: { display: false } } }) });
+    const pr = (P.end.filter((v) => v < 1).length / P.end.length);
+    $("pfSimTxt").innerHTML = `Dalam ${P.H} hari bursa: median ${R(total * q(0.5))} (${spct(q(0.5) - 1)}), 90% skenario di antara ${R(total * q(0.05))} dan ${R(total * q(0.95))}. Peluang nilai turun: ${pct(pr, 0)}. Bootstrap ${nf(0).format(P.end.length)} skenario dari ${P.T} hari historis.`;
+  }
+
+  // =====================================================================
   // TERMINAL: ticker berjalan, jam, baris perintah, tema, tombol fungsi
   // =====================================================================
   const TAPE = ["^JKSE", "^JKLQ45", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "^GSPC", "^IXIC", "GC=F", "CL=F", "IDR=X", "BTC-USD", "ETH-USD", "^TNX"];
@@ -1446,16 +1789,19 @@
       if (html) $("tapeInner").innerHTML = html + html; } catch { /* */ }
   }
   function tickClock() { const d = new Date(Date.now() + 7 * 3600e3).toISOString(); $("cmdClock").textContent = `${d.slice(0, 10)} ${d.slice(11, 19)} WIB`; }
-  function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); try { localStorage.setItem("sp_theme", t); } catch { /* */ }
-    $("themeBtn").textContent = t === "terminal" ? "TERANG" : "TERMINAL"; if (state.res) render(); if (ql.res) renderQuantLab(); if (wl.rows.length) { renderWatch(); renderWlMap(); } }
+  const THEMES = ["pro", "light", "terminal"], THEME_LBL = { pro: "GELAP", light: "TERANG", terminal: "TERMINAL" };
+  const nextTheme = (t) => THEMES[(THEMES.indexOf(t) + 1) % THEMES.length];
+  function themeBtnLbl() { const t = document.documentElement.getAttribute("data-theme"); $("themeBtn").textContent = "TEMA: " + (THEME_LBL[t] || t); $("themeBtn").title = "Ganti ke " + THEME_LBL[nextTheme(t)]; }
+  function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); try { localStorage.setItem("sp_theme2", t); } catch { /* */ }
+    themeBtnLbl(); if (state.res) render(); if (ql.res) renderQuantLab(); if (wl.rows.length) { renderWatch(); renderWlMap(); } if (typeof pf !== "undefined" && pf.res) renderPortfolio(); }
   function syncTopbar() { const h = document.querySelector(".topbar").offsetHeight; document.documentElement.style.setProperty("--tb", h + 8 + "px"); }
   function bindTerminal() {
     syncTopbar(); addEventListener("resize", syncTopbar); new ResizeObserver(syncTopbar).observe(document.querySelector(".topbar"));
-    $("themeBtn").onclick = () => applyTheme(document.documentElement.getAttribute("data-theme") === "terminal" ? "light" : "terminal");
-    $("themeBtn").textContent = document.documentElement.getAttribute("data-theme") === "terminal" ? "TERANG" : "TERMINAL";
+    $("themeBtn").onclick = () => applyTheme(nextTheme(document.documentElement.getAttribute("data-theme")));
+    themeBtnLbl();
     attachAC($("cmdQ"), { onPick: (sym) => openDetail(sym) });
     $("tape").addEventListener("click", (e) => { const t = e.target.closest(".tape-item[data-s]"); if (t) openDetail(t.dataset.s); });
-    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail" }, k = e.altKey && /^[123]$/.test(e.key) ? ["screen", "quant", "detail"][+e.key - 1] : map[e.key];
+    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf" }, k = e.altKey && /^[1-5]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf"][+e.key - 1] : map[e.key];
       if (k && $("authGate").hidden) { e.preventDefault(); setView(k); }
       if (e.key === "/" && document.activeElement && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("cmdQ").focus(); } });
     tickClock(); setInterval(tickClock, 1000); updateTape(); setInterval(updateTape, 60000);
@@ -1610,6 +1956,20 @@
       document.querySelectorAll("#wlCols .tab").forEach((x) => x.classList.toggle("active", x === t)); renderWatch(); });
     $("wlTable").addEventListener("click", (e) => { const th = e.target.closest("th[data-i]"); if (th) { const i = +th.dataset.i; wl.dir = wl.sort === i ? -wl.dir : -1; wl.sort = i; renderWatch(); return; }
       const td = e.target.closest("td[data-s]"); if (td) openDetail(td.dataset.s); });
+    // pasar & portofolio
+    $("mkRun").addEventListener("click", runMarket);
+    $("mkMovTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab[data-m]"); if (!t) return; mk.mov = t.dataset.m; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderMovers(); });
+    $("marketView").addEventListener("click", (e) => { const t = e.target.closest(".pf-sym[data-s]"); if (t) openDetail(t.dataset.s); });
+    pfLoad(); renderPfList();
+    attachAC($("pfSym"), { onPick: (sym) => { $("pfSym").value = sym; $("pfQtyLbl").textContent = /\.JK$/i.test(sym) ? "Jumlah (lot)" : "Jumlah (unit)"; $("pfAvg").focus(); } });
+    $("pfSym").addEventListener("input", () => { $("pfQtyLbl").textContent = /\.JK$/i.test($("pfSym").value.trim()) ? "Jumlah (lot)" : "Jumlah (lot untuk saham IDX)"; });
+    $("pfAdd").addEventListener("click", pfAdd);
+    ["pfAvg", "pfQty"].forEach((id) => $(id).addEventListener("keydown", (e) => e.key === "Enter" && pfAdd()));
+    $("pfRun").addEventListener("click", runPortfolio);
+    $("pfCash").addEventListener("change", () => { pfSave(); if (pf.res) runPortfolio(); });
+    $("pfList").addEventListener("click", (e) => { const d = e.target.closest("[data-del]"); if (d) { pf.list.splice(+d.dataset.del, 1); pfSave(); renderPfList(); return; }
+      const ed = e.target.closest("[data-edit]"); if (ed) { const p = pf.list[+ed.dataset.edit]; $("pfSym").value = p.s; $("pfAvg").value = p.avg; $("pfQty").value = p.qty; } });
+    $("pfOut").addEventListener("click", (e) => { const t = e.target.closest(".pf-sym[data-s]"); if (t) openDetail(t.dataset.s); });
     // AI & terminal
     $("aiRun").addEventListener("click", runAI);
     bindTerminal();
@@ -1637,6 +1997,7 @@
     $("rgTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.rg = +t.dataset.rg;
       document.querySelectorAll("#rgTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
     $("indChecks").addEventListener("change", renderCandle);
+    $("oscTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab[data-o]"); if (!t) return; state.osc = t.dataset.o; if (state.lw) drawCandle(true); });
     let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => state.lw && renderCandle(), 200); });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.res && render());
   }
@@ -1653,6 +2014,8 @@
     if (settings.watchlist) $("wlQ").value = settings.watchlist;
     if (settings.quantlab) $("qlQ").value = settings.quantlab;
     if (settings.focus) setFocus(settings.focus, false);
+    if (Array.isArray(settings.portfolio)) { pf.list = settings.portfolio.filter((p) => p && p.s && p.avg > 0 && p.qty > 0); try { localStorage.setItem(PF_KEY, JSON.stringify(pf.list)); } catch { /* */ } }
+    if (settings.pfCash != null) $("pfCash").value = settings.pfCash;
   }
   let authMode = "login";
   function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];

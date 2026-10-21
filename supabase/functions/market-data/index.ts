@@ -8,6 +8,7 @@
 // GET ?action=intraday&symbol=BBCA.JK&interval=5m   (1m,2m,5m,15m,30m,60m,90m)
 // GET ?action=quotes&symbols=BBCA.JK,TLKM.JK          (harga terakhir, maks 25)
 // GET ?action=book&symbol=BBCA.JK                       (bid/offer terbaik)
+// GET ?action=freight                                 (Drewry World Container Index, dibaca dari situs Drewry)
 // POST ?action=ai  {symbol,name,items,context}          (analisis berita Gemini; secret GEMINI_API_KEY)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -195,6 +196,31 @@ async function quoteOne(symbol: string) {
 }
 
 
+// ---------- freight: Drewry World Container Index ----------
+let wciCache: { at: number; data: any } | null = null;
+const SIGN = (w: string) => (/rose|increase|up|climb|jump|gain/i.test(w) ? 1 : /fell|decrease|down|declin|drop|slip|eas/i.test(w) ? -1 : 0);
+function parseWci(html: string) {
+  const t = decode(html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " "));
+  const m = t.match(/(\d{1,2}\s+[A-Za-z]{3,9}\s+20\d\d)[^.]{0,80}?World Container Index[^.]{0,30}?\b(rose|increased|went up|climbed|jumped|fell|decreased|declined|dropped|slipped|eased|was stable|remained stable|was unchanged|remained unchanged)\b\s*(?:by\s*)?(\d+(?:\.\d+)?)?\s*%?\s*(?:to|at)\s*\$\s?([\d,]+(?:\.\d+)?)\s*per\s*40\s*-?\s*ft/i);
+  if (!m) return null;
+  const pct = m[3] ? (SIGN(m[2]) * parseFloat(m[3])) / 100 : 0;
+  const routes: any[] = []; const seen = new Set<string>();
+  const W = "(up|down|rose|fell|increased|decreased|declined|dropped|climbed|jumped|slipped|eased)";
+  const re = new RegExp(`(Shanghai|Rotterdam|Genoa|Los Angeles|New York)\\s*(?:to|–|-|—)\\s*(Shanghai|Rotterdam|Genoa|Los Angeles|New York)\\s*:?\\s*(?:\\b${W}\\b\\s*(?:by\\s*)?(\\d+(?:\\.\\d+)?)\\s*%)?[^$]{0,40}?\\$\\s?([\\d,]+)(?:[^$%]{0,25}?\\b${W}\\b\\s*(?:by\\s*)?(\\d+(?:\\.\\d+)?)\\s*%)?`, "gi");
+  for (const r of t.matchAll(re)) { const key = `${r[1]} → ${r[2]}`; if (seen.has(key)) continue; seen.add(key);
+    const w = r[3] ?? r[6], p = r[4] ?? r[7];
+    routes.push({ route: key, price: parseFloat(r[5].replace(/,/g, "")), chg: p ? (SIGN(w) * parseFloat(p)) / 100 : null }); }
+  return { source: "Drewry WCI", date: m[1], composite: parseFloat(m[4].replace(/,/g, "")), chg: pct, routes: routes.slice(0, 8) };
+}
+async function getWci() {
+  if (wciCache && Date.now() - wciCache.at < 6 * 3600e3) return wciCache.data;
+  const r = await fetch("https://www.drewry.co.uk/supply-chain-advisors/supply-chain-expertise/world-container-index-assessed-by-drewry", { headers: { ...UA, Accept: "text/html" } });
+  if (!r.ok) return { error: `Drewry ${r.status}` };
+  const data: any = parseWci(await r.text()) ?? { error: "format halaman Drewry berubah" };
+  if (!data.error) wciCache = { at: Date.now(), data };
+  return data;
+}
+
 // ---------- hanya pengguna yang login ----------
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "", SB_ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const okTokens = new Map<string, number>(); // token -> exp (ms)
@@ -257,6 +283,7 @@ Deno.serve(async (req) => {
       const r = await aiNews(body, who.sub ?? "?");
       return json(r.data, r.status);
     }
+    if (action === "freight") return json(await getWci(), 200, 3600);
     if (action === "search") {
       const q = (u.searchParams.get("q") ?? "").slice(0, 40);
       if (!q) return json({ quotes: [] });
