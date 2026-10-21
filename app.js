@@ -6,6 +6,14 @@
   const API = SB_URL + "/functions/v1/market-data";
   // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi
   try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
+  // jendela/tab ditutup lalu dipulihkan browser (Ctrl+Shift+T, "lanjutkan dari terakhir") -> sessionStorage ikut pulih.
+  // Tandai saat halaman ditinggalkan; muat berikutnya yang BUKAN refresh = dianggap keluar.
+  let closedBefore = false;
+  try { const nav = (performance.getEntriesByType("navigation")[0] || {}).type || "navigate";
+    if (sessionStorage.getItem("sp_left") && nav !== "reload") { closedBefore = true; Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => sessionStorage.removeItem(k)); }
+    sessionStorage.removeItem("sp_left");
+    addEventListener("pagehide", () => { try { sessionStorage.setItem("sp_left", String(Date.now())); } catch { /* */ } });
+  } catch { /* */ }
   const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: window.sessionStorage } }) : null;
   const IDLE_MIN = 30; let lastAct = Date.now();
   let session = null;
@@ -2046,6 +2054,7 @@
     $("logoutBtn").onclick = () => logout(); $("cmdLogout").onclick = () => logout();
     ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, () => (lastAct = Date.now()), { passive: true }));
     setInterval(() => { if (session && $("authGate").hidden && Date.now() - lastAct > IDLE_MIN * 60000) logout(`Kamu keluar otomatis karena tidak aktif ${IDLE_MIN} menit.`); }, 30000);
+    if (closedBefore) setTimeout(() => { $("authMsg").textContent = "Jendela sebelumnya ditutup, jadi kamu sudah keluar. Silakan masuk lagi."; }, 0);
     try { const m = sessionStorage.getItem("sp_logout_msg"); if (m) { sessionStorage.removeItem("sp_logout_msg"); setTimeout(() => { $("authMsg").textContent = m; }, 0); } } catch { /* */ }
     $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
       msg.classList.remove("err"); msg.textContent = "Memproses…"; $("authBtn").disabled = true;
