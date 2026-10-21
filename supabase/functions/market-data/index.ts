@@ -20,7 +20,7 @@ const SYMBOL_RE = /^[A-Za-z0-9.\-=^]{1,20}$/;
 function json(body: unknown, status = 200, cache = 0) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json", ...(cache ? { "Cache-Control": `public, max-age=${cache}` } : {}) },
+    headers: { ...CORS, "Content-Type": "application/json", ...(cache ? { "Cache-Control": `private, max-age=${cache}` } : {}) },
   });
 }
 
