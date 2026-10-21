@@ -210,7 +210,7 @@
       if (newSymbol) { setPlanDefaults(); setCmpDefaults(); state.cmp = null; $("cmpOut").hidden = true; state.intra = null; }
       else { $("pEntry").placeholder = fmtNum(res.s0); }
       render();
-      writeUrl();
+      writeUrl(); startLive();
       $("barFill").style.width = "100%";
       status(`Selesai dalam ${((performance.now() - t0) / 1000).toFixed(1)} detik · ${d.values.length.toLocaleString("id-ID")} observasi · sumber ${d.source}`);
       setTimeout(() => ($("barFill").style.width = "0"), 600);
@@ -970,7 +970,7 @@
         return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F };
       });
       wl.rows = rows; wl.days = days; wl.model = model;
-      $("wlOut").hidden = false; renderWatch(); renderWlMap(); renderHighlights();
+      $("wlOut").hidden = false; renderWatch(); renderWlMap(); renderHighlights(); startWlLive();
       const bad = rows.filter((r) => r.error).map((r) => r.symbol);
       $("wlStatus").textContent = `${rows.length - bad.length} aset dianalisis · model ${PRICE_LABEL(model)} · horizon ${days}${bad.length ? ` · gagal: ${bad.join(", ")}` : ""}`;
     } catch (e) { $("wlStatus").textContent = e.message; $("wlStatus").classList.add("err"); }
@@ -989,7 +989,10 @@
   function wlCols() {
     const days = wl.days;
     const C = {
-      ringkas: [["Harga", (r) => r.m.last, (r) => fmtNum(r.m.last)], ["1H", (r) => r.m.chg1d, (r) => pc(r.m.chg1d, 2)], ["3 bulan", null, (r) => sparkSvg(r.m.spark)],
+      ringkas: [["Live", (r) => { const q = wl.q && wl.q[r.symbol]; return q && q.prevClose ? q.price / q.prevClose - 1 : null; }, (r) => { const q = wl.q && wl.q[r.symbol];
+          if (!q) return `${fmtNum(r.m.last)}`; const c = q.prevClose ? q.price / q.prevClose - 1 : NaN, fl = (wl.flash && wl.flash[r.symbol]) || "";
+          return `<span class="${fl}"><b>${fmtNum(q.price)}</b></span> <span class="${cls(c)}">${spct(c, 2)}</span>${q.open === false ? ' <span class="note">tutup</span>' : ""}`; }],
+        ["1H", (r) => r.m.chg1d, (r) => pc(r.m.chg1d, 2)], ["3 bulan", null, (r) => sparkSvg(r.m.spark)],
         ["1B", (r) => r.m.ret1m, (r) => pc(r.m.ret1m)], ["1T", (r) => r.m.ret1y, (r) => pc(r.m.ret1y)], ["Tren", (r) => r.m.trend, (r) => trendIcon(r.m.trend)],
         ["RSI", (r) => r.m.rsi, (r) => `<span class="${r.m.rsi > 70 ? "neg" : r.m.rsi < 30 ? "pos" : ""}">${nf(0).format(r.m.rsi)}</span>`],
         [`Peluang naik (${days}p)`, (r) => r.m.probUp, (r) => pct(r.m.probUp, 0)], [`Rentang 90% (${days}p)`, (r) => r.m.simP95 - r.m.simP5, (r) => `${pc(r.m.simP5, 0)} / ${pc(r.m.simP95, 0)}`],
@@ -1046,9 +1049,144 @@
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail";
+    if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
     if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
   }
   function openDetail(sym) { setView("detail"); setMode("price", true); pick(sym); $("horizon").value = wl.days || $("horizon").value; run(); scrollTo({ top: 0, behavior: "smooth" }); }
+
+  // =====================================================================
+  // HARGA LIVE (Binance WS untuk kripto, Yahoo WS + polling untuk lainnya)
+  // =====================================================================
+  const live = { on: true, ws: null, poll: null, guard: null, sym: null, last: null, prev: null, src: "", gotWs: false, refetch: null };
+  function pbDecode(bytes) {
+    let i = 0; const out = {};
+    const varint = () => { let r = 0n, s = 0n, b; do { b = bytes[i++]; r |= BigInt(b & 0x7f) << s; s += 7n; } while (b & 0x80 && i < bytes.length); return r; };
+    while (i < bytes.length) {
+      const key = Number(varint()), f = key >> 3, w = key & 7;
+      if (w === 0) out[f] = varint();
+      else if (w === 5) { out[f] = new DataView(bytes.buffer, bytes.byteOffset + i, 4).getFloat32(0, true); i += 4; }
+      else if (w === 1) { out[f] = new DataView(bytes.buffer, bytes.byteOffset + i, 8).getFloat64(0, true); i += 8; }
+      else if (w === 2) { const len = Number(varint()); out[f] = new TextDecoder().decode(bytes.subarray(i, i + len)); i += len; }
+      else break;
+    }
+    return out;
+  }
+  const zz = (v) => Number((v >> 1n) ^ -(v & 1n));
+  function decodeYahoo(b64) { // PricingData: 1 id, 2 price, 3 time, 8 changePercent, 9 dayVolume, 10 dayHigh, 11 dayLow, 12 change, 16 previousClose
+    const bin = atob(b64), bytes = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    const f = pbDecode(bytes); let t = f[3] != null ? zz(f[3]) : Date.now(); if (t > 1e12) t /= 1000;
+    return { symbol: f[1], price: f[2], time: t, high: f[10], low: f[11], volume: f[9] != null ? zz(f[9]) : null, prevClose: f[16] ?? (f[2] != null && f[12] != null ? f[2] - f[12] : null) };
+  }
+  function stopLive() {
+    if (live.ws) { try { live.ws.onclose = null; live.ws.close(); } catch { /* */ } live.ws = null; }
+    clearInterval(live.poll); clearTimeout(live.guard); clearInterval(live.refetch); live.poll = live.guard = live.refetch = null;
+  }
+  function startLive() {
+    stopLive(); setLiveDot("closed", "");
+    if (!live.on || !state.data || state.csv || state.mode !== "price" || document.hidden) return;
+    const sym = state.data.symbol; live.sym = sym; live.gotWs = false; live.last = null;
+    pollOnce(); // isi high/low/prev close segera
+    const m = sym.toUpperCase().match(/^([A-Z0-9]+)-USDT?$/);
+    if (m) wsBinance(m[1].toLowerCase()); else wsYahoo(sym);
+    live.guard = setTimeout(() => { if (!live.gotWs) startPolling(); }, 8000);
+    live.refetch = setInterval(async () => { if (isIntra() && !document.hidden) { try { await loadIntraday(); renderCandle(true); } catch { /* */ } } }, 120000);
+  }
+  function startPolling() { clearInterval(live.poll); live.poll = setInterval(() => { if (!document.hidden) pollOnce(); }, 15000); }
+  async function pollOnce() {
+    const sym = live.sym; if (!sym) return;
+    try { const j = await (await fetch(`${API}?action=quotes&symbols=${encodeURIComponent(sym)}`)).json(); const q = j.quotes && j.quotes[0];
+      if (q && q.price != null && live.sym === sym) onTick({ price: q.price, time: q.time, high: q.dayHigh, low: q.dayLow, volume: q.volume, prevClose: q.prevClose, open: q.open, gmtoffset: q.gmtoffset }, live.gotWs ? null : "Yahoo (polling 15 dtk)"); } catch { /* */ }
+  }
+  function wsBinance(base) {
+    try {
+      const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${base}usdt@miniTicker`); live.ws = ws;
+      ws.onmessage = (e) => { const j = JSON.parse(e.data), d = j.data; if (!d) return; live.gotWs = true; clearInterval(live.poll);
+        onTick({ price: +d.c, time: d.E / 1000, high: +d.h, low: +d.l, volume: +d.v, prevClose: +d.o, open: true, gmtoffset: 0, h24: true }, "Binance real-time"); };
+      ws.onclose = () => { if (live.ws === ws) { live.ws = null; startPolling(); } };
+      ws.onerror = () => { try { ws.close(); } catch { /* */ } };
+    } catch { startPolling(); }
+  }
+  function wsYahoo(sym) {
+    try {
+      const ws = new WebSocket("wss://streamer.finance.yahoo.com/?version=2"); live.ws = ws;
+      ws.onopen = () => ws.send(JSON.stringify({ subscribe: [sym] }));
+      ws.onmessage = (e) => { try { let b64 = e.data; if (typeof b64 === "string" && b64.startsWith("{")) { const j = JSON.parse(b64); b64 = j.message || j.data; }
+        const q = decodeYahoo(b64); if (!q.symbol || q.symbol.toUpperCase() !== sym.toUpperCase() || !(q.price > 0)) return;
+        live.gotWs = true; clearInterval(live.poll);
+        onTick({ ...q, high: q.high || (live.last && live.last.high), low: q.low || (live.last && live.last.low), prevClose: q.prevClose || (live.last && live.last.prevClose), open: true, gmtoffset: live.last ? live.last.gmtoffset : 0 }, "Yahoo streaming"); } catch { /* abaikan pesan lain */ } };
+      ws.onclose = () => { if (live.ws === ws) { live.ws = null; startPolling(); } };
+      ws.onerror = () => { try { ws.close(); } catch { /* */ } };
+    } catch { startPolling(); }
+  }
+  function setLiveDot(kind, label) { $("liveDot").className = "dot-live " + kind; if (label != null) live.src = label; }
+  function onTick(q, srcLabel) {
+    if (srcLabel) live.src = srcLabel;
+    const prevPx = live.last ? live.last.price : null;
+    live.last = { ...(live.last || {}), ...Object.fromEntries(Object.entries(q).filter(([, v]) => v != null)) };
+    const L = live.last, pc = L.prevClose, chg = pc ? L.price / pc - 1 : NaN;
+    const el = $("lastPx"); el.textContent = fmtNum(L.price);
+    if (prevPx != null && L.price !== prevPx) { el.classList.remove("flash-up", "flash-dn"); void el.offsetWidth; el.classList.add(L.price > prevPx ? "flash-up" : "flash-dn"); }
+    $("liveChg").innerHTML = isFinite(chg) ? `<span class="${cls(chg)}">${chg >= 0 ? "▲" : "▼"} ${fmtNum(L.price - pc)} (${spct(chg, 2)})</span>` : "";
+    const age = Date.now() / 1000 - (L.time || 0);
+    const kind = L.open === false ? "closed" : age < 180 ? "ok" : "delay";
+    setLiveDot(kind);
+    const tm = L.time ? new Date((L.time + (L.gmtoffset || 0)) * 1000).toISOString().slice(11, 19) : "–";
+    const tz = (L.gmtoffset || 0) === 25200 ? "WIB" : (L.gmtoffset || 0) === 0 ? "UTC" : "lokal bursa";
+    $("liveStats").innerHTML = `${L.h24 ? "24j" : "Hari ini"} H ${fmtNum(L.high)} · L ${fmtNum(L.low)}${L.volume ? ` · Vol ${nf(0).format(L.volume)}` : ""} · ${tm} ${tz} · ${esc(live.src)}` +
+      (kind === "closed" ? " · <b>pasar tutup</b>" : kind === "delay" ? ` · tertunda ${Math.round(age / 60)} mnt` : "");
+    updateLiveCandle(L.price, L.time, L.gmtoffset || 0);
+  }
+  function updateLiveCandle(price, t, off) {
+    if (!state.lw || !t || !(price > 0)) return;
+    const cs = state.lw.cs;
+    try {
+      if (isIntra() && state.intra && state.intra.key === state.data.symbol + "|" + state.tf) {
+        const step = INTRA_TF[state.tf], bars = state.intra.bars, o2 = state.intra.data.gmtoffset || off, last = bars[bars.length - 1];
+        if (t < last[0]) return;
+        if (Math.floor((t + o2) / step) === Math.floor((last[0] + o2) / step)) { last[2] = Math.max(last[2], price); last[3] = Math.min(last[3], price); last[4] = price; }
+        else { const bt = Math.floor((t + o2) / step) * step - o2; bars.push([bt, price, price, price, price, 0]); state.lw.n++; }
+        const b = bars[bars.length - 1]; cs.update({ time: b[0] + o2, open: b[1], high: b[2], low: b[3], close: b[4] });
+      } else if (state.tf === "D") {
+        const d = state.data.ohlc, last = d[d.length - 1], day = new Date((t + off) * 1000).toISOString().slice(0, 10);
+        if (day < last[0]) return;
+        if (day === last[0]) { last[2] = Math.max(last[2], price); last[3] = Math.min(last[3], price); last[4] = price; }
+        else d.push([day, price, price, price, price, 0]);
+        const b = d[d.length - 1]; cs.update({ time: b[0], open: b[1], high: b[2], low: b[3], close: b[4] });
+      }
+    } catch { /* grafik sedang digambar ulang */ }
+  }
+
+  // ---------- autocomplete untuk input berisi daftar ticker (dipisah koma) ----------
+  function attachAC(input) {
+    const ul = input.parentElement.querySelector(".sugg"); let timer = null, idx = -1, seq = 0;
+    const lastTok = () => { const v = input.value, i = Math.max(v.lastIndexOf(","), v.lastIndexOf("\n")); return { pre: v.slice(0, i + 1), tok: v.slice(i + 1).trim() }; };
+    const show = (sections) => { idx = -1; const html = sections.filter((s) => s.items.length).map((s) => `<li class="hdr">${s.title}</li>` + s.items.map((q) => suggRow(q)).join("")).join("");
+      ul.innerHTML = html; ul.hidden = !html; };
+    const choose = (sym) => { const { pre } = lastTok(); input.value = (pre ? pre.replace(/\s*$/, " ") : "") + sym + ", "; ul.hidden = true; input.focus(); };
+    input.addEventListener("input", () => { clearTimeout(timer); const { tok } = lastTok(); if (tok.length < 2) { ul.hidden = true; return; }
+      timer = setTimeout(async () => { const my = ++seq, local = localMatches(tok); show([{ title: "Rekomendasi", items: local }]);
+        let remote = []; try { remote = (await (await fetch(`${API}?action=search&q=${encodeURIComponent(tok)}`)).json()).quotes || []; } catch { /* */ }
+        if (my !== seq) return; const seen = new Set(local.map((x) => x.symbol));
+        remote = remote.filter((x) => !seen.has(x.symbol)).sort((a, b) => (/\.JK$/.test(b.symbol) ? 1 : 0) - (/\.JK$/.test(a.symbol) ? 1 : 0));
+        show([{ title: "Rekomendasi", items: local }, { title: "Hasil pencarian", items: remote }]); }, 250); });
+    input.addEventListener("keydown", (e) => { const items = [...ul.querySelectorAll("li[data-s]")]; if (ul.hidden || !items.length) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); idx = (idx + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items.forEach((li, i) => li.classList.toggle("on", i === idx)); }
+      else if (e.key === "Enter" && idx >= 0) { e.preventDefault(); e.stopImmediatePropagation(); choose(items[idx].dataset.s); }
+      else if (e.key === "Escape") ul.hidden = true; }, true);
+    ul.addEventListener("mousedown", (e) => { const li = e.target.closest("li[data-s]"); if (li) { e.preventDefault(); choose(li.dataset.s); } });
+    input.addEventListener("blur", () => setTimeout(() => (ul.hidden = true), 150));
+  }
+
+  // ---------- harga live di watchlist ----------
+  let wlLiveTimer = null;
+  async function wlLiveOnce() {
+    const ok = wl.rows.filter((r) => !r.error); if (!ok.length || $("screenView").hidden || document.hidden) return;
+    try { const j = await (await fetch(`${API}?action=quotes&symbols=${encodeURIComponent(ok.map((r) => r.symbol).join(","))}`)).json();
+      wl.q = wl.q || {}; const changed = {};
+      for (const q of j.quotes || []) { if (q.price == null) continue; const old = wl.q[q.symbol]; if (old && old.price !== q.price) changed[q.symbol] = q.price > old.price ? "flash-up" : "flash-dn"; wl.q[q.symbol] = q; }
+      wl.flash = changed; renderWatch(); wl.flash = {}; } catch { /* */ }
+  }
+  function startWlLive() { clearInterval(wlLiveTimer); wlLiveOnce(); wlLiveTimer = setInterval(wlLiveOnce, 30000); }
 
   // ---------- event ----------
   function bind() {
@@ -1105,10 +1243,14 @@
       document.querySelectorAll("#wlCols .tab").forEach((x) => x.classList.toggle("active", x === t)); renderWatch(); });
     $("wlTable").addEventListener("click", (e) => { const th = e.target.closest("th[data-i]"); if (th) { const i = +th.dataset.i; wl.dir = wl.sort === i ? -wl.dir : -1; wl.sort = i; renderWatch(); return; }
       const td = e.target.closest("td[data-s]"); if (td) openDetail(td.dataset.s); });
+    // live
+    $("liveToggle").addEventListener("click", () => { live.on = !live.on; $("liveToggle").classList.toggle("on", live.on); $("liveLbl").textContent = live.on ? "LIVE" : "LIVE OFF";
+      if (live.on) startLive(); else { stopLive(); setLiveDot("closed", ""); $("liveStats").textContent = "Live dimatikan"; } });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stopLive(); else if (!$("detailView").hidden && state.res) startLive(); else if (!$("screenView").hidden) wlLiveOnce(); });
+    attachAC($("cmpQ")); attachAC($("wlQ"));
     // candlestick
     $("tfTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.tf = t.dataset.tf;
       document.querySelectorAll("#tfTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); setRangeTabs(); renderCandle(); });
-    $("liveChk").addEventListener("change", (e) => setLive(e.target.checked));
     $("rgTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.rg = +t.dataset.rg;
       document.querySelectorAll("#rgTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
     $("indChecks").addEventListener("change", renderCandle);

@@ -158,3 +158,18 @@ textarea:focus { border-color: var(--accent); }
 #tfTabs .tab { padding: 5px 8px; }
 /* jangan biarkan gaya tabel umum mengganggu tabel internal Lightweight Charts */
 .candle-box td, .candle-box th, .rsi-box td, .rsi-box th { padding: 0 !important; border: 0 !important; min-width: 0 !important; max-width: none !important; white-space: nowrap; font-family: inherit; }
+
+.search.grow { flex: 1; }
+.live-head { text-align: right; }
+.live-chg { font: 600 14px var(--mono); }
+.live-bar { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
+.live-btn { display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--mono); letter-spacing: .06em; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 99px; padding: 4px 10px; cursor: pointer; }
+.live-btn.on { color: var(--ink); }
+.dot-live { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot-live.ok { background: var(--good); animation: pulse 1.6s infinite; } .dot-live.delay { background: var(--warn); } .dot-live.closed { background: var(--muted); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(15,138,95,.5); } 70% { box-shadow: 0 0 0 7px rgba(15,138,95,0); } 100% { box-shadow: 0 0 0 0 rgba(15,138,95,0); } }
+.live-stats { font: 12px var(--mono); color: var(--muted); }
+.flash-up { animation: fu 1.2s; } .flash-dn { animation: fd 1.2s; }
+@keyframes fu { 0% { background: rgba(15,138,95,.28); } 100% { background: transparent; } }
+@keyframes fd { 0% { background: rgba(200,50,43,.28); } 100% { background: transparent; } }
+.last { border-radius: 6px; padding: 0 4px; }

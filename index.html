@@ -26,7 +26,7 @@
     <h2>Watchlist</h2>
     <div class="chips" id="wlPresets"></div>
     <label class="lbl" for="wlQ">Ticker (pisahkan koma, maks 20)</label>
-    <textarea id="wlQ" rows="2" spellcheck="false"></textarea>
+    <div class="search"><textarea id="wlQ" rows="2" spellcheck="false" autocomplete="off"></textarea><ul class="sugg" hidden></ul></div>
     <div class="grid">
       <div><label class="lbl" for="wlH">Horizon proyeksi</label><input id="wlH" type="number" min="1" max="252" value="21"></div>
       <div><label class="lbl" for="wlModel">Model</label><select id="wlModel"><option value="garch" selected>GARCH-t</option><option value="bootstrap">Bootstrap</option><option value="jump">Jump</option><option value="gbm">GBM</option></select></div>
@@ -144,7 +144,14 @@
         <div id="asset" class="asset"></div>
         <div id="assetMeta" class="meta"></div>
       </div>
-      <div id="lastPx" class="last"></div>
+      <div class="live-head">
+        <div id="lastPx" class="last"></div>
+        <div id="liveChg" class="live-chg"></div>
+      </div>
+      <div class="live-bar">
+        <button id="liveToggle" class="live-btn on" title="Harga live"><span id="liveDot" class="dot-live"></span><span id="liveLbl">LIVE</span></button>
+        <span id="liveStats" class="live-stats"></span>
+      </div>
     </div>
 
     <div id="kpis" class="kpis"></div>
@@ -164,7 +171,7 @@
           <label><input type="checkbox" value="rsi" checked> RSI</label>
         </div>
       </div>
-      <div id="liveRow" class="live-row" hidden><label class="mini"><input type="checkbox" id="liveChk"> Live (perbarui tiap 60 detik)</label><span id="liveInfo" class="note"></span></div>
+      <div id="liveRow" class="live-row" hidden><label class="mini" hidden><input type="checkbox" id="liveChk"> Live</label><span id="liveInfo" class="note"></span></div>
       <div id="ohlcLegend" class="ohlc-legend"></div>
       <div id="candle" class="candle-box"></div>
       <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
@@ -235,7 +242,7 @@
     <div class="card price-only" id="cmpCard">
       <h2>Perbandingan dengan indeks / aset lain</h2>
       <label class="lbl" for="cmpQ">Bandingkan dengan (pisahkan dengan koma, maks 4)</label>
-      <div class="cmp-row"><input id="cmpQ" spellcheck="false" placeholder="^JKSE, BMRI.JK"><button id="cmpRun" class="btn">Bandingkan</button></div>
+      <div class="cmp-row"><div class="search grow"><input id="cmpQ" autocomplete="off" spellcheck="false" placeholder="ketik nama/kode, mis. ihsg, mandiri"><ul class="sugg" hidden></ul></div><button id="cmpRun" class="btn">Bandingkan</button></div>
       <div id="cmpChips" class="chips"></div>
       <div id="cmpStatus" class="status"></div>
       <div id="cmpOut" hidden>

@@ -6,6 +6,7 @@
 // GET ?action=news&symbol=BBCA.JK&q=saham BBCA
 // GET ?action=fundamentals&symbol=TLKM.JK
 // GET ?action=intraday&symbol=BBCA.JK&interval=5m   (1m,2m,5m,15m,30m,60m,90m)
+// GET ?action=quotes&symbols=BBCA.JK,TLKM.JK          (harga terakhir, maks 25)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -176,6 +177,21 @@ async function binanceIntraday(symbol: string, interval: string) {
   return { source: "binance", symbol: `${m[1]}-USDT`, interval, gmtoffset: 0, timezone: "UTC", currency: "USDT", price: last[4], priceTime: last[0], prevClose: null, period: null, bars };
 }
 
+
+// ---------- quote live (banyak simbol) ----------
+async function quoteOne(symbol: string) {
+  for (const host of ["query1", "query2"]) {
+    const r = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m&includePrePost=false`, { headers: UA });
+    if (!r.ok) continue;
+    const res = (await r.json())?.chart?.result?.[0]; if (!res?.meta) continue;
+    const m = res.meta, per = m.currentTradingPeriod?.regular, now = Date.now() / 1000;
+    return { symbol: m.symbol ?? symbol, price: m.regularMarketPrice ?? null, prevClose: m.chartPreviousClose ?? m.previousClose ?? null, time: m.regularMarketTime ?? null,
+      dayHigh: m.regularMarketDayHigh ?? null, dayLow: m.regularMarketDayLow ?? null, volume: m.regularMarketVolume ?? null, currency: m.currency ?? "",
+      gmtoffset: m.gmtoffset ?? 0, open: per ? now >= per.start && now <= per.end : null };
+  }
+  return { symbol, error: "tidak tersedia" };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const u = new URL(req.url);
@@ -189,6 +205,11 @@ Deno.serve(async (req) => {
       const j = await r.json();
       const quotes = (j.quotes ?? []).filter((x: any) => x.symbol).map((x: any) => ({ symbol: x.symbol, name: x.longname ?? x.shortname ?? "", exch: x.exchDisp ?? "", type: x.quoteType ?? "" }));
       return json({ quotes }, 200, 3600);
+    }
+    if (action === "quotes") {
+      const syms = (u.searchParams.get("symbols") ?? "").split(",").map((x) => x.trim()).filter((x) => SYMBOL_RE.test(x)).slice(0, 25);
+      if (!syms.length) return json({ error: "Simbol kosong" }, 400);
+      return json({ at: Math.floor(Date.now() / 1000), quotes: await Promise.all(syms.map(quoteOne)) }, 200, 10);
     }
     if (action === "intraday") {
       const sym = (u.searchParams.get("symbol") ?? "").trim(), iv = u.searchParams.get("interval") ?? "5m";
