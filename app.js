@@ -1804,7 +1804,7 @@
     $("mathKpi").innerHTML = [["Skewness", nf(2).format(M.skew), M.skew < -0.3 ? "ekor kiri lebih panjang" : M.skew > 0.3 ? "ekor kanan lebih panjang" : "hampir simetris"],
       ["Kurtosis berlebih", nf(2).format(M.kurt), M.kurt > 1 ? "ekor tebal" : M.kurt < -0.5 ? "ekor lebih tipis dari normal" : "mendekati normal"], ["Jarque–Bera p", p3(M.jbP), sig(M.jbP)], ["Kolmogorov–Smirnov p", p3(M.ksP), sig(M.ksP)],
       ["ν Student-t", nf(1).format(M.t.nu), M.t.nu < 6 ? "ekor sangat tebal" : M.t.nu < 15 ? "ekor agak tebal" : "mirip normal"],
-      ["Indeks ekor rugi (Hill α)", isFinite(M.hillL) ? nf(2).format(M.hillL) : "–", isFinite(M.hillL) ? (M.hillL < 3 ? "ekor sangat tebal (varians tidak stabil)" : M.hillL < 4 ? "ekor tebal" : M.hillL < 6 ? "ekor sedang" : "ekor tipis") : ""],
+      ["Indeks ekor rugi (Hill α)", isFinite(M.hillL) ? nf(2).format(M.hillL) : "–", isFinite(M.hillL) ? (M.hillL < 2 ? "ekor ekstrem (varians tak terhingga)" : M.hillL < 4 ? "ekor tebal (kurtosis tak terhingga)" : M.hillL < 6 ? "ekor sedang" : "ekor tipis") : ""],
       ["Kejadian > 4σ", `${M.sig4} kali`, `Gaussian memperkirakan ${nf(2).format(M.expected4)}`], ["Entropi vs Gaussian", nf(3).format(M.entropy - M.entropyN), "< 0 = lebih terkonsentrasi + ekor"]]
       .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
     const D = M.dens, lab = D.grid.map((x) => nf(1).format(x * 100) + "%"), logS = state.mathLog;
@@ -1908,6 +1908,7 @@
     openFn("HELP <span class='note'>· daftar perintah</span>", `<p class="note">Ketik di baris perintah paling atas lalu <b>Enter</b> (= &lt;GO&gt;). Format seperti Bloomberg: <code>TICKER FUNGSI</code>. Kode saham IDX 4 huruf otomatis jadi <code>.JK</code> (saham AS tambahkan <code>US</code>, mis. <code>AAPL US DES</code>); <code>EQUITY</code>, <code>IJ</code>, <code>GO</code> boleh ditulis atau tidak. <b>Esc</b> = &lt;MENU&gt; (tutup panel). <b>/</b> = fokus ke baris perintah. F1–F5 = pindah layar.</p>
       <div class="fn-cols"><div><div class="subh">Satu aset</div><table>${Object.keys(FN).filter((k) => FN[k][1] === "aset").map(row).join("")}</table></div>
       <div><div class="subh">Pasar & alat</div><table>${Object.keys(FN).filter((k) => FN[k][1] !== "aset").map(row).join("")}</table></div></div>
+      ${me && me.role === "admin" ? '<p class="note"><a href="https://claude.ai/artifact/Gsh64n2QBhwzjocJJWqDbU" target="_blank" rel="noopener">Buku panduan lengkap</a> (dokumen pribadi admin; bagikan ke anggota bila perlu).</p>' : '<p class="note">Buku panduan lengkap dibagikan oleh admin.</p>'}
       <p class="note">Contoh: <code>BBCA DES</code>, <code>TLKM HP</code>, <code>BBRI GIP</code>, <code>ANTM N</code>, <code>WEI</code>, <code>MOST</code>, <code>SHIP</code>, <code>ALRT</code>. ${fnHist.length ? "Terakhir: " + fnHist.slice(0, 6).map((x) => `<code>${esc(x)}</code>`).join(" ") : ""}</p>`);
   }
   async function showDes(sym) {
