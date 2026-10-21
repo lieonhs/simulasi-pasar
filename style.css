@@ -138,3 +138,18 @@ code { font-family: var(--mono); font-size: 12.5px; background: var(--bg); borde
 .kpis.compact { margin: 10px 0 0; } .kpis.compact .v { font-size: 16px; }
 .chart-box.short { height: 160px; margin-top: 10px; }
 td:first-child { white-space: normal; min-width: 110px; max-width: 190px; }
+.views { display: flex; gap: 6px; margin-bottom: 14px; }
+.view-btn { flex: 1; font: 600 14px var(--sans); border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 11px; padding: 11px 8px; cursor: pointer; }
+.view-btn.active { background: var(--ink); color: var(--card); border-color: var(--ink); }
+textarea { width: 100%; font: 14px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: vertical; outline: none; }
+textarea:focus { border-color: var(--accent); }
+.bar #wlBar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.table-wrap.sticky th:first-child, .table-wrap.sticky td:first-child { position: sticky; left: 0; background: var(--card); z-index: 1; }
+#wlTable th { cursor: pointer; user-select: none; } #wlTable th.sorted { color: var(--accent); }
+#wlTable td:first-child { cursor: pointer; } #wlTable td:first-child b { color: var(--accent); font-family: var(--mono); font-weight: 600; }
+#wlTable .nm { font-size: 11px; color: var(--muted); font-family: var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.spark { display: block; }
+.highlights { margin: 0; padding-left: 18px; font-size: 14px; } .highlights li { margin-bottom: 5px; }
+.howto-card summary { font-weight: 600; cursor: pointer; }
+.readme { margin: 10px 0 0; padding-left: 20px; font-size: 14px; } .readme li { margin-bottom: 7px; }
+.err-row td { color: var(--bad); }

@@ -883,6 +883,128 @@
     } catch (e) { out.innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
   }
 
+  // =====================================================================
+  // WATCHLIST / SCREENER
+  // =====================================================================
+  const WL_PRESETS = [
+    ["Bank besar", "BBCA.JK, BBRI.JK, BMRI.JK, BBNI.JK, BRIS.JK, BBTN.JK"],
+    ["Big caps IDX", "BBCA.JK, BBRI.JK, BMRI.JK, TLKM.JK, ASII.JK, BBNI.JK, AMRT.JK, ICBP.JK, UNVR.JK, ADRO.JK, ANTM.JK, GOTO.JK"],
+    ["Konsumer", "ICBP.JK, INDF.JK, UNVR.JK, MYOR.JK, AMRT.JK, CPIN.JK, KLBF.JK"],
+    ["Tambang & energi", "ADRO.JK, PTBA.JK, ITMG.JK, ANTM.JK, INCO.JK, MDKA.JK, MEDC.JK, PGAS.JK"],
+    ["Telko & teknologi", "TLKM.JK, EXCL.JK, ISAT.JK, GOTO.JK, BUKA.JK, EMTK.JK"],
+    ["Kripto", "BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD"],
+    ["Lintas aset", "^JKSE, ^GSPC, GC=F, IDR=X, BTC-USD, ^TNX"],
+  ];
+  const WL_KEY = "sp_watchlist_v1";
+  const wl = { rows: [], col: "ringkas", sort: null, dir: -1 };
+  function wlLoad() { let v = null; try { v = localStorage.getItem(WL_KEY); } catch { /* */ } $("wlQ").value = v || WL_PRESETS[0][1]; }
+  function wlSave() { try { localStorage.setItem(WL_KEY, $("wlQ").value); } catch { /* */ } }
+  function benchFor(sym, type) { if (/\.JK$/i.test(sym)) return "^JKSE"; if (/CRYPTO/i.test(type || "") || /-USDT?$/i.test(sym)) return "BTC-USD"; return "^GSPC"; }
+  async function pool(items, k, fn) { const out = new Array(items.length); let i = 0; await Promise.all(Array.from({ length: Math.min(k, items.length) }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j], j); } })); return out; }
+  async function runWatchlist() {
+    const syms = [...new Set($("wlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 20);
+    if (!syms.length) { $("wlStatus").textContent = "Isi minimal satu ticker."; return; }
+    wlSave(); $("wlRun").disabled = true; $("wlStatus").classList.remove("err");
+    const range = $("wlRange").value, days = Math.max(1, Math.min(252, parseInt($("wlH").value, 10) || 21)), model = $("wlModel").value;
+    let done = 0; const total = syms.length; const tick = (msg) => { done++; $("wlBar").style.width = Math.round((100 * done) / (total * 2)) + "%"; $("wlStatus").textContent = msg; };
+    try {
+      $("wlStatus").textContent = `Mengambil data ${total} aset…`;
+      const datas = await pool(syms, 4, async (s) => { try { const d = await fetchSymbol(s, range); tick(`Data ${s} ✓`); return d; } catch (e) { tick(`Data ${s} gagal`); return { error: e.message, symbol: s }; } });
+      const benches = {}; for (const b of new Set(datas.filter((d) => !d.error).map((d) => benchFor(d.symbol, d.type)))) { try { benches[b] = await fetchSymbol(b, range); } catch { /* */ } }
+      const rfIDR = DAMO.biRate; await ensureUsRf();
+      const wantFund = $("wlFund").checked;
+      const rows = await pool(datas, 3, async (d, j) => {
+        if (d.error) { tick(`${d.symbol} dilewati`); return { symbol: d.symbol, error: d.error }; }
+        const bsym = benchFor(d.symbol, d.type), b = benches[bsym] && benches[bsym].symbol !== d.symbol ? benches[bsym] : null;
+        const rf = d.currency === "IDR" ? rfIDR : state.usRf ?? 0.04;
+        const m = await compute("screen", { a: { dates: d.dates, values: d.values, type: d.type }, bench: b ? { dates: b.dates, values: b.values } : null, o: { days, sims: 3000, model, rf, seed: 11 + j } });
+        let F = null;
+        const eq = !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
+        if (wantFund && eq) { try { F = await (await fetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
+        tick(`Analisis ${d.symbol} ✓`);
+        return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F };
+      });
+      wl.rows = rows; wl.days = days; wl.model = model;
+      $("wlOut").hidden = false; renderWatch(); renderWlMap(); renderHighlights();
+      const bad = rows.filter((r) => r.error).map((r) => r.symbol);
+      $("wlStatus").textContent = `${rows.length - bad.length} aset dianalisis · model ${PRICE_LABEL(model)} · horizon ${days}${bad.length ? ` · gagal: ${bad.join(", ")}` : ""}`;
+    } catch (e) { $("wlStatus").textContent = e.message; $("wlStatus").classList.add("err"); }
+    finally { $("wlRun").disabled = false; setTimeout(() => ($("wlBar").style.width = "0"), 600); }
+  }
+  const PRICE_LABEL = (k) => (MCEngine.PRICE_MODELS[k] ? MCEngine.PRICE_MODELS[k].label : k);
+  function sparkSvg(arr) {
+    if (!arr || arr.length < 2) return "";
+    const w = 80, h = 26, mn = Math.min(...arr), mx = Math.max(...arr), sx = w / (arr.length - 1), sy = mx > mn ? (h - 4) / (mx - mn) : 0;
+    const pts = arr.map((v, i) => `${(i * sx).toFixed(1)},${(h - 2 - (v - mn) * sy).toFixed(1)}`).join(" ");
+    const c = arr[arr.length - 1] >= arr[0] ? css("--good") : css("--bad");
+    return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${c}" stroke-width="1.5" points="${pts}"/></svg>`;
+  }
+  const trendIcon = (t) => (t > 0 ? '<span class="pos">▲ naik</span>' : t < 0 ? '<span class="neg">▼ turun</span>' : "◆ datar");
+  const pc = (v, d = 1) => `<span class="${cls(v)}">${spct(v, d)}</span>`;
+  function wlCols() {
+    const days = wl.days;
+    const C = {
+      ringkas: [["Harga", (r) => r.m.last, (r) => fmtNum(r.m.last)], ["1H", (r) => r.m.chg1d, (r) => pc(r.m.chg1d, 2)], ["3 bulan", null, (r) => sparkSvg(r.m.spark)],
+        ["1B", (r) => r.m.ret1m, (r) => pc(r.m.ret1m)], ["1T", (r) => r.m.ret1y, (r) => pc(r.m.ret1y)], ["Tren", (r) => r.m.trend, (r) => trendIcon(r.m.trend)],
+        ["RSI", (r) => r.m.rsi, (r) => `<span class="${r.m.rsi > 70 ? "neg" : r.m.rsi < 30 ? "pos" : ""}">${nf(0).format(r.m.rsi)}</span>`],
+        [`Peluang naik (${days}p)`, (r) => r.m.probUp, (r) => pct(r.m.probUp, 0)], [`Rentang 90% (${days}p)`, (r) => r.m.simP95 - r.m.simP5, (r) => `${pc(r.m.simP5, 0)} / ${pc(r.m.simP95, 0)}`],
+        ["VaR 95%", (r) => r.m.var95, (r) => pct(r.m.var95)]],
+      kinerja: [["Harga", (r) => r.m.last, (r) => fmtNum(r.m.last)], ["1H", (r) => r.m.chg1d, (r) => pc(r.m.chg1d, 2)], ["1M", (r) => r.m.ret1w, (r) => pc(r.m.ret1w)], ["1B", (r) => r.m.ret1m, (r) => pc(r.m.ret1m)],
+        ["3B", (r) => r.m.ret3m, (r) => pc(r.m.ret3m)], ["YTD", (r) => r.m.ytd, (r) => pc(r.m.ytd)], ["1T", (r) => r.m.ret1y, (r) => pc(r.m.ret1y)], ["Dari puncak 52mg", (r) => r.m.offHigh, (r) => pc(r.m.offHigh)],
+        ["Di atas MA200", (r) => (r.m.aboveMa200 == null ? -2 : r.m.aboveMa200 ? 1 : 0), (r) => (r.m.aboveMa200 == null ? "–" : r.m.aboveMa200 ? '<span class="pos">ya</span>' : '<span class="neg">tidak</span>')]],
+      risiko: [["Volatilitas/th", (r) => r.m.vol, (r) => pct(r.m.vol)], ["Vol model ke depan", (r) => r.m.horizonVol, (r) => pct(r.m.horizonVol)], ["Max DD 1T", (r) => r.m.maxDD, (r) => pct(r.m.maxDD)],
+        ["Beta", (r) => r.m.beta, (r) => (isFinite(r.m.beta) ? nf(2).format(r.m.beta) : "–")], ["Korelasi", (r) => r.m.corr, (r) => (isFinite(r.m.corr) ? nf(2).format(r.m.corr) : "–")], ["vs", null, (r) => esc(r.bench)],
+        ["Sharpe 1T", (r) => r.m.sharpe, (r) => `<span class="${cls(r.m.sharpe)}">${isFinite(r.m.sharpe) ? nf(2).format(r.m.sharpe) : "–"}</span>`], ["VaR 95%", (r) => r.m.var95, (r) => pct(r.m.var95)]],
+      proyeksi: [["Median", (r) => r.m.simMed, (r) => pc(r.m.simMed)], ["P5", (r) => r.m.simP5, (r) => pc(r.m.simP5)], ["P95", (r) => r.m.simP95, (r) => pc(r.m.simP95)],
+        ["Peluang naik", (r) => r.m.probUp, (r) => pct(r.m.probUp, 0)], ["Peluang > +10%", (r) => r.m.probUp10, (r) => pct(r.m.probUp10, 0)], ["Peluang < −10%", (r) => r.m.probDn10, (r) => pct(r.m.probDn10, 0)],
+        ["Harga P5", (r) => r.m.last * (1 + r.m.simP5), (r) => fmtNum(r.m.last * (1 + r.m.simP5))], ["Harga P95", (r) => r.m.last * (1 + r.m.simP95), (r) => fmtNum(r.m.last * (1 + r.m.simP95))]],
+      fund: [["Sektor", null, (r) => `<span class="nm">${esc(((r.F && (r.F.industry || r.F.sector)) || "–").slice(0, 22))}</span>`], ["P/E", (r) => r.F && r.F.trailingPE, (r) => (r.F && r.F.trailingPE ? nf(1).format(r.F.trailingPE) : "–")],
+        ["P/BV", (r) => r.F && r.F.priceToBook, (r) => (r.F && r.F.priceToBook ? nf(2).format(r.F.priceToBook) : "–")], ["ROE", (r) => r.F && r.F.roe, (r) => (r.F && r.F.roe != null ? pct(r.F.roe) : "–")],
+        ["Div. yield", (r) => r.F && r.F.dividendYield, (r) => (r.F && r.F.dividendYield != null ? pct(r.F.dividendYield, 2) : "–")], ["Margin operasi", (r) => r.F && r.F.operatingMargin, (r) => (r.F && r.F.operatingMargin != null ? pct(r.F.operatingMargin) : "–")],
+        ["Growth pendapatan", (r) => r.F && r.F.revenueGrowth, (r) => (r.F && r.F.revenueGrowth != null ? pc(r.F.revenueGrowth) : "–")], ["Market cap", (r) => r.F && r.F.marketCap, (r) => (r.F && r.F.marketCap ? money(r.F.marketCap).replace(/^Rp /, "") : "–")]],
+    };
+    return C[wl.col];
+  }
+  function renderWatch() {
+    const cols = wlCols(), ok = wl.rows.filter((r) => !r.error), bad = wl.rows.filter((r) => r.error);
+    if (wl.sort != null && cols[wl.sort] && cols[wl.sort][1]) { const f = cols[wl.sort][1]; ok.sort((a, b) => { const x = f(a), y = f(b); const xn = x == null || !isFinite(x), yn = y == null || !isFinite(y); return xn && yn ? 0 : xn ? 1 : yn ? -1 : wl.dir * (y - x); }); }
+    $("wlTable").innerHTML = `<thead><tr><th>Aset</th>${cols.map((c, i) => `<th data-i="${i}" class="${wl.sort === i ? "sorted" : ""}">${c[0]}${wl.sort === i ? (wl.dir < 0 ? " ↓" : " ↑") : ""}</th>`).join("")}</tr></thead><tbody>` +
+      ok.map((r) => `<tr><td data-s="${esc(r.symbol)}"><b>${esc(r.symbol)}</b><div class="nm">${esc(r.name || "")}</div></td>${cols.map((c) => `<td>${c[2](r)}</td>`).join("")}</tr>`).join("") +
+      bad.map((r) => `<tr class="err-row"><td><b>${esc(r.symbol)}</b><div class="nm">${esc(r.error)}</div></td><td colspan="${cols.length}"></td></tr>`).join("") + "</tbody>";
+  }
+  function renderWlMap() {
+    const ok = wl.rows.filter((r) => !r.error && isFinite(r.m.ret1y)), grid = css("--line"), muted = css("--muted");
+    const col = (t) => (t > 0 ? css("--good") : t < 0 ? css("--bad") : muted);
+    const labels = { id: "lbl", afterDatasetsDraw(ch) { const ctx = ch.ctx; ctx.save(); ctx.font = "11px IBM Plex Mono, monospace"; ctx.fillStyle = css("--ink");
+      ch.getDatasetMeta(0).data.forEach((pt, i) => ctx.fillText(ok[i].symbol.replace(/\.JK$/, ""), pt.x + 6, pt.y - 6)); ctx.restore(); } };
+    if (state.charts.wlMap) state.charts.wlMap.destroy();
+    state.charts.wlMap = new Chart($("wlMap"), { type: "scatter", plugins: [labels],
+      data: { datasets: [{ data: ok.map((r) => ({ x: r.m.horizonVol * 100, y: r.m.ret1y * 100 })), pointBackgroundColor: ok.map((r) => col(r.m.trend)), pointRadius: 6, pointHoverRadius: 8 }] },
+      options: baseOpts({ interaction: { mode: "nearest", intersect: true }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${ok[c.dataIndex].symbol}: vol ${nf(1).format(c.raw.x)}%, 1T ${nf(1).format(c.raw.y)}%` } } },
+        scales: { x: { title: { display: true, text: "Volatilitas tahunan ke depan (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } },
+          y: { title: { display: true, text: "Return 1 tahun (%)", color: muted }, ticks: { color: muted }, grid: { color: grid } } } }) });
+  }
+  function renderHighlights() {
+    const ok = wl.rows.filter((r) => !r.error); if (!ok.length) return;
+    const best = (f, dir = 1) => ok.filter((r) => isFinite(f(r))).sort((a, b) => dir * (f(b) - f(a)))[0];
+    const L = [], nm = (r) => `<b>${esc(r.symbol)}</b>`;
+    const s = best((r) => r.m.sharpe); if (s) L.push(`Imbal hasil per risiko terbaik (Sharpe 1T): ${nm(s)} ${nf(2).format(s.m.sharpe)}`);
+    const lv = best((r) => r.m.horizonVol, -1); if (lv) L.push(`Paling tenang (vol ke depan terendah): ${nm(lv)} ${pct(lv.m.horizonVol)}/th`);
+    const hv = best((r) => r.m.horizonVol); if (hv && hv !== lv) L.push(`Paling bergejolak: ${nm(hv)} ${pct(hv.m.horizonVol)}/th — rentang 90% ${spct(hv.m.simP5, 0)} s/d ${spct(hv.m.simP95, 0)} dalam ${wl.days} periode`);
+    const os = ok.filter((r) => r.m.rsi < 30); if (os.length) L.push(`RSI di bawah 30 (turun sangat cepat): ${os.map(nm).join(", ")}`);
+    const ob = ok.filter((r) => r.m.rsi > 70); if (ob.length) L.push(`RSI di atas 70 (naik sangat cepat): ${ob.map(nm).join(", ")}`);
+    const up = ok.filter((r) => r.m.trend > 0), dn = ok.filter((r) => r.m.trend < 0); L.push(`Tren naik: ${up.length ? up.map(nm).join(", ") : "–"} · tren turun: ${dn.length ? dn.map(nm).join(", ") : "–"}`);
+    const dd = best((r) => r.m.offHigh, -1); if (dd) L.push(`Paling jauh dari puncak 52 minggu: ${nm(dd)} ${spct(dd.m.offHigh)}`);
+    const pb = ok.filter((r) => r.F && r.F.priceToBook && r.F.roe != null); if (pb.length > 1) { const x = pb.sort((a, b) => b.F.roe / b.F.priceToBook - a.F.roe / a.F.priceToBook)[0]; L.push(`ROE tertinggi per unit P/BV: ${nm(x)} (ROE ${pct(x.F.roe)}, P/BV ${nf(2).format(x.F.priceToBook)}) — cek valuasinya di Analisis 1 aset`); }
+    $("wlHigh").innerHTML = L.map((x) => `<li>${x}</li>`).join("");
+  }
+  function setView(v) {
+    document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+    $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail";
+    if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
+  }
+  function openDetail(sym) { setView("detail"); setMode("price", true); pick(sym); $("horizon").value = wl.days || $("horizon").value; run(); scrollTo({ top: 0, behavior: "smooth" }); }
+
   // ---------- event ----------
   function bind() {
     document.querySelectorAll(".controls .seg-btn").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
@@ -929,6 +1051,15 @@
     document.querySelectorAll("#valKind .seg-btn").forEach((b) => b.addEventListener("click", () => { if (!state.val) return; readValInputs(); state.val.kind = b.dataset.k; renderValInputs(); computeValuation(); }));
     $("valRun").addEventListener("click", computeValuation);
     $("valCard").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input[data-vk]")) computeValuation(); });
+    // watchlist
+    $("views").addEventListener("click", (e) => { const b = e.target.closest(".view-btn"); if (b) setView(b.dataset.v); });
+    $("wlPresets").innerHTML = WL_PRESETS.map(([n, l]) => `<button class="chip" data-l="${esc(l)}">${esc(n)}</button>`).join("");
+    $("wlPresets").addEventListener("click", (e) => { const c = e.target.closest(".chip"); if (c) { $("wlQ").value = c.dataset.l; runWatchlist(); } });
+    $("wlRun").addEventListener("click", runWatchlist);
+    $("wlCols").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; wl.col = t.dataset.c; wl.sort = null;
+      document.querySelectorAll("#wlCols .tab").forEach((x) => x.classList.toggle("active", x === t)); renderWatch(); });
+    $("wlTable").addEventListener("click", (e) => { const th = e.target.closest("th[data-i]"); if (th) { const i = +th.dataset.i; wl.dir = wl.sort === i ? -wl.dir : -1; wl.sort = i; renderWatch(); return; }
+      const td = e.target.closest("td[data-s]"); if (td) openDetail(td.dataset.s); });
     // candlestick
     $("tfTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.tf = t.dataset.tf;
       document.querySelectorAll("#tfTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
@@ -939,6 +1070,7 @@
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.res && render());
   }
 
-  readUrl(); setMode(state.mode, true); bind();
-  if (new URLSearchParams(location.search).get("s")) run();
+  readUrl(); setMode(state.mode, true); bind(); wlLoad();
+  const P = new URLSearchParams(location.search);
+  if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
 })();

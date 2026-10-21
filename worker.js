@@ -5,6 +5,7 @@ self.onmessage = (e) => {
   try {
     let res;
     if (type === "plan") res = MCEngine.evalPlan(cfg);
+    else if (type === "screen") res = MCEngine.screenAsset(cfg.a, cfg.bench, cfg.o);
     else if (type === "probEnd") res = MCEngine.probEnd(cfg.model, cfg.K, cfg.r, cfg.T);
     else if (type === "ardl") res = MCEngine.ardl(cfg.a, cfg.xs);
     else if (type === "compare") {

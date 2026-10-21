@@ -19,7 +19,62 @@
   </div>
 </header>
 
-<main class="wrap">
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen">Watchlist (banyak saham)</button><button class="view-btn active" data-v="detail">Analisis 1 aset</button></nav>
+
+<section class="wrap" id="screenView" hidden>
+  <section class="card">
+    <h2>Watchlist</h2>
+    <div class="chips" id="wlPresets"></div>
+    <label class="lbl" for="wlQ">Ticker (pisahkan koma, maks 20)</label>
+    <textarea id="wlQ" rows="2" spellcheck="false"></textarea>
+    <div class="grid">
+      <div><label class="lbl" for="wlH">Horizon proyeksi</label><input id="wlH" type="number" min="1" max="252" value="21"></div>
+      <div><label class="lbl" for="wlModel">Model</label><select id="wlModel"><option value="garch" selected>GARCH-t</option><option value="bootstrap">Bootstrap</option><option value="jump">Jump</option><option value="gbm">GBM</option></select></div>
+      <div><label class="lbl" for="wlRange">Data</label><select id="wlRange"><option value="2y" selected>2 tahun</option><option value="5y">5 tahun</option></select></div>
+    </div>
+    <div class="row"><label class="toggle"><input type="checkbox" id="wlFund" checked> Ambil data fundamental (P/E, P/BV, ROE)</label></div>
+    <button id="wlRun" class="run">Analisis watchlist</button>
+    <div id="wlStatus" class="status"></div>
+    <div class="bar"><div id="wlBar"></div></div>
+  </section>
+
+  <div id="wlOut" hidden>
+    <div class="card">
+      <h2>Sorotan</h2>
+      <ul id="wlHigh" class="highlights"></ul>
+      <p class="note">Sorotan ini deskriptif: menunjukkan yang paling menonjol di tiap ukuran, bukan rekomendasi beli/jual.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>Tabel perbandingan</h2>
+        <div class="tabs" id="wlCols"><button class="tab active" data-c="ringkas">Ringkas</button><button class="tab" data-c="kinerja">Kinerja</button><button class="tab" data-c="risiko">Risiko</button><button class="tab" data-c="proyeksi">Proyeksi</button><button class="tab" data-c="fund">Fundamental</button></div></div>
+      <div class="table-wrap sticky"><table id="wlTable"></table></div>
+      <p class="note">Ketuk judul kolom untuk mengurutkan. Ketuk nama aset untuk membuka analisis lengkapnya.</p>
+    </div>
+
+    <div class="card">
+      <h2>Peta risiko vs imbal hasil</h2>
+      <div class="chart-box tall"><canvas id="wlMap"></canvas></div>
+      <p class="note">Sumbu X = volatilitas tahunan yang diperkirakan model untuk horizon ini; sumbu Y = return 1 tahun terakhir. Hijau = tren naik, merah = tren turun, abu = sideways.</p>
+    </div>
+
+    <details class="card howto-card" open>
+      <summary>Cara baca watchlist</summary>
+      <ol class="readme">
+        <li><b>Mulai dari tab Ringkas.</b> Kolom <b>1H / 1B / 1T</b> = perubahan harga 1 hari, 1 bulan, 1 tahun. Grafik mini = 3 bulan terakhir.</li>
+        <li><b>Tren</b>: ▲ jika harga di atas MA50 dan MA20 &gt; MA50, ▼ kebalikannya, ◆ belum jelas. <b>RSI</b> &gt; 70 = sudah naik sangat cepat, &lt; 30 = sudah turun sangat cepat.</li>
+        <li><b>Peluang naik</b> dan <b>rentang 90%</b> berasal dari simulasi model yang kamu pilih untuk horizon yang sama, jadi semua saham dibandingkan dengan aturan yang sama. Peluang naik di sekitar 50% itu normal; yang membedakan saham adalah <b>lebar rentangnya</b> (risiko).</li>
+        <li><b>Tab Risiko</b>: volatilitas, drawdown terburuk 1 tahun, <b>beta</b> (seberapa besar ikut gerak indeks), dan <b>Sharpe</b> 1 tahun (imbal hasil per unit risiko di atas bunga bebas risiko).</li>
+        <li><b>Tab Fundamental</b>: P/E dan P/BV lebih rendah belum tentu lebih murah. Bandingkan hanya di sektor yang sama dan lihat ROE-nya. Untuk nilai wajar, buka saham itu di <b>Analisis 1 aset → Valuasi Damodaran</b>.</li>
+        <li><b>Peta risiko</b>: kiri-atas = return tinggi dengan risiko rendah (jarang bertahan lama), kanan-bawah = risiko tinggi tapi return rendah.</li>
+        <li>Semua angka historis dan simulasi, bukan janji. Pakai untuk <b>menyaring</b> mana yang perlu dipelajari lebih dalam, lalu ketuk sahamnya.</li>
+      </ol>
+    </details>
+  </div>
+</section>
+
+<section class="wrap" id="detailView">
+<main class="wrap-inner">
   <details class="card guide">
     <summary>Panduan singkat — baca dulu kalau baru pertama kali</summary>
     <ol>
@@ -319,8 +374,9 @@
     </details>
   </section>
 
-  <footer class="foot">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 </main>
+</section>
+<footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script src="engine.js"></script>
 <script src="app.js"></script>

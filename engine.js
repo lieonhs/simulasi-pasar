@@ -769,6 +769,41 @@
     return { n: s.length, q: [0.05, 0.25, 0.5, 0.75, 0.95].map((p) => quantileSorted(s, p)), probUnder: out.filter((x) => x > v.price).length / s.length, hist: histogram(Array.from(s), 40) };
   }
 
-  const api = { dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // ---------- screener: metrik ringkas per aset ----------
+  function screenAsset(a, bench, o) {
+    // a,bench: {dates, values, type}; o: {days, sims, model, rf}
+    const px = a.values, d = a.dates, n = px.length, last = px[n - 1], r = logReturns(px);
+    const ppy = detectPpy(d, a.type);
+    const back = (days) => { const t = new Date(d[n - 1]); t.setDate(t.getDate() - days); const ts = t.toISOString().slice(0, 10);
+      let i = n - 1; while (i > 0 && d[i] > ts) i--; return d[i] <= ts && i < n - 1 ? last / px[i] - 1 : NaN; };
+    const ytdI = d.findIndex((x) => x >= d[n - 1].slice(0, 4) + "-01-01");
+    const r1y = r.slice(-ppy), vol = std(r1y) * Math.sqrt(ppy);
+    const sma = (k) => (n >= k ? px.slice(-k).reduce((s, v) => s + v, 0) / k : NaN);
+    let g = 0, l = 0; for (let i = 1; i < n; i++) { const dd = px[i] - px[i - 1], up = Math.max(dd, 0), dn = Math.max(-dd, 0); if (i <= 14) { g += up / 14; l += dn / 14; } else { g = (g * 13 + up) / 14; l = (l * 13 + dn) / 14; } }
+    const rsi = 100 - 100 / (1 + g / (l || 1e-12));
+    const ma20 = sma(20), ma50 = sma(50), ma200 = sma(200);
+    const trend = last > ma50 && ma20 > ma50 ? 1 : last < ma50 && ma20 < ma50 ? -1 : 0;
+    const ret1y = back(365), rfA = o.rf || 0;
+    const sharpe = isFinite(ret1y) ? (Math.exp(mean(r1y) * ppy) - 1 - rfA) / vol : NaN;
+    let beta = NaN, corr = NaN;
+    if (bench) { const mb = new Map(bench.dates.map((x, i) => [x, bench.values[i]])); const ra = [], rb = []; let pa = null, pb = null;
+      for (let i = Math.max(0, n - 260); i < n; i++) { const v = mb.get(d[i]); if (v == null) continue; if (pa != null) { ra.push(Math.log(px[i] / pa)); rb.push(Math.log(v / pb)); } pa = px[i]; pb = v; }
+      if (ra.length > 40) { const m1 = mean(ra), m2 = mean(rb); let c = 0, v1 = 0, v2 = 0; for (let i = 0; i < ra.length; i++) { c += (ra[i] - m1) * (rb[i] - m2); v1 += (ra[i] - m1) ** 2; v2 += (rb[i] - m2) ** 2; } beta = c / v2; corr = c / Math.sqrt(v1 * v2); } }
+    // simulasi
+    const M = PRICE_MODELS[o.model] || PRICE_MODELS.garch, rng = makeRng(o.seed || 7);
+    const ctx = M.prep(r.slice(-1000)), paths = M.sim(ctx, o.days, o.sims, 0, rng);
+    const end = Float64Array.from(paths, (p) => Math.exp(p[o.days - 1]) - 1).sort();
+    let up = 0, up10 = 0, dn10 = 0; for (const v of end) { if (v > 0) up++; if (v > 0.1) up10++; if (v < -0.1) dn10++; }
+    const N = end.length;
+    const spark = px.slice(-Math.min(n, 66)).filter((_, i, arr) => i % Math.max(1, Math.floor(arr.length / 40)) === 0 || i === arr.length - 1);
+    return { last, chg1d: last / px[n - 2] - 1, ret1w: back(7), ret1m: back(30), ret3m: back(91), ytd: ytdI > 0 ? last / px[ytdI - 1] - 1 : NaN, ret1y,
+      vol, maxDD: maxDrawdown(px.slice(-ppy)), rsi, trend, ma50, ma200, aboveMa200: isFinite(ma200) ? last > ma200 : null, sharpe, beta, corr,
+      hi52: Math.max(...px.slice(-ppy)), offHigh: last / Math.max(...px.slice(-ppy)) - 1,
+      simMed: quantileSorted(end, 0.5), simP5: quantileSorted(end, 0.05), simP95: quantileSorted(end, 0.95), probUp: up / N, probUp10: up10 / N, probDn10: dn10 / N,
+      var95: -quantileSorted(end, 0.05), horizonVol: o.model === "garch" || o.model === "arch" ? condVolHorizon(ctx, o.days, ppy) : std(r) * Math.sqrt(ppy), spark, ppy, nObs: n };
+  }
+
+  const api = { screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);
