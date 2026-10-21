@@ -1,7 +1,18 @@
 /* app.js — UI, data, chart, rencana lot, perbandingan, candlestick */
 (() => {
   "use strict";
-  const API = "https://immvxirnxumsvjelbmum.supabase.co/functions/v1/market-data";
+  const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
+  const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
+  const API = SB_URL + "/functions/v1/market-data";
+  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } }) : null;
+  let session = null;
+  async function apiFetch(url, opt = {}) {
+    if (sb) { const { data } = await sb.auth.getSession(); session = data.session; }
+    const headers = { ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) };
+    const r = await fetch(url, { ...opt, headers });
+    if (r.status === 401) { showAuth("Sesi berakhir, silakan masuk lagi."); }
+    return r;
+  }
   const PRESETS = {
     price: [["BTC-USD", "Bitcoin"], ["ETH-USD", "Ethereum"], ["^JKSE", "IHSG"], ["BBCA.JK", "BCA"], ["BBRI.JK", "BRI"], ["TLKM.JK", "Telkom"], ["GC=F", "Emas"], ["IDR=X", "USD/IDR"], ["^GSPC", "S&P 500"]],
     bond: [["^TNX", "US 10Y"], ["^FVX", "US 5Y"], ["^TYX", "US 30Y"], ["^IRX", "US 13W"]],
@@ -93,7 +104,7 @@
     const seq = ++searchSeq, local = localMatches(v);
     showSugg([{ title: "Rekomendasi", items: local }, { title: "Mencari…", items: [] }]);
     let remote = [];
-    try { const r = await fetch(`${API}?action=search&q=${encodeURIComponent(v)}`); remote = (await r.json()).quotes || []; } catch { /* abaikan */ }
+    try { const r = await apiFetch(`${API}?action=search&q=${encodeURIComponent(v)}`); remote = (await r.json()).quotes || []; } catch { /* abaikan */ }
     if (seq !== searchSeq || $("q").value.trim() !== v) return;
     const seen = new Set(local.map((x) => x.symbol));
     remote = remote.filter((x) => !seen.has(x.symbol));
@@ -106,7 +117,7 @@
     const box = $("didYouMean");
     const local = localMatches(typed.replace(/\.JK$/i, ""));
     let remote = [];
-    try { const r = await fetch(`${API}?action=search&q=${encodeURIComponent(typed.replace(/\.JK$/i, ""))}`); remote = (await r.json()).quotes || []; } catch { /* */ }
+    try { const r = await apiFetch(`${API}?action=search&q=${encodeURIComponent(typed.replace(/\.JK$/i, ""))}`); remote = (await r.json()).quotes || []; } catch { /* */ }
     const all = [...local, ...remote].filter((x, i, a) => a.findIndex((y) => y.symbol === x.symbol) === i).slice(0, 6);
     if (!all.length) { box.hidden = true; return; }
     box.innerHTML = "Mungkin maksud kamu: " + all.map((q) => `<button class="chip" data-s="${esc(q.symbol)}" title="${esc(q.name || "")}">${esc(q.symbol)}${q.name ? " · " + esc(q.name.slice(0, 22)) : ""}</button>`).join("");
@@ -118,7 +129,7 @@
   async function fetchSymbol(sym, range) {
     const key = `${sym}|${range}`;
     if (cache.has(key)) return cache.get(key);
-    const r = await fetch(`${API}?symbol=${encodeURIComponent(sym)}&range=${range}`);
+    const r = await apiFetch(`${API}?symbol=${encodeURIComponent(sym)}&range=${range}`);
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error(j.error || `Gagal ambil data ${sym} (${r.status})`);
     const d = { name: j.name, symbol: j.symbol, currency: j.currency, type: j.type, source: j.source, dates: j.rows.map((x) => x[0]), values: j.rows.map((x) => x[1]), ohlc: j.ohlc || [] };
@@ -145,7 +156,7 @@
 
   // ---------- worker ----------
   let worker = null;
-  try { worker = new Worker("worker.js"); } catch { worker = null; }
+  try { worker = new Worker("worker.js?v=" + (window.APP_V || "")); } catch { worker = null; }
   const pending = new Map();
   if (worker) {
     worker.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return;
@@ -472,9 +483,9 @@
   const isIntra = () => !!INTRA_TF[state.tf];
   async function loadIntraday() {
     const sym = state.data.symbol, iv = state.tf, key = sym + "|" + iv;
-    const r = await fetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=${iv}`);
+    const r = await apiFetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=${iv}`);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.error) throw new Error(j.error || `Gagal ambil data intraday (${r.status})`);
+    if (!r.ok || j.error || !Array.isArray(j.bars)) throw new Error(j.error || `Gagal ambil data intraday (${r.status})`);
     // gabungkan tick terakhir yang belum genap satu interval ke candle sebelumnya
     const step = INTRA_TF[iv], bars = [];
     for (const b of j.bars) { const p = bars[bars.length - 1];
@@ -758,7 +769,7 @@
     const q = /\.JK$/i.test(d.symbol) ? `saham ${code}` : isCrypto() ? (d.name || code).replace(/ USD$/i, "") : (d.name || code);
     $("newsStatus").textContent = "Mengambil berita…"; $("newsList").innerHTML = ""; $("newsSummary").innerHTML = "";
     try {
-      const r = await fetch(`${API}?action=news&symbol=${encodeURIComponent(d.symbol)}&q=${encodeURIComponent(q)}`);
+      const r = await apiFetch(`${API}?action=news&symbol=${encodeURIComponent(d.symbol)}&q=${encodeURIComponent(q)}`);
       const j = await r.json(); state.news = (j.items || []).filter((x) => x.title);
       if (!state.news.length) { $("newsStatus").textContent = "Tidak ada berita yang ditemukan dari sumber."; return; }
       scoreNews(); renderNews();
@@ -832,7 +843,7 @@
     if (!eqLike || state.csv) { $("valStatus").innerHTML = "Aset ini tidak punya arus kas (kripto, komoditas, kurs, atau indeks), jadi tidak bisa divaluasi secara intrinsik. Damodaran menyebutnya hanya bisa di-<i>pricing</i>, bukan di-<i>valuing</i>."; return; }
     $("valStatus").textContent = "Mengambil laporan keuangan…";
     try {
-      const r = await fetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`); const F = await r.json();
+      const r = await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`); const F = await r.json();
       if (F.error) throw new Error(F.error);
       state.fund = F; buildValDefaults(F); $("valBody").hidden = false; renderValInputs(); computeValuation();
     } catch (e) { $("valStatus").textContent = "Data fundamental tidak tersedia: " + e.message; }
@@ -944,7 +955,7 @@
   const WL_KEY = "sp_watchlist_v1";
   const wl = { rows: [], col: "ringkas", sort: null, dir: -1 };
   function wlLoad() { let v = null; try { v = localStorage.getItem(WL_KEY); } catch { /* */ } $("wlQ").value = v || WL_PRESETS[0][1]; }
-  function wlSave() { try { localStorage.setItem(WL_KEY, $("wlQ").value); } catch { /* */ } }
+  function wlSave() { try { localStorage.setItem(WL_KEY, $("wlQ").value); } catch { /* */ } saveSettings({ watchlist: $("wlQ").value }); }
   function benchFor(sym, type) { if (/\.JK$/i.test(sym)) return "^JKSE"; if (/CRYPTO/i.test(type || "") || /-USDT?$/i.test(sym)) return "BTC-USD"; return "^GSPC"; }
   async function pool(items, k, fn) { const out = new Array(items.length); let i = 0; await Promise.all(Array.from({ length: Math.min(k, items.length) }, async () => { while (i < items.length) { const j = i++; out[j] = await fn(items[j], j); } })); return out; }
   async function runWatchlist() {
@@ -966,7 +977,7 @@
         const m = await compute("screen", { a: { dates: d.dates, values: d.values, type: d.type }, bench: b ? { dates: b.dates, values: b.values } : null, o: { days, sims: 3000, model, rf, seed: 11 + j } });
         let F = null;
         const eq = !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
-        if (wantFund && eq) { try { F = await (await fetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
+        if (wantFund && eq) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
         tick(`Analisis ${d.symbol} ✓`);
         return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F };
       });
@@ -1047,6 +1058,8 @@
     const pb = ok.filter((r) => r.F && r.F.priceToBook && r.F.roe != null); if (pb.length > 1) { const x = pb.sort((a, b) => b.F.roe / b.F.priceToBook - a.F.roe / a.F.priceToBook)[0]; L.push(`ROE tertinggi per unit P/BV: ${nm(x)} (ROE ${pct(x.F.roe)}, P/BV ${nf(2).format(x.F.priceToBook)}) — cek valuasinya di Analisis 1 aset`); }
     $("wlHigh").innerHTML = L.map((x) => `<li>${x}</li>`).join("");
   }
+  document.addEventListener("toggle", (e) => { const d = e.target; if (d.classList && d.classList.contains("formula") && d.open && !d.dataset.rendered && window.renderMathInElement) {
+    window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
@@ -1097,7 +1110,7 @@
   function startPolling() { clearInterval(live.poll); live.poll = setInterval(() => { if (!document.hidden) pollOnce(); }, 15000); }
   async function pollOnce() {
     const sym = live.sym; if (!sym) return;
-    try { const j = await (await fetch(`${API}?action=quotes&symbols=${encodeURIComponent(sym)}`)).json(); const q = j.quotes && j.quotes[0];
+    try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(sym)}`)).json(); const q = j.quotes && j.quotes[0];
       if (q && q.price != null && live.sym === sym) onTick({ price: q.price, time: q.time, high: q.dayHigh, low: q.dayLow, volume: q.volume, prevClose: q.prevClose, open: q.open, gmtoffset: q.gmtoffset }, live.gotWs ? null : "Yahoo (polling 15 dtk)"); } catch { /* */ }
   }
   function wsBinance(base) {
@@ -1168,7 +1181,7 @@
     const choose = (sym) => { const { pre } = lastTok(); input.value = (pre ? pre.replace(/\s*$/, " ") : "") + sym + ", "; ul.hidden = true; input.focus(); };
     input.addEventListener("input", () => { clearTimeout(timer); const { tok } = lastTok(); if (tok.length < 2) { ul.hidden = true; return; }
       timer = setTimeout(async () => { const my = ++seq, local = localMatches(tok); show([{ title: "Rekomendasi", items: local }]);
-        let remote = []; try { remote = (await (await fetch(`${API}?action=search&q=${encodeURIComponent(tok)}`)).json()).quotes || []; } catch { /* */ }
+        let remote = []; try { remote = (await (await apiFetch(`${API}?action=search&q=${encodeURIComponent(tok)}`)).json()).quotes || []; } catch { /* */ }
         if (my !== seq) return; const seen = new Set(local.map((x) => x.symbol));
         remote = remote.filter((x) => !seen.has(x.symbol)).sort((a, b) => (/\.JK$/.test(b.symbol) ? 1 : 0) - (/\.JK$/.test(a.symbol) ? 1 : 0));
         show([{ title: "Rekomendasi", items: local }, { title: "Hasil pencarian", items: remote }]); }, 250); });
@@ -1184,7 +1197,7 @@
   let wlLiveTimer = null;
   async function wlLiveOnce() {
     const ok = wl.rows.filter((r) => !r.error); if (!ok.length || $("screenView").hidden || document.hidden) return;
-    try { const j = await (await fetch(`${API}?action=quotes&symbols=${encodeURIComponent(ok.map((r) => r.symbol).join(","))}`)).json();
+    try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(ok.map((r) => r.symbol).join(","))}`)).json();
       wl.q = wl.q || {}; const changed = {};
       for (const q of j.quotes || []) { if (q.price == null) continue; const old = wl.q[q.symbol]; if (old && old.price !== q.price) changed[q.symbol] = q.price > old.price ? "flash-up" : "flash-dn"; wl.q[q.symbol] = q; }
       wl.flash = changed; renderWatch(); wl.flash = {}; } catch { /* */ }
@@ -1199,8 +1212,8 @@
     const sym = state.data.symbol, key = sym + "|1m";
     if (state.intra && state.intra.key === key) return state.intra;
     if (book.vp && book.vp.key === key && Date.now() - book.vp.at < 60000) return book.vp;
-    const j = await (await fetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=1m`)).json();
-    if (j.error) throw new Error(j.error);
+    const j = await (await apiFetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=1m`)).json();
+    if (j.error || !Array.isArray(j.bars)) throw new Error(j.error || "Data intraday tidak tersedia");
     book.vp = { key, data: j, bars: j.bars, at: Date.now() }; return book.vp;
   }
   async function renderBook() {
@@ -1249,7 +1262,7 @@
       $("bookNote").textContent = "Order book Binance (pasangan USDT), real-time, 15 level teratas. Kolom kanan = jumlah koin.";
       return;
     }
-    const poll = async () => { try { const j = await (await fetch(`${API}?action=book&symbol=${encodeURIComponent(state.data.symbol)}`)).json();
+    const poll = async () => { try { const j = await (await apiFetch(`${API}?action=book&symbol=${encodeURIComponent(state.data.symbol)}`)).json();
         if (j.bid == null && j.ask == null) { body.innerHTML = '<p class="note">Bid/offer tidak tersedia untuk aset ini dari Yahoo.</p>'; return; }
         const lot = (v) => (v ? (isIdx() ? nf(0).format(v / 100) + " lot" : nf(0).format(v)) : "—");
         const spread = j.ask && j.bid ? j.ask - j.bid : NaN;
@@ -1278,6 +1291,7 @@
   async function runQuant() {
     const syms = [...new Set($("qlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 15);
     if (syms.length < 2) { $("qlStatus").textContent = "Butuh minimal 2 aset."; return; }
+    saveSettings({ quantlab: $("qlQ").value });
     $("qlRun").disabled = true; $("qlStatus").classList.remove("err"); $("qlStatus").textContent = `Mengambil data ${syms.length} aset…`;
     try {
       const range = $("qlRange").value, got = await pool(syms, 4, async (s) => { try { return await fetchSymbol(s, range); } catch { return null; } });
@@ -1471,7 +1485,54 @@
   }
 
   if (/[?&]debug\b/.test(location.search)) window.__sp = state;
-  readUrl(); setMode(state.mode, true); bind(); wlLoad(); setRangeTabs();
-  const P = new URLSearchParams(location.search);
-  if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
+  // ---------- login (Supabase Auth) ----------
+  let settings = {}, saveTimer = null, booted = false;
+  function saveSettings(patch) {
+    settings = { ...settings, ...patch }; if (!sb || !session) return;
+    clearTimeout(saveTimer); saveTimer = setTimeout(async () => { try { await sb.from("sp_settings").upsert({ user_id: session.user.id, data: settings, updated_at: new Date().toISOString() }); } catch { /* */ } }, 800);
+  }
+  async function loadSettings() {
+    try { const { data } = await sb.from("sp_settings").select("data").eq("user_id", session.user.id).maybeSingle(); settings = (data && data.data) || {}; } catch { settings = {}; }
+    if (settings.watchlist) $("wlQ").value = settings.watchlist;
+    if (settings.quantlab) $("qlQ").value = settings.quantlab;
+  }
+  let authMode = "login";
+  function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];
+    $("authSub").textContent = L[0]; $("authBtn").textContent = L[1]; $("authPass").hidden = $("authPassLbl").hidden = m === "reset";
+    $("authPass").autocomplete = m === "signup" ? "new-password" : "current-password"; $("authPass").required = m !== "reset";
+    $("authToSignup").hidden = m === "signup"; $("authToReset").hidden = m === "reset"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
+  function showAuth(msg) { $("authGate").hidden = false; $("userBox").hidden = true; stopLive(); if (msg) { $("authMsg").textContent = msg; $("authMsg").classList.add("err"); } }
+  const authErr = (e) => { const m = (e && e.message) || String(e);
+    return /Invalid login/i.test(m) ? "Email atau password salah." : /Email not confirmed/i.test(m) ? "Email belum dikonfirmasi — cek kotak masuk email kamu." : /already registered/i.test(m) ? "Email sudah terdaftar, silakan masuk." :
+      /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Terlalu banyak percobaan, coba lagi beberapa menit lagi." : m; };
+  async function onAuthed(s) {
+    session = s; $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
+    if (booted) return; booted = true;
+    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs();
+    const P = new URLSearchParams(location.search);
+    if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
+  }
+  async function startAuth() {
+    setAuthMode("login");
+    $("authToSignup").onclick = (e) => { e.preventDefault(); setAuthMode("signup"); };
+    $("authToReset").onclick = (e) => { e.preventDefault(); setAuthMode("reset"); };
+    $("authToLogin").onclick = (e) => { e.preventDefault(); setAuthMode("login"); };
+    $("logoutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+    $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
+      msg.classList.remove("err"); msg.textContent = "Memproses…"; $("authBtn").disabled = true;
+      try {
+        if (authMode === "login") { const { data, error } = await sb.auth.signInWithPassword({ email, password: pass }); if (error) throw error; msg.textContent = ""; await onAuthed(data.session); }
+        else if (authMode === "signup") { const { data, error } = await sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error;
+          if (data.session) await onAuthed(data.session); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
+        else { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; msg.textContent = "Tautan atur ulang password sudah dikirim ke email kamu."; }
+      } catch (err) { msg.textContent = authErr(err); msg.classList.add("err"); }
+      finally { $("authBtn").disabled = false; } };
+    if (!sb) { $("authMsg").textContent = "Gagal memuat modul login. Periksa koneksi lalu muat ulang."; $("authMsg").classList.add("err"); return; }
+    sb.auth.onAuthStateChange(async (ev, s) => {
+      if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
+      if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") showAuth();
+    });
+    const { data } = await sb.auth.getSession(); if (data.session) onAuthed(data.session);
+  }
+  startAuth();
 })();

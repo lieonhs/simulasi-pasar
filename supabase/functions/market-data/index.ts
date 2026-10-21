@@ -1,6 +1,6 @@
 // market-data: proxy harga historis (Yahoo Finance, fallback Binance untuk kripto)
-// Publik & read-only (anon key juga publik, jadi JWT tidak menambah keamanan).
-// Deploy: supabase functions deploy market-data --no-verify-jwt
+// Hanya untuk pengguna yang login: token Supabase Auth diverifikasi ke /auth/v1/user (di-cache sampai kedaluwarsa).
+// Deploy: supabase functions deploy market-data --no-verify-jwt   (verifikasi dilakukan di dalam fungsi)
 // GET ?action=chart&symbol=BTC-USD&range=5y
 // GET ?action=search&q=bbca
 // GET ?action=news&symbol=BBCA.JK&q=saham BBCA
@@ -193,8 +193,25 @@ async function quoteOne(symbol: string) {
   return { symbol, error: "tidak tersedia" };
 }
 
+
+// ---------- hanya pengguna yang login (token Supabase Auth) ----------
+const SB_URL = Deno.env.get("SUPABASE_URL") ?? "", SB_ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const okTokens = new Map<string, number>(); // token -> exp (ms)
+async function isUser(req: Request) {
+  const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!tok || tok.split(".").length !== 3) return false;
+  let p: any; try { p = JSON.parse(atob(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return false; }
+  const exp = (p.exp ?? 0) * 1000; if (p.role !== "authenticated" || exp < Date.now()) return false;
+  if ((okTokens.get(tok) ?? 0) > Date.now()) return true;
+  const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } });
+  if (!r.ok) return false;
+  if (okTokens.size > 500) okTokens.clear();
+  okTokens.set(tok, exp); return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (!(await isUser(req))) return json({ error: "Perlu login" }, 401);
   const u = new URL(req.url);
   const action = u.searchParams.get("action") ?? "chart";
   try {

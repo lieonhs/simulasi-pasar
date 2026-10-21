@@ -191,3 +191,17 @@ textarea:focus { border-color: var(--accent); }
 .ob-spread { text-align: center; padding: 4px; color: var(--muted); border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); margin: 3px 0; }
 table.heat td { text-align: center; font-size: 12px; } table.heat td:first-child { text-align: left; }
 .rcbar { display: inline-block; height: 8px; background: var(--accent); border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
+.auth-gate { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.auth-gate[hidden] { display: none; }
+.auth-card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; }
+.auth-card .sub { margin: 4px 0 8px; font-family: var(--sans); }
+.auth-links { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: 13px; }
+.auth-links a { color: var(--accent); text-decoration: none; }
+.top-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.user-box { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.user-box span { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.formula { margin-top: 10px; font-size: 13.5px; }
+.formula summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent); }
+.fx { overflow-x: auto; padding: 4px 2px; } .fx p { margin: 8px 0; line-height: 1.7; }
+.katex { font-size: 1.02em; }

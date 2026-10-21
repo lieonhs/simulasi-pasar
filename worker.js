@@ -1,4 +1,4 @@
-importScripts("engine.js");
+importScripts("engine.js?v=" + (new URL(self.location.href).searchParams.get("v") || ""));
 self.onmessage = (e) => {
   const { id, type, cfg } = e.data;
   const progress = (msg, frac) => self.postMessage({ id, type: "progress", msg, frac });

@@ -7,15 +7,33 @@
 <meta name="description" content="Simulasi Monte Carlo harga saham, kripto, emas, FX, dan yield obligasi: prediksi per periode, rencana jual per lot, perbandingan dengan indeks, dan uji keyakinan.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="style.css?v=20261021134212">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
+<div id="authGate" class="auth-gate">
+  <form id="authForm" class="auth-card" autocomplete="on">
     <div class="brand"><span class="dot"></span>Simulasi Pasar</div>
-    <div class="sub">Monte Carlo · GARCH · Jump · Bootstrap · Vasicek/CIR</div>
+    <p class="sub" id="authSub">Masuk untuk melanjutkan</p>
+    <label class="lbl" for="authEmail">Email</label>
+    <input id="authEmail" type="email" autocomplete="email" required>
+    <label class="lbl" for="authPass" id="authPassLbl">Password</label>
+    <input id="authPass" type="password" autocomplete="current-password" minlength="6">
+    <button id="authBtn" class="run" type="submit">Masuk</button>
+    <div id="authMsg" class="status"></div>
+    <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a></div>
+  </form>
+</div>
+<header class="top">
+  <div class="wrap top-row">
+    <div><div class="brand"><span class="dot"></span>Simulasi Pasar</div>
+    <div class="sub">Monte Carlo · GARCH · Jump · Bootstrap · Vasicek/CIR</div></div>
+    <div class="user-box" id="userBox" hidden><span id="userEmail"></span><button id="logoutBtn" class="chip">Keluar</button></div>
   </div>
 </header>
 
@@ -58,6 +76,8 @@
       <p class="note">Sumbu X = volatilitas tahunan yang diperkirakan model untuk horizon ini; sumbu Y = return 1 tahun terakhir. Hijau = tren naik, merah = tren turun, abu = sideways.</p>
     </div>
 
+    <details class="card formula" style="margin-bottom:14px"><summary>Rumus</summary><div class="fx"><p>Return periode: \( P_t/P_{t-k} - 1 \); Sharpe 1T: \( \dfrac{e^{252\bar r}-1-r_f}{\sigma\sqrt{252}} \); tren: \( \text{sign} \) dari \( (C - \text{MA}_{50}) \) dan \( (\text{MA}_{20}-\text{MA}_{50}) \)</p>
+<p>Proyeksi: model terpilih, 3.000 path, \( \Pr[P_{t+h} > P_t] \), \( Q_{0.05}, Q_{0.95} \)</p></div></details>
     <details class="card howto-card" open>
       <summary>Cara baca watchlist</summary>
       <ol class="readme">
@@ -96,6 +116,7 @@
       <h2>1 · Korelasi</h2>
       <div class="table-wrap"><table id="qlCorr" class="heat"></table></div>
       <p id="qlCorrTxt" class="note"></p>
+      <details class="formula"><summary>Rumus</summary><div class="fx"><p>\( \rho_{ij} = \dfrac{\hat\Sigma_{ij}}{\hat\sigma_i\hat\sigma_j},\quad \hat\Sigma = \tfrac{1}{T-1}\sum_t (r_t - \bar r)(r_t-\bar r)^\top \) (return harian pada tanggal bersama)</p></div></details>
       <details class="howto"><summary>Cara baca</summary><ul>
         <li>Angka −1 sampai 1: seberapa searah return harian dua aset. Merah (mendekati 1) = bergerak bersama, jadi tidak saling melindungi. Biru (≤ 0) = cenderung berlawanan, bagus untuk diversifikasi.</li>
         <li>Saham bank besar IDX biasanya berkorelasi tinggi satu sama lain. Memegang lima bank bukan diversifikasi yang sesungguhnya.</li>
@@ -115,6 +136,14 @@
       <div class="chart-box short"><canvas id="qlSimH"></canvas></div>
       <div class="subh">Kinerja historis bobot ini (in-sample)</div>
       <div class="chart-box"><canvas id="qlEq"></canvas></div>
+      <details class="formula"><summary>Rumus · portofolio</summary><div class="fx"><p>Shrinkage kovarians: \( \Sigma_s = (1-\delta)\hat\Sigma + \delta F,\ F_{ij} = \bar\rho\,\hat\sigma_i\hat\sigma_j\ (i\ne j),\ \delta = 0{,}3 \)</p>
+<p>Shrinkage return: \( \mu_i^s = (1-\lambda)\hat\mu_i + \lambda\bar\mu \)</p>
+<p>Kendala: \( \sum_i w_i = 1,\ 0 \le w_i \le w_{max} \)</p>
+<p><b>Min Variance</b>: \( \min_w\ w^\top\Sigma_s w \) · <b>Max Sharpe</b>: \( \max_w\ \dfrac{w^\top\mu^s - r_f}{\sqrt{w^\top\Sigma_s w}} \) (projected gradient)</p>
+<p><b>Risk Parity</b>: \( RC_i = \dfrac{w_i(\Sigma_s w)_i}{w^\top\Sigma_s w} = \tfrac1N \), iterasi \( w_i \leftarrow w_i\sqrt{\dfrac{w^\top\Sigma w/N}{w_i(\Sigma w)_i}} \)</p>
+<p><b>Inverse Vol</b>: \( w_i \propto 1/\sigma_i \) · <b>Equal</b>: \( w_i = 1/N \)</p>
+<p>\( \mu_p = 252\,w^\top\mu^s,\ \sigma_p = \sqrt{252\,w^\top\Sigma_s w} \); lot \( = \lfloor \text{Modal}\cdot w_i / (P_i \cdot 100) \rfloor \)</p>
+<p>Simulasi: \( R_p = \prod_{t=1}^{h}\left(1 + \sum_i w_i (e^{r^*_{t,i}}-1)\right) - 1 \), baris \( r^*_t \) diambil per blok (block bootstrap gabungan).</p></div></details>
       <details class="howto"><summary>Cara baca</summary><ul>
         <li><b>Min Variance</b>: portofolio paling tenang, hanya memakai kovarians (tidak menebak return), sehingga paling stabil di luar sampel.</li>
         <li><b>Risk Parity</b>: setiap aset menyumbang risiko yang sama, populer di hedge fund (mis. “All Weather”). Kolom <b>kontribusi risiko</b> harus kira-kira sama.</li>
@@ -144,6 +173,10 @@
       </div>
       <button id="btRun" class="run alt">Jalankan backtest</button>
       <div id="btOut"></div>
+      <details class="formula"><summary>Rumus · backtest</summary><div class="fx"><p>Posisi diputuskan di close \(t-1\), berlaku hari \(t\): \( R_t = \sum_i w_{i,t}\, r_{i,t} - c\sum_i |w_{i,t} - w_{i,t-1}| \)</p>
+<p>MA crossover: \( w = \mathbb{1}[\text{MA}_f > \text{MA}_s]/N \) · TS momentum: \( w = \mathbb{1}[P_{t-1}/P_{t-1-L} > 1]/N \)</p>
+<p>RSI: masuk saat RSI \(<\) batas bawah, keluar saat RSI \(>\) batas atas · Rotasi: pilih top-\(K\) berdasarkan \( P_{t-1}/P_{t-1-L}-1 \), rebalance tiap \(m\) hari, \( w = 1/K \)</p>
+<p>Ekuitas: \( E_t = \prod_{s\le t}(1+R_s) \); metrik IS/OOS dihitung terpisah pada \( [0, \lfloor\kappa T\rfloor) \) dan \( [\lfloor\kappa T\rfloor, T) \).</p></div></details>
       <details class="howto"><summary>Cara baca</summary><ul>
         <li>Sinyal dihitung dari harga penutupan hari ini dan posisi baru berlaku besok, jadi tidak ada “mengintip masa depan” (look-ahead). Setiap perubahan posisi dikenai biaya (20 bps ≈ fee beli+jual broker ritel per sisi).</li>
         <li><b>In-sample</b> = periode awal, tempat kamu bebas mengutak-atik parameter. <b>Out-of-sample</b> = periode akhir yang “tidak dilihat”. Strategi yang bagus di in-sample tapi jeblok di out-of-sample = <b>overfitting</b>.</li>
@@ -268,6 +301,9 @@
       </div>
       <div id="techStats" class="tech-stats"></div>
       <p id="techText" class="lead small-lead"></p>
+      <details class="formula"><summary>Rumus · indikator</summary><div class="fx"><p>\( \text{MA}_n = \tfrac1n\sum_{k=0}^{n-1} C_{t-k} \); Bollinger: \( \text{MA}_{20} \pm 2\sigma_{20} \)</p>
+<p>RSI (Wilder): \( \bar G_t = \tfrac{13\bar G_{t-1} + G_t}{14},\ \bar L_t = \tfrac{13\bar L_{t-1} + L_t}{14},\ \text{RSI} = 100 - \dfrac{100}{1 + \bar G_t/\bar L_t} \)</p>
+<p>VWAP: \( \dfrac{\sum_i \tfrac{H_i+L_i+C_i}{3} V_i}{\sum_i V_i} \); POC \( = \arg\max_{p}\sum_{i: C_i \approx p} V_i \); lot \( = V/100 \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Timeframe</b>: 1m/5m/15m/30m/1j = satu candle per menit/jam (intraday); 1H/1Mg/1B = harian/mingguan/bulanan. Data 1 menit hanya ±5 hari terakhir, 5–30 menit ±1 bulan, 1 jam ±6 bulan. Harga saham IDX dari Yahoo biasanya tertunda ±10–15 menit, jadi jangan dipakai untuk scalping.</li>
         <li><b>Lot per harga</b> (panel samping): jumlah lot yang <i>sudah tertransaksi</i> di tiap level harga, dihitung dari candle 1 menit. Hijau = terjadi di menit yang naik, merah = di menit yang turun (perkiraan sisi agresor). <b>POC</b> = harga dengan transaksi terbanyak, sering menjadi area support/resistance; <b>VWAP</b> = harga rata-rata tertimbang volume. Ini <b>bukan antrean order</b>.</li>
@@ -288,6 +324,16 @@
       </div>
       <div class="chart-box tall"><canvas id="fan"></canvas></div>
       <div class="legend-note">Pita gelap = 50% kemungkinan · pita terang = 90% · garis = median<label class="mini"><input type="checkbox" id="showPaths"> tampilkan 25 path contoh</label></div>
+      <details class="formula"><summary>Rumus · model simulasi</summary><div class="fx">
+<p><b>Log-return</b>: \( r_t = \ln(P_t / P_{t-1}) \). Harga simulasi: \( P_{t+h} = P_t \exp\left(\sum_{k=1}^{h} r_{t+k}\right) \).</p>
+<p><b>GBM</b>: \( r_{t} = \left(\mu - \tfrac{1}{2}\sigma^2\right) + \sigma\,\varepsilon_t,\quad \varepsilon_t \sim N(0,1) \)</p>
+<p><b>GJR-GARCH(1,1)-t</b>: \( r_t = \mu + \epsilon_t,\ \ \epsilon_t = \sqrt{h_t}\, z_t,\ \ z_t \sim t_\nu \sqrt{\tfrac{\nu-2}{\nu}} \)<br>
+\( h_{t+1} = \omega + \left(\alpha + \gamma\,\mathbb{1}[\epsilon_t<0]\right)\epsilon_t^2 + \beta h_t,\quad \omega = \bar{s}^2\left(1-\alpha-\tfrac{\gamma}{2}-\beta\right) \) (variance targeting)<br>
+Estimasi MLE: \( \max \sum_t \left[\ln\Gamma\!\left(\tfrac{\nu+1}{2}\right) - \ln\Gamma\!\left(\tfrac{\nu}{2}\right) - \tfrac12\ln(\pi(\nu-2)h_t) - \tfrac{\nu+1}{2}\ln\!\left(1+\tfrac{\epsilon_t^2}{(\nu-2)h_t}\right)\right] \)</p>
+<p><b>ARCH(1)-t</b>: sama dengan di atas dengan \( \beta = \gamma = 0 \).</p>
+<p><b>Merton jump-diffusion</b>: \( r_t = \mu - \tfrac12\sigma^2 - \lambda\kappa + \sigma\varepsilon_t + \sum_{i=1}^{N_t} J_i,\ \ N_t\sim \text{Poisson}(\lambda),\ J_i \sim N(\mu_J,\sigma_J^2),\ \kappa = e^{\mu_J+\sigma_J^2/2}-1 \)</p>
+<p><b>Block bootstrap</b>: \( r^*_{t+1..t+h} \) = gabungan blok 10 hari \( \{r_{s},\dots,r_{s+9}\} \) dengan \( s \) acak (menjaga clustering volatilitas).</p>
+<p><b>Kuantil</b>: \( P_q = \inf\{x : \hat F(x) \ge q\} \) dari \( n \) path; pita 50% = \( [P_{25}, P_{75}] \), 90% = \( [P_{5}, P_{95}] \).</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <p>Garis hitam adalah harga historis. Area biru adalah kemungkinan harga ke depan menurut model yang dipilih di tab kanan atas.</p>
         <ul><li><b>Garis biru (median)</b>: separuh simulasi berakhir di atas garis ini, separuh di bawahnya. Ini bukan “harga yang akan terjadi”.</li>
@@ -300,6 +346,8 @@
     <div class="card price-only" id="predCard">
       <h2>Prediksi per periode</h2>
       <div class="table-wrap"><table id="predTable"></table></div>
+      <details class="formula"><summary>Rumus</summary><div class="fx"><p>\( \text{Median}_h = Q_{0.5}(P_{t+h}) \), perubahan \( = \text{Median}_h / P_t - 1 \)</p>
+<p>Rentang 80%: \( [Q_{0.1}(P_{t+h}),\ Q_{0.9}(P_{t+h})] \); peluang naik \( = \tfrac{1}{n}\sum_{i=1}^{n} \mathbb{1}[P^{(i)}_{t+h} > P_t] \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Median</b> & <b>%</b>: titik tengah simulasi dan perubahannya dari harga sekarang.</li>
         <li><b>Rentang 80%</b>: 8 dari 10 simulasi berakhir di antara dua angka ini. 1 dari 10 lebih rendah, 1 dari 10 lebih tinggi.</li>
@@ -323,6 +371,11 @@
       <div class="table-wrap"><table id="planInput" class="plan-in"></table></div>
       <button id="planRun" class="run alt">Hitung rencana</button>
       <div id="planOut"></div>
+      <details class="formula"><summary>Rumus</summary><div class="fx"><p><b>Modal</b> \( = L \cdot u \cdot P_{beli}(1+f_b) \) dengan \( L \) = lot, \( u \) = 100 lembar/lot.</p>
+<p><b>Laba/rugi target \(k\)</b>: \( \Pi_k = L_k\, u\,\left[P_k(1-f_s) - P_{beli}(1+f_b)\right] \)</p>
+<p><b>Peluang tersentuh</b> level \(K\) (naik): \( \Pr\left[\max_{s\le h} P^{(i)}_{t+s} \ge K\right] \); level turun: \( \Pr\left[\min_{s\le h} P^{(i)}_{t+s} \le K\right] \)</p>
+<p><b>Target otomatis</b>: \( K_k = Q_{1-p_k}\left(\max_{s\le h} P_{t+s}\right) \), \( p = (0{,}5;\ 0{,}3;\ 0{,}15) \); stop loss \( = Q_{0.2}\left(\min_{s\le h} P_{t+s}\right) \); dibulatkan ke fraksi BEI \( \text{tick}(P) \in \{1,2,5,10,25\} \).</p>
+<p>Simulasi per path: jual \(L_k\) saat \(P_{t+s}\ge K_k\); jika \(P_{t+s}\le SL\) lebih dulu, jual semua sisa di \(P_{t+s}\); sisa di akhir dinilai \(P_{t+h}\).</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Target otomatis</b> memilih 3 harga jual yang peluang tersentuhnya ±50%, ±30%, dan ±15% dalam horizon, dengan lot dibagi 40/30/30. Stop loss dipilih di level yang peluang tersentuhnya ±20%. Ini titik awal, bukan level optimal; ubah lewat “Atur sendiri”.</li>
         <li><b>Peluang tersentuh</b>: persentase simulasi yang harga penutupannya pernah mencapai level itu. <b>Hari ke-</b>: median kapan level itu pertama kali tercapai.</li>
@@ -342,6 +395,9 @@
         <div class="chart-box"><canvas id="cmpChart"></canvas></div>
         <div class="table-wrap"><table id="cmpTable"></table></div>
       </div>
+      <details class="formula"><summary>Rumus</summary><div class="fx"><p>Rebase: \( I_t = 100 \cdot P_t / P_{t_0} \)</p>
+<p>\( \beta = \dfrac{\text{Cov}(r_a, r_m)}{\text{Var}(r_m)},\quad \rho = \dfrac{\text{Cov}(r_a, r_m)}{\sigma_a \sigma_m} \) (return harian pada tanggal bersama, ≤ 500 hari)</p>
+<p>Volatilitas tahunan: \( \sigma_{th} = \sigma_{harian}\sqrt{252} \) (kripto: \( \sqrt{365} \)); drawdown: \( DD_t = P_t / \max_{s\le t}P_s - 1 \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Grafik</b>: semua aset dimulai dari 100 setahun lalu. Angka 120 berarti naik 20% dalam setahun.</li>
         <li><b>Beta</b> (terhadap indeks pertama di daftar): 1,2 berarti saat indeks naik/turun 1%, aset ini rata-rata bergerak 1,2%. Di bawah 1 berarti lebih tenang dari pasar.</li>
@@ -360,6 +416,14 @@
       <div class="subh">1 · Kinerja tersesuaikan risiko</div>
       <div class="table-wrap"><table id="riskTable"></table></div>
       <p id="riskText" class="lead small-lead"></p>
+      <details class="formula"><summary>Rumus · metrik risiko</summary><div class="fx"><p>\( \text{CAGR} = \left(\tfrac{P_T}{P_0}\right)^{1/\text{tahun}} - 1 \)</p>
+<p>\( \text{Sharpe} = \dfrac{\bar r - r_f}{\sigma}\sqrt{252},\quad \text{Sortino} = \dfrac{\bar r - r_f}{\sigma_{down}}\sqrt{252},\ \ \sigma_{down}=\sqrt{\tfrac1n\sum \min(r_t-r_f,0)^2} \)</p>
+<p>\( \text{Calmar} = \text{CAGR} / |\text{MaxDD}| \)</p>
+<p>Jensen: \( \alpha = 252\left[(\bar r_a - r_f) - \beta(\bar r_m - r_f)\right] \)</p>
+<p>\( \text{TE} = \sigma(r_a - r_m)\sqrt{252},\quad \text{IR} = \dfrac{252\,\overline{(r_a-r_m)}}{\text{TE}} \)</p>
+<p>Capture: \( \text{Up} = \dfrac{\bar r_a \mid r_m>0}{\bar r_m \mid r_m>0},\ \text{Down} = \dfrac{\bar r_a \mid r_m<0}{\bar r_m \mid r_m<0} \)</p>
+<p>VaR historis: \( \text{VaR}_{95} = -Q_{0.05}(r) \); ES: \( -\mathbb{E}[r \mid r \le -\text{VaR}] \)</p>
+<p>Kelly (kontinu): \( f^* = \dfrac{\mu - r_f}{\sigma^2} \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Sharpe</b>: return di atas bunga bebas risiko per unit volatilitas. &gt;1 bagus, &lt;0 = kalah dari deposito/SBN. <b>Sortino</b> sama, tapi hanya menghukum volatilitas turun.</li>
         <li><b>Calmar</b>: CAGR dibagi drawdown terburuk; seberapa sakit untuk mendapat return itu.</li>
@@ -370,6 +434,11 @@
 
       <div class="subh">2 · ARDL — apakah return bisa ditebak dari masa lalu?</div>
       <div id="ardlOut"></div>
+      <details class="formula"><summary>Rumus · ARDL</summary><div class="fx"><p>\( y_t = c + \sum_{i=1}^{p}\phi_i y_{t-i} + \sum_{j=q_0}^{q}\beta_j x_{t-j} + e_t \), dengan \( y \) = return mingguan aset, \( x \) = return mingguan benchmark; prediktif \(q_0=1\), penjelas \(q_0=0\).</p>
+<p>OLS: \( \hat\theta = (X^\top X)^{-1}X^\top y,\ \ \text{se}(\hat\theta_k) = \sqrt{\hat s^2 [(X^\top X)^{-1}]_{kk}},\ \ t_k = \hat\theta_k/\text{se}_k \)</p>
+<p>Pemilihan lag: \( \text{AIC} = n\ln(\text{SSE}/n) + 2k \)</p>
+<p>Out-of-sample (expanding window): \( R^2_{OOS} = 1 - \dfrac{\sum (y_t - \hat y_t)^2}{\sum (y_t - \bar y_{t-1})^2} \) (Campbell–Thompson)</p>
+<p>Interval ramalan 80%: \( \hat y_{T+1} \pm 1{,}2816\,\hat s \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li>Model: return mingguan aset = konstanta + lag return-nya sendiri + lag return benchmark. Panjang lag (p, q) dipilih otomatis dengan AIC.</li>
         <li><b>Model penjelas</b> memakai return benchmark minggu yang sama (t). Koefisien itu ≈ beta mingguan: menjelaskan, tapi <i>tidak bisa dipakai meramal</i> karena return indeks minggu depan belum diketahui.</li>
@@ -387,6 +456,12 @@
         <div><label class="lbl" for="oQ">Dividend yield (%/th)</label><input id="oQ" type="number" step="0.1" value="0"></div>
       </div>
       <div id="optOut"></div>
+      <details class="formula"><summary>Rumus · opsi</summary><div class="fx"><p><b>Black–Scholes–Merton</b>: \( d_1 = \dfrac{\ln(S/K) + (r - q + \sigma^2/2)T}{\sigma\sqrt T},\ \ d_2 = d_1 - \sigma\sqrt T \)</p>
+<p>\( C = S e^{-qT}N(d_1) - K e^{-rT}N(d_2),\quad P = K e^{-rT}N(-d_2) - S e^{-qT}N(-d_1) \)</p>
+<p>\( \Delta_C = e^{-qT}N(d_1),\ \ \Gamma = \dfrac{e^{-qT}\varphi(d_1)}{S\sigma\sqrt T},\ \ \mathcal V = S e^{-qT}\varphi(d_1)\sqrt T \); peluang ITM risk-neutral \( = N(d_2) \)</p>
+<p><b>Binomial CRR</b>: \( u = e^{\sigma\sqrt{\Delta t}},\ d = 1/u,\ p = \dfrac{e^{(r-q)\Delta t} - d}{u - d} \)<br>
+\( V_{n,i} = e^{-r\Delta t}\left[p V_{n+1,i} + (1-p)V_{n+1,i+1}\right] \); Amerika: \( V_{n,i} = \max\left(V_{n,i},\ \text{payoff}(S_{n,i})\right) \)</p>
+<p>Vol model sepanjang horizon (GARCH): \( \bar\sigma^2 = \tfrac1h\sum_{k=0}^{h-1}\left[\bar s^2 + \pi^k (h_{t+1}-\bar s^2)\right] \), \( \pi = \alpha+\gamma/2+\beta \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Black-Scholes</b> dan <b>binomial (Cox-Ross-Rubinstein)</b> menghitung <i>harga wajar opsi</i>, bukan meramal harga saham. Binomial juga menghitung opsi gaya Amerika (bisa dieksekusi lebih awal).</li>
         <li><b>Peluang risk-neutral</b> (N(d2)) adalah peluang “versi pasar opsi” yang berasumsi saham tumbuh sebesar bunga bebas risiko. <b>Peluang simulasi</b> berasal dari model Monte Carlo yang dipilih. Selisih keduanya menunjukkan perbedaan asumsi, bukan peluang profit.</li>
@@ -408,6 +483,15 @@
         <button id="valRun" class="run alt">Hitung nilai</button>
         <div id="valOut"></div>
       </div>
+      <details class="formula"><summary>Rumus · Damodaran</summary><div class="fx"><p><b>Biaya ekuitas</b>: \( k_e = r_f + \beta\,(\text{ERP}_{matang} + \text{CRP}) \); risk-free rupiah \( r_f = y_{SBN10} - \text{default spread} \)</p>
+<p><b>WACC</b>: \( \dfrac{E}{D+E}k_e + \dfrac{D}{D+E}(r_f + s_d)(1-t) \)</p>
+<p><b>FCFF</b>: \( \text{FCFF}_t = \text{EBIT}_t(1-t_t) - \dfrac{\text{Rev}_t - \text{Rev}_{t-1}}{\text{Sales/Capital}} \), \( \text{EBIT}_t = \text{Rev}_t \cdot m_t \)</p>
+<p>Growth th 1–5 \( = g_1 \), lalu linear ke \( g_T \) di th 10; margin linear dari \( m_0 \) ke \( m_T \).</p>
+<p><b>Terminal</b>: \( TV = \dfrac{\text{NOPAT}_{11}\left(1 - g_T/\text{ROC}_T\right)}{\text{WACC}_T - g_T} \), syarat \( g_T < r_f \)</p>
+<p>\( V_{ops} = \sum_{t=1}^{10}\dfrac{\text{FCFF}_t}{\prod_{s\le t}(1+\text{WACC}_s)} + \dfrac{TV}{\prod_{s\le 10}(1+\text{WACC}_s)},\quad \text{Nilai/saham} = \dfrac{V_{ops} + \text{Kas} - \text{Utang}}{\text{Saham}} \)</p>
+<p><b>Bank (excess return)</b>: \( V_0 = BV_0 + \sum_{t=1}^{10}\dfrac{(ROE_t - k_e)BV_{t-1}}{(1+k_e)^t} + \dfrac{(ROE_T - k_e)BV_{10}}{(k_e - g_T)(1+k_e)^{10}} \)<br>
+P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
+<p><b>Reverse DCF</b>: cari \( g_1^* \) sehingga \( V(g_1^*) = P_{pasar} \) (bisection).</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li>Damodaran: nilai perusahaan = arus kas masa depan yang didiskonto dengan risikonya. Setiap angka harus punya <b>cerita</b> (“TLKM tumbuh 5% karena data center”) dan cerita harus masuk akal.</li>
         <li><b>Biaya ekuitas</b> = risk-free + beta × (ERP pasar matang + <b>country risk premium</b> Indonesia). Risk-free rupiah = yield SBN 10 tahun dikurangi default spread Indonesia, karena SBN sendiri tidak bebas risiko.</li>
@@ -425,6 +509,10 @@
       <div id="newsSummary"></div>
       <div class="row"><div class="tabs" id="newsFilter"><button class="tab active" data-f="all">Semua</button><button class="tab" data-f="big">Reaksi signifikan</button><button class="tab" data-f="pos">Sentimen +</button><button class="tab" data-f="neg">Sentimen −</button></div></div>
       <div id="newsList" class="news-list"></div>
+      <details class="formula"><summary>Rumus · event study</summary><div class="fx"><p>Model pasar (≤ 500 hari): \( r_{a,t} = \alpha + \beta r_{m,t} + \varepsilon_t \)</p>
+<p>Reaksi abnormal: \( AR_d = r_{a,d} - (\hat\alpha + \hat\beta r_{m,d}) \); kumulatif 3 hari: \( CAR_{[0,2]} = \sum_{k=0}^{2} AR_{d+k} \)</p>
+<p>Signifikan bila \( |z| = |AR_d| / \hat\sigma_\varepsilon > 1{,}96 \)</p>
+<p>Sentimen judul: \( S = \#\text{kata positif} - \#\text{kata negatif} \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>Reaksi abnormal</b> = return saham di hari berita dikurangi return yang “seharusnya” terjadi karena pergerakan indeks (alpha + beta × return indeks). Inilah perkiraan <b>pengaruh %</b> berita. Berita yang terbit setelah bursa tutup dihitung ke hari bursa berikutnya.</li>
         <li><b>3 hari</b> = jumlah reaksi abnormal hari itu + 2 hari bursa berikutnya (berita sering dicerna bertahap).</li>
@@ -436,6 +524,7 @@
     <div class="card">
       <h2>Distribusi di akhir horizon</h2>
       <div class="table-wrap"><table id="sumTable"></table></div>
+      <details class="formula"><summary>Rumus</summary><div class="fx"><p>\( \text{VaR}_{95} = -Q_{0.05}\left(\tfrac{P_{t+h}}{P_t}-1\right),\quad \text{CVaR}_{95} = -\mathbb{E}\left[R \mid R \le -\text{VaR}_{95}\right] \)</p></div></details>
       <details class="howto"><summary>Cara baca</summary>
         <ul><li><b>P5 / P95</b>: hanya 5% simulasi yang lebih rendah dari P5 dan 5% yang lebih tinggi dari P95. Anggap ini skenario buruk dan bagus yang masih realistis.</li>
         <li><b>VaR 95%</b>: dalam 95 dari 100 kasus, kerugian tidak lebih dari angka ini. <b>CVaR 95%</b>: rata-rata kerugian pada 5 kasus terburuk. Ini lebih jujur soal crash.</li>
@@ -449,6 +538,9 @@
       <div class="table-wrap"><table id="confTable"></table></div>
       <div class="chart-box"><canvas id="calib"></canvas></div>
       <p class="note" id="confNote"></p>
+      <details class="formula"><summary>Rumus · uji keyakinan</summary><div class="fx"><p>PIT tiap titik uji: \( u_j = \hat F_j\left(\ln\tfrac{P_{o_j+h}}{P_{o_j}}\right) \) dengan \( \hat F_j \) = distribusi simulasi yang di-fit hanya dengan data sebelum \( o_j \).</p>
+<p>Coverage \(c\): \( \tfrac1J\sum_j \mathbb{1}\left[|u_j - 0{,}5| \le c/2\right] \) (ideal \(= c\)); galat kalibrasi \( = \tfrac14\sum_c |\text{coverage}_c - c| \)</p>
+<p><b>Kupiec POF</b>: \( LR = -2\ln\dfrac{(1-p)^{n-x}p^x}{(1-\hat p)^{n-x}\hat p^{x}} \sim \chi^2_1,\ \ \hat p = x/n,\ p = 0{,}05 \)</p></div></details>
     </div>
 
     <div class="card">
@@ -480,7 +572,8 @@
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
-<script src="engine.js"></script>
-<script src="app.js"></script>
+<script>window.APP_V = "20261021134212";</script>
+<script src="engine.js?v=20261021134212"></script>
+<script src="app.js?v=20261021134212"></script>
 </body>
 </html>
