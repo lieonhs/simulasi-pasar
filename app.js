@@ -1655,10 +1655,8 @@
     if (settings.focus) setFocus(settings.focus, false);
   }
   let authMode = "login", otpEmail = "", resendAt = 0;
-  // sesi dianggap terverifikasi hanya bila login terakhir lewat kode/tautan email (klaim amr di token)
-  const VERIFIED = ["otp", "magiclink", "recovery"];
-  const amrOf = (sess) => { try { return JSON.parse(atob(sess.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).amr || []; } catch { return []; } };
-  const isVerified = (sess) => !!sess && amrOf(sess).some((a) => VERIFIED.includes(a.method));
+  // verifikasi kode email dimatikan atas permintaan pemilik: login email + password sudah cukup
+  const isVerified = (sess) => !!sess;
   function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"],
       otp: ["Langkah 2 dari 2: verifikasi email", "Verifikasi"] }[m];
     $("authSub").textContent = L[0]; $("authBtn").textContent = L[1];

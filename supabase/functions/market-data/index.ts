@@ -1,5 +1,5 @@
 // market-data: proxy harga historis (Yahoo Finance, fallback Binance untuk kripto)
-// Hanya untuk pengguna yang login DAN sudah verifikasi kode email (klaim amr = otp/magiclink/recovery).
+// Hanya untuk pengguna yang login (email + password); token diverifikasi ke Supabase Auth.
 // Deploy: supabase functions deploy market-data --no-verify-jwt   (verifikasi dilakukan di dalam fungsi)
 // GET ?action=chart&symbol=BTC-USD&range=5y
 // GET ?action=search&q=bbca
@@ -195,16 +195,14 @@ async function quoteOne(symbol: string) {
 }
 
 
-// ---------- hanya pengguna yang login + verifikasi email ----------
+// ---------- hanya pengguna yang login ----------
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "", SB_ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-const VERIFIED = new Set(["otp", "magiclink", "recovery"]);
 const okTokens = new Map<string, number>(); // token -> exp (ms)
 async function checkUser(req: Request): Promise<{ ok: boolean; why?: string; sub?: string }> {
   const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!tok || tok.split(".").length !== 3) return { ok: false, why: "Perlu login" };
   let p: any; try { p = JSON.parse(atob(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return { ok: false, why: "Perlu login" }; }
   const exp = (p.exp ?? 0) * 1000; if (p.role !== "authenticated" || exp < Date.now()) return { ok: false, why: "Perlu login" };
-  if (!(p.amr ?? []).some((a: any) => VERIFIED.has(a?.method))) return { ok: false, why: "Perlu verifikasi email" };
   if ((okTokens.get(tok) ?? 0) > Date.now()) return { ok: true, sub: p.sub };
   const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } });
   if (!r.ok) return { ok: false, why: "Perlu login" };
