@@ -344,3 +344,5 @@ table.heat td { text-align: center; font-size: 12px; } table.heat td:first-child
 .pf-sym { cursor: pointer; color: var(--accent); font-family: var(--mono); font-weight: 600; }
 .cal-past td { opacity: .45; } .cal-next td { background: var(--accent-soft); }
 td.txt { text-align: left !important; white-space: normal !important; font-family: var(--sans); font-size: 12.5px; min-width: 200px; }
+.cmd-user { font: 12px var(--mono); color: var(--muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .cmd-user { display: none; } }

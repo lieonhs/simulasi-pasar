@@ -4,7 +4,10 @@
   const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
   const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
   const API = SB_URL + "/functions/v1/market-data";
-  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } }) : null;
+  // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi
+  try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
+  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: window.sessionStorage } }) : null;
+  const IDLE_MIN = 30; let lastAct = Date.now();
   let session = null;
   async function apiFetch(url, opt = {}) {
     if (sb) { const { data } = await sb.auth.getSession(); session = data.session; }
@@ -2028,7 +2031,7 @@
     return /Invalid login/i.test(m) ? "Email atau password salah." : /Email not confirmed/i.test(m) ? "Email belum dikonfirmasi — cek kotak masuk email kamu." : /already registered/i.test(m) ? "Email sudah terdaftar, silakan masuk." :
       /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Batas kirim email tercapai (Supabase bawaan ±2 email/jam). Coba lagi nanti." : /Signups not allowed|not found|User not found/i.test(m) ? "Email ini belum terdaftar." : m; };
   async function onAuthed(s) {
-    session = s; $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
+    session = s; lastAct = Date.now(); $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || ""; $("cmdUser").textContent = (s.user.email || "").split("@")[0];
     if (booted) return; booted = true;
     readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs();
     const P = new URLSearchParams(location.search);
@@ -2039,7 +2042,11 @@
     $("authToSignup").onclick = (e) => { e.preventDefault(); setAuthMode("signup"); };
     $("authToReset").onclick = (e) => { e.preventDefault(); setAuthMode("reset"); };
     $("authToLogin").onclick = (e) => { e.preventDefault(); setAuthMode("login"); };
-    $("logoutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+    const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
+    $("logoutBtn").onclick = () => logout(); $("cmdLogout").onclick = () => logout();
+    ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, () => (lastAct = Date.now()), { passive: true }));
+    setInterval(() => { if (session && $("authGate").hidden && Date.now() - lastAct > IDLE_MIN * 60000) logout(`Kamu keluar otomatis karena tidak aktif ${IDLE_MIN} menit.`); }, 30000);
+    try { const m = sessionStorage.getItem("sp_logout_msg"); if (m) { sessionStorage.removeItem("sp_logout_msg"); setTimeout(() => { $("authMsg").textContent = m; }, 0); } } catch { /* */ }
     $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
       msg.classList.remove("err"); msg.textContent = "Memproses…"; $("authBtn").disabled = true;
       try {
