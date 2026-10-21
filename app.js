@@ -10,7 +10,7 @@
     if (sb) { const { data } = await sb.auth.getSession(); session = data.session; }
     const headers = { ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) };
     const r = await fetch(url, { ...opt, headers });
-    if (r.status === 401) { showAuth("Sesi berakhir, silakan masuk lagi."); }
+    if (r.status === 401) { const t = await r.clone().json().catch(() => ({})); if (/verifikasi/i.test(t.error || "") && session) startOtp(session.user.email, false); else showAuth("Sesi berakhir, silakan masuk lagi."); }
     return r;
   }
   const PRESETS = {
@@ -225,7 +225,7 @@
       $("barFill").style.width = "100%";
       status(`Selesai dalam ${((performance.now() - t0) / 1000).toFixed(1)} detik · ${d.values.length.toLocaleString("id-ID")} observasi · sumber ${d.source}`);
       setTimeout(() => ($("barFill").style.width = "0"), 600);
-      if (res.mode === "price") { runPlan(); if (newSymbol) { state.valBetaSet = false; state.rfAuto = true; state.oAuto = true; state.risk = null; runValuation(); } if (newSymbol || !state.cmp) runCompare(); else { renderCompare(); renderQuant(); } }
+      if (res.mode === "price") { runPlan(); if (newSymbol) { state.valBetaSet = false; state.valUpside = null; state.ai = null; state.rfAuto = true; state.oAuto = true; state.risk = null; runValuation(); } if (newSymbol || !state.cmp) runCompare(); else { renderCompare(); renderQuant(); } }
     } catch (e) {
       status(e.message || String(e), true); $("barFill").style.width = "0";
       if (typed && !state.csv) didYouMean(typed);
@@ -261,7 +261,7 @@
     document.querySelectorAll(".price-only").forEach((el) => (el.hidden = bond));
     $("candleCard").hidden = !(d.ohlc && d.ohlc.length > 30);
     $("modelTabs").innerHTML = Object.entries(res.models).map(([key, m]) => `<button class="tab ${key === state.sel ? "active" : ""}" data-m="${key}">${esc(m.label)}</button>`).join("");
-    renderCandle(); renderSummary(); renderConfidence(); renderParams(); renderCaveats(); renderSelected();
+    renderCandle(); renderSummary(); renderConfidence(); renderParams(); renderCaveats(); renderSelected(); renderSignal();
   }
 
   function renderSelected() {
@@ -349,7 +349,7 @@
     }
     if (cfg.lots <= 0) { $("planOut").innerHTML = `<p class="status err">Isi jumlah ${isIdx() ? "lot" : "unit"} dulu.</p>`; return; }
     $("planOut").innerHTML = `<p class="status">Menghitung rencana di ${nf(0).format(Math.min(state.cfg.sims, 2e6 / state.cfg.days))} path…</p>`;
-    try { const pr = await compute("plan", cfg); state.planRes = { pr, cfg }; if (cfg.auto) renderPlanInputs(pr); renderPlan(); }
+    try { const pr = await compute("plan", cfg); state.planRes = { pr, cfg }; if (cfg.auto) renderPlanInputs(pr); renderPlan(); renderSignal(); }
     catch (e) { $("planOut").innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
   }
   function renderPlan() {
@@ -552,6 +552,7 @@
     rchart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
     main.timeScale().subscribeVisibleLogicalRangeChange((r) => r && rchart.timeScale().setVisibleLogicalRange(r));
     state.lw = { main, rsi: rchart, cs, n: bars.length };
+    applyMarkers();
 
     // rentang tampilan
     const lastT = bars[bars.length - 1][0];
@@ -770,7 +771,7 @@
     $("newsStatus").textContent = "Mengambil berita…"; $("newsList").innerHTML = ""; $("newsSummary").innerHTML = "";
     try {
       const r = await apiFetch(`${API}?action=news&symbol=${encodeURIComponent(d.symbol)}&q=${encodeURIComponent(q)}`);
-      const j = await r.json(); state.news = (j.items || []).filter((x) => x.title);
+      const j = await r.json(); state.news = (j.items || []).filter((x) => x.title); state.ai = null; $("aiOut").innerHTML = "";
       if (!state.news.length) { $("newsStatus").textContent = "Tidak ada berita yang ditemukan dari sumber."; return; }
       scoreNews(); renderNews();
     } catch (e) { $("newsStatus").textContent = "Gagal mengambil berita: " + e.message; }
@@ -800,6 +801,10 @@
     state.news.forEach((it) => (it.sameDay = it.tday ? dayCounts.get(it.tday) : 0));
     state.newsModel = { alpha, beta, sd, useBench: use, bench: b ? b.symbol : null };
   }
+  function aiOf(x) { if (!state.ai || !state.ai.items) return null; const i = state.news.indexOf(x); return state.ai.items.find((it) => it.id === i) || null; }
+  function aiChip(x) { const a = aiOf(x); if (!a) return ""; const d = a.arah === "naik" ? "▲" : a.arah === "turun" ? "▼" : "◆";
+    return `<span class="pill ai-chip">AI ${d} ${a.peluang != null ? a.peluang + "%" : ""} · dampak ${esc(a.dampak || "?")}</span>`; }
+  function aiSum(x) { const a = aiOf(x); return a && a.ringkasan ? `<div class="ai-sum">${esc(a.ringkasan)}${a.alasan ? ` <span class="note">— ${esc(a.alasan)}</span>` : ""}</div>` : ""; }
   function renderNews() {
     const N = state.news, M = state.newsModel, f = state.newsFilter || "all";
     const withR = N.filter((x) => x.ar != null), sig = withR.filter((x) => Math.abs(x.z) > 1.96);
@@ -811,7 +816,7 @@
     $("newsSummary").innerHTML = `<div class="kpis compact">
       <div class="kpi"><div class="k">Sentimen judul</div><div class="v"><span class="pos">${pos}+</span> / <span class="neg">${neg}−</span></div><div class="h">${N.length - pos - neg} netral</div></div>
       <div class="kpi"><div class="k">Hari dengan reaksi signifikan</div><div class="v">${new Set(sig.map((x) => x.tday)).size} / ${days.length}</div><div class="h">|reaksi| > 1,96σ</div></div>
-      <div class="kpi"><div class="k">Gerak hari berita vs hari biasa</div><div class="v">${isFinite(avgAbs) ? nf(1).format(avgAbs / normAbs) + "×" : "–"}</div><div class="h">rata-rata |reaksi abnormal|</div></div></div>` +
+      <div class="kpi"><div class="k">Gerak hari berita vs hari biasa</div><div class="v">${isFinite(avgAbs) && normAbs > 0 ? nf(1).format(avgAbs / normAbs) + "×" : "–"}</div><div class="h">rata-rata |reaksi abnormal|</div></div></div>` +
       (top.length ? `<p class="lead small-lead">Reaksi terbesar: ${top.map((x) => `<b>${x.tday}</b> <span class="${cls(x.ar)}">${spct(x.ar, 1)}</span>`).join(" · ")}</p>` : "");
     const list = N.filter((x) => f === "all" || (f === "big" && x.z != null && Math.abs(x.z) > 1.96) || (f === "pos" && x.sent.label === "pos") || (f === "neg" && x.sent.label === "neg"));
     const fmtDate = (u) => new Date(u * 1000).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -823,7 +828,7 @@
       return `<div class="news"><a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a>
         <div class="nm">${esc(x.publisher || x.via)} · ${fmtDate(x.time)}${x.tday ? ` · hari bursa ${x.tday}` : ""}</div>
         ${x.summary ? `<div class="ns">${esc(x.summary.length > 260 ? x.summary.slice(0, 257) + "…" : x.summary)}</div>` : '<div class="ns note">Sumber tidak menyediakan ringkasan — buka tautan untuk membaca.</div>'}
-        <div class="imp">${s}${imp}</div></div>`; }).join("") || '<p class="note">Tidak ada berita untuk filter ini.</p>';
+        <div class="imp">${s}${imp}${aiChip(x)}</div>${aiSum(x)}</div>`; }).join("") || '<p class="note">Tidak ada berita untuk filter ini.</p>';
   }
 
   // =====================================================================
@@ -912,6 +917,7 @@
         cols = `<th>Th</th><th>ROE</th><th>Growth BV</th><th>BV/saham</th><th>Laba/saham</th><th>Excess return</th><th>Payout</th><th>PV</th>`;
         cols += "</tr></thead><tbody>" + r.rows.map((x) => `<tr><td>${x.t}</td><td>${pct(x.roe)}</td><td>${pct(x.g)}</td><td>${fmtNum(x.bv)}</td><td>${fmtNum(x.ni)}</td><td class="${cls(x.exc)}">${fmtNum(x.exc)}</td><td>${pct(x.payout, 0)}</td><td>${fmtNum(x.pv)}</td></tr>`).join("");
       }
+      state.valUpside = r.upside; setTimeout(renderSignal, 0);
       const up = r.upside, verdict = up > 0.2 ? "di bawah nilai intrinsik (undervalued)" : up < -0.2 ? "di atas nilai intrinsik (overvalued)" : "mendekati nilai wajar";
       const coe = S.kind === "fcff" ? r.cc.coe : r.coe;
       out.innerHTML = `
@@ -1060,9 +1066,25 @@
   }
   document.addEventListener("toggle", (e) => { const d = e.target; if (d.classList && d.classList.contains("formula") && d.open && !d.dataset.rendered && window.renderMathInElement) {
     window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
+
+  // ---------- bilah fokus ----------
+  const FOCUS = { signal: ["headCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
+    plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "valCard"], news: ["headCard", "newsCard"],
+    trust: ["headCard", "confCard", "paramCard", "caveatCard"] };
+  function setFocus(f, save = true) {
+    const out = $("out"), keep = FOCUS[f];
+    document.querySelectorAll("#focusBar .fchip").forEach((b) => b.classList.toggle("active", b.dataset.f === f));
+    out.classList.toggle("focused", !!keep);
+    [...out.children].forEach((el) => { if (keep && !keep.includes(el.id)) el.dataset.hide = "1"; else delete el.dataset.hide; });
+    if (save) saveSettings({ focus: f });
+    state.focus = f;
+    setTimeout(() => { window.dispatchEvent(new Event("resize")); if (state.lw) renderCandle(true); }, 60);
+    if (save) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
+    $("focusBar").hidden = v !== "detail";
     if (v !== "detail") stopOB();
     if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
@@ -1154,6 +1176,8 @@
   }
   function updateLiveCandle(price, t, off) {
     if (!state.lw || !t || !(price > 0)) return;
+    const ref = state.data && state.data.ohlc && state.data.ohlc.length ? state.data.ohlc[state.data.ohlc.length - 1][4] : null;
+    if (ref && Math.abs(price / ref - 1) > 0.35) return; // abaikan tick yang tidak masuk akal (> batas ARA/ARB)
     const cs = state.lw.cs;
     try {
       if (isIntra() && state.intra && state.intra.key === state.data.symbol + "|" + state.tf) {
@@ -1173,19 +1197,23 @@
   }
 
   // ---------- autocomplete untuk input berisi daftar ticker (dipisah koma) ----------
-  function attachAC(input) {
+  function attachAC(input, opts = {}) {
     const ul = input.parentElement.querySelector(".sugg"); let timer = null, idx = -1, seq = 0;
     const lastTok = () => { const v = input.value, i = Math.max(v.lastIndexOf(","), v.lastIndexOf("\n")); return { pre: v.slice(0, i + 1), tok: v.slice(i + 1).trim() }; };
     const show = (sections) => { idx = -1; const html = sections.filter((s) => s.items.length).map((s) => `<li class="hdr">${s.title}</li>` + s.items.map((q) => suggRow(q)).join("")).join("");
       ul.innerHTML = html; ul.hidden = !html; };
-    const choose = (sym) => { const { pre } = lastTok(); input.value = (pre ? pre.replace(/\s*$/, " ") : "") + sym + ", "; ul.hidden = true; input.focus(); };
+    const choose = (sym) => { ul.hidden = true; if (opts.onPick) { input.value = ""; input.blur(); opts.onPick(sym); return; }
+      const { pre } = lastTok(); input.value = (pre ? pre.replace(/\s*$/, " ") : "") + sym + ", "; input.focus(); };
     input.addEventListener("input", () => { clearTimeout(timer); const { tok } = lastTok(); if (tok.length < 2) { ul.hidden = true; return; }
       timer = setTimeout(async () => { const my = ++seq, local = localMatches(tok); show([{ title: "Rekomendasi", items: local }]);
         let remote = []; try { remote = (await (await apiFetch(`${API}?action=search&q=${encodeURIComponent(tok)}`)).json()).quotes || []; } catch { /* */ }
         if (my !== seq) return; const seen = new Set(local.map((x) => x.symbol));
         remote = remote.filter((x) => !seen.has(x.symbol)).sort((a, b) => (/\.JK$/.test(b.symbol) ? 1 : 0) - (/\.JK$/.test(a.symbol) ? 1 : 0));
         show([{ title: "Rekomendasi", items: local }, { title: "Hasil pencarian", items: remote }]); }, 250); });
-    input.addEventListener("keydown", (e) => { const items = [...ul.querySelectorAll("li[data-s]")]; if (ul.hidden || !items.length) return;
+    input.addEventListener("keydown", (e) => { const items = [...ul.querySelectorAll("li[data-s]")];
+      if (e.key === "Enter" && opts.onPick && (ul.hidden || idx < 0)) { e.preventDefault(); const v = input.value.trim(); if (v) { const al = localMatches(v).find((x) => x.symbol.toUpperCase() === v.toUpperCase()) || ALIASES.find(([k]) => k === v.toLowerCase());
+        choose(al ? (al.symbol || al[1]) : v.toUpperCase()); } return; }
+      if (ul.hidden || !items.length) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); idx = (idx + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items.forEach((li, i) => li.classList.toggle("on", i === idx)); }
       else if (e.key === "Enter" && idx >= 0) { e.preventDefault(); e.stopImmediatePropagation(); choose(items[idx].dataset.s); }
       else if (e.key === "Escape") ul.hidden = true; }, true);
@@ -1403,6 +1431,130 @@
     } catch (e) { $("btOut").innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
   }
 
+
+  // =====================================================================
+  // TERMINAL: ticker berjalan, jam, baris perintah, tema, tombol fungsi
+  // =====================================================================
+  const TAPE = ["^JKSE", "^JKLQ45", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "^GSPC", "^IXIC", "GC=F", "CL=F", "IDR=X", "BTC-USD", "ETH-USD", "^TNX"];
+  async function updateTape() {
+    if (document.hidden || !session) return;
+    const wlSyms = (($("wlQ") && $("wlQ").value) || "").split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+    const syms = [...new Set([...TAPE, ...wlSyms])].slice(0, 25);
+    try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(syms.join(","))}`)).json();
+      const html = (j.quotes || []).filter((q) => q.price != null).map((q) => { const c = q.prevClose ? q.price / q.prevClose - 1 : NaN;
+        return `<span class="tape-item" data-s="${esc(q.symbol)}"><b>${esc(q.symbol.replace(/\.JK$/, ""))}</b>${fmtNum(q.price)} <span class="${cls(c)}">${c >= 0 ? "▲" : "▼"} ${spct(c, 2)}</span></span>`; }).join("");
+      if (html) $("tapeInner").innerHTML = html + html; } catch { /* */ }
+  }
+  function tickClock() { const d = new Date(Date.now() + 7 * 3600e3).toISOString(); $("cmdClock").textContent = `${d.slice(0, 10)} ${d.slice(11, 19)} WIB`; }
+  function applyTheme(t) { document.documentElement.setAttribute("data-theme", t); try { localStorage.setItem("sp_theme", t); } catch { /* */ }
+    $("themeBtn").textContent = t === "terminal" ? "TERANG" : "TERMINAL"; if (state.res) render(); if (ql.res) renderQuantLab(); if (wl.rows.length) { renderWatch(); renderWlMap(); } }
+  function syncTopbar() { const h = document.querySelector(".topbar").offsetHeight; document.documentElement.style.setProperty("--tb", h + 8 + "px"); }
+  function bindTerminal() {
+    syncTopbar(); addEventListener("resize", syncTopbar); new ResizeObserver(syncTopbar).observe(document.querySelector(".topbar"));
+    $("themeBtn").onclick = () => applyTheme(document.documentElement.getAttribute("data-theme") === "terminal" ? "light" : "terminal");
+    $("themeBtn").textContent = document.documentElement.getAttribute("data-theme") === "terminal" ? "TERANG" : "TERMINAL";
+    attachAC($("cmdQ"), { onPick: (sym) => openDetail(sym) });
+    $("tape").addEventListener("click", (e) => { const t = e.target.closest(".tape-item[data-s]"); if (t) openDetail(t.dataset.s); });
+    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail" }, k = e.altKey && /^[123]$/.test(e.key) ? ["screen", "quant", "detail"][+e.key - 1] : map[e.key];
+      if (k && $("authGate").hidden) { e.preventDefault(); setView(k); }
+      if (e.key === "/" && document.activeElement && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("cmdQ").focus(); } });
+    tickClock(); setInterval(tickClock, 1000); updateTape(); setInterval(updateTape, 60000);
+  }
+
+  // =====================================================================
+  // AI (Gemini lewat proxy) untuk berita
+  // =====================================================================
+  async function runAI() {
+    if (!state.news || !state.news.length) { $("aiOut").innerHTML = '<p class="note">Belum ada berita untuk dianalisis.</p>'; return; }
+    const btn = $("aiRun"); btn.disabled = true; $("aiOut").innerHTML = '<p class="status">AI sedang membaca berita…</p>';
+    const items = state.news.slice(0, 25).map((x, i) => ({ id: i, title: x.title, summary: (x.summary || "").slice(0, 300), publisher: x.publisher || x.via, date: new Date(x.time * 1000).toISOString().slice(0, 10),
+      reaksi_abnormal: x.ar != null ? +(x.ar * 100).toFixed(2) : null, signifikan: x.z != null ? Math.abs(x.z) > 1.96 : null }));
+    const r = state.res, m = r && r.models[state.sel];
+    const ctx = { harga: r ? r.s0 : null, mata_uang: state.data.currency, vol_tahunan: r ? +(r.stats.volAnn * 100).toFixed(1) : null,
+      peluang_naik_model: m ? +(m.probUp[m.probUp.length - 1] * 100).toFixed(0) : null, horizon: state.cfg ? state.cfg.days : null };
+    try {
+      const res = await apiFetch(`${API}?action=ai`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: state.data.symbol, name: state.data.name, items, context: ctx }) });
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || `AI gagal (${res.status})`);
+      state.ai = j; renderAI(); renderNews(); renderSignal();
+    } catch (e) { $("aiOut").innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
+    finally { btn.disabled = false; }
+  }
+  function renderAI() {
+    const A = state.ai; if (!A || !A.overall) return;
+    const o = A.overall, dir = o.arah === "naik" ? '<span class="pos">▲ NAIK</span>' : o.arah === "turun" ? '<span class="neg">▼ TURUN</span>' : "◆ NETRAL";
+    const react = state.news.filter((x) => x.ar != null), sig = react.filter((x) => Math.abs(x.z) > 1.96);
+    const agree = (A.items || []).filter((it) => { const n = state.news[it.id]; return n && n.ar != null && Math.abs(n.z) > 1.96 && ((it.arah === "naik" && n.ar > 0) || (it.arah === "turun" && n.ar < 0)); }).length;
+    $("aiOut").innerHTML = `<div class="ai-box"><h3>Penilaian AI · ${esc(A.model || "Gemini")}</h3>
+      <div class="kpis compact"><div class="kpi"><div class="k">Arah keseluruhan</div><div class="v">${dir}</div><div class="h">keyakinan ${esc(o.keyakinan || "?")}</div></div>
+      <div class="kpi"><div class="k">Peluang naik (AI)</div><div class="v">${o.peluang_naik != null ? pct(o.peluang_naik / 100, 0) : "–"}</div><div class="h">horizon ${ctx_h()}</div></div>
+      <div class="kpi"><div class="k">AI vs reaksi pasar</div><div class="v">${sig.length ? `${agree}/${sig.length}` : "–"}</div><div class="h">berita signifikan yang arahnya cocok</div></div></div>
+      <p class="ai-sum">${esc(o.ringkasan || "")}</p>${o.risiko ? `<p class="note"><b>Risiko utama:</b> ${esc(o.risiko)}</p>` : ""}
+      <p class="note">Peluang dari AI adalah penilaian model bahasa atas teks berita, bukan probabilitas terkalibrasi. Bandingkan dengan simulasi dan reaksi harga aktual.</p></div>`;
+  }
+  const ctx_h = () => (state.cfg ? `${state.cfg.days} periode` : "–");
+
+
+  // =====================================================================
+  // SINYAL BELI / JUAL
+  // =====================================================================
+  function renderSignal() {
+    if (!state.res || state.res.mode !== "price" || !state.data) return;
+    const d = state.data, rf = (parseFloat($("rf") && $("rf").value) || DAMO.biRate * 100) / 100;
+    const B = MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: state.res.ppy || 252 });
+    state.sig = B; const c = B.now;
+    if (!c) { $("sigOut").innerHTML = '<p class="note">Data terlalu pendek untuk sinyal (butuh ≥ 64 hari).</p>'; return; }
+    const parts = [
+      ["Tren (MA20/MA50)", c.tr, c.tr > 0 ? "harga & MA20 di atas MA50" : c.tr < 0 ? "harga & MA20 di bawah MA50" : "belum searah"],
+      ["Momentum 3 bulan", c.mo, `${spct(c.momRet)} dalam 63 hari`],
+      ["RSI 14", c.rs, `RSI ${nf(0).format(c.rsi)}${c.rs > 0 ? " — jenuh jual" : c.rs < 0 ? " — jenuh beli" : " — netral"}`]];
+    const vu = state.valUpside; if (vu != null && isFinite(vu)) parts.push(["Valuasi Damodaran", vu > 0.2 ? 1 : vu < -0.2 ? -1 : 0, `nilai intrinsik ${spct(vu)} vs harga`]);
+    const ai = state.ai && state.ai.overall; if (ai) parts.push(["AI berita", ai.arah === "naik" ? 1 : ai.arah === "turun" ? -1 : 0, `${ai.arah}, keyakinan ${ai.keyakinan || "?"}`]);
+    const total = parts.reduce((a, p) => a + p[1], 0), maxAbs = parts.length;
+    const verdict = total >= 2 ? ["BELI", "buy"] : total <= -2 ? ["JUAL", "sell"] : ["TAHAN", "hold"];
+    // zona harga
+    const m = state.res.models[state.sel], px = d.values, n = px.length, s0 = state.res.s0;
+    const w = px.slice(-20), ma20 = MCEngine.mean(w), sd20 = MCEngine.std(w, 0), bbLow = ma20 - 2 * sd20;
+    const i5 = Math.min(5, m.fan[0].length) - 1, q25 = m.fan[2][i5];
+    const lo = Math.max(bbLow, q25), zoneLo = Math.min(lo, ma20), zoneHi = Math.max(lo, ma20);
+    const rt = (v, dir) => (isIdx() ? MCEngine.roundTick(v, true, dir) : v);
+    const P = state.planRes && state.planRes.pr;
+    const tgt = P && P.targets.length ? P.targets.map((t) => `${fmtNum(t.price)} <span class="note">(${pct(t.prob, 0)})</span>`).join(" · ") : `${fmtNum(m.fan[4][m.fan[0].length - 1])} · ${fmtNum(m.fan[5][m.fan[0].length - 1])}`;
+    const stop = P && P.stop ? `${fmtNum(P.stop.price)} <span class="note">(${pct(P.stop.prob, 0)} tersentuh)</span>` : fmtNum(m.fan[1][m.fan[0].length - 1]);
+    const inZone = s0 >= zoneLo && s0 <= zoneHi;
+    const last = B.events.slice(-8).reverse();
+    const beat = B.oos.strat.sharpe > B.oos.bh.sharpe;
+    $("sigOut").innerHTML = `
+      <div class="sig-top">
+        <div class="sig-verdict ${verdict[1]}"><div class="note">Sinyal gabungan saat ini</div><div class="big">${verdict[0]}</div><div class="note">skor ${total > 0 ? "+" : ""}${total} dari ±${maxAbs}</div>
+          <div class="note" style="margin-top:6px">Sistem teknikal: ${B.position ? `<span class="pos">sedang BELI sejak ${B.entryDate} @ ${fmtNum(B.entryPx)} (${spct(s0 / B.entryPx - 1)})</span>` : "sedang di luar pasar"}</div></div>
+        <div><div class="table-wrap"><table><thead><tr><th>Komponen</th><th>Nilai</th><th>Keterangan</th></tr></thead><tbody>
+          ${parts.map(([nm, v, why]) => `<tr><td>${nm}</td><td class="${cls(v)}">${v > 0 ? "+1 beli" : v < 0 ? "−1 jual" : "0"}</td><td>${esc(why)}</td></tr>`).join("")}</tbody></table></div>
+          ${vu == null ? '<p class="note">Valuasi & AI ikut dihitung setelah bagian Valuasi termuat dan tombol "Analisis berita dengan AI" dijalankan.</p>' : ""}</div>
+      </div>
+      <div class="sig-zones">
+        <div>Area beli${inZone ? ' <span class="pos">· harga di zona</span>' : s0 > zoneHi ? ' <span class="note">· harga di atas zona</span>' : ' <span class="neg">· di bawah zona</span>'}<b>${fmtNum(rt(zoneLo, -1))} – ${fmtNum(rt(zoneHi, 1))}</b></div>
+        <div>Target jual (peluang)<b>${tgt}</b></div><div>Stop loss<b>${stop}</b></div>
+        <div>Harga sekarang<b>${fmtNum(s0)}</b></div></div>
+      <div class="subh">Backtest aturan teknikal di ${esc(d.symbol)} (beli skor ≥ 2, jual skor ≤ −1, biaya 20 bps)</div>
+      <div class="table-wrap"><table><thead><tr><th></th><th>Sharpe IS</th><th>Sharpe OOS</th><th>CAGR</th><th>Max DD</th><th>Transaksi</th><th>Menang</th><th>Rata-rata/transaksi</th><th>Lama pegang</th></tr></thead><tbody>
+        <tr><td>Aturan sinyal</td><td>${nf(2).format(B.is.strat.sharpe)}</td><td class="${beat ? "pos" : "neg"}">${nf(2).format(B.oos.strat.sharpe)}</td><td>${spct(B.all.strat.cagr)}</td><td>${pct(B.all.strat.maxDD)}</td><td>${B.trades.length}</td><td>${pct(B.winRate, 0)}</td><td class="${cls(B.avgTrade)}">${spct(B.avgTrade)}</td><td>${nf(0).format(B.avgDays)} hari</td></tr>
+        <tr><td>Beli & tahan</td><td>${nf(2).format(B.is.bh.sharpe)}</td><td>${nf(2).format(B.oos.bh.sharpe)}</td><td>${spct(B.all.bh.cagr)}</td><td>${pct(B.all.bh.maxDD)}</td><td>1</td><td>–</td><td>–</td><td>–</td></tr></tbody></table></div>
+      <div class="verdict">${beat ? "Di periode out-of-sample, aturan ini <b>lebih baik</b> dari beli-dan-tahan untuk aset ini. Tetap perlakukan sebagai petunjuk: jumlah transaksinya sedikit, sehingga hasilnya bisa kebetulan." :
+        "Di periode out-of-sample, aturan ini <b>tidak lebih baik</b> dari beli-dan-tahan untuk aset ini. Jadikan sinyal sebagai informasi pendukung, bukan perintah beli/jual."}</div>
+      <div class="subh">Sinyal terakhir</div>
+      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Aksi</th><th>Harga</th><th>Skor</th><th>Hasil transaksi</th></tr></thead><tbody>
+        ${last.map((e) => `<tr><td>${e.date}</td><td class="${e.type === "buy" ? "pos" : "neg"}">${e.type === "buy" ? "BELI" : "JUAL"}</td><td>${fmtNum(e.price)}</td><td>${e.score > 0 ? "+" : ""}${e.score}</td><td class="${cls(e.ret)}">${e.ret != null ? spct(e.ret) : ""}</td></tr>`).join("") || '<tr><td colspan="5">Belum ada sinyal.</td></tr>'}</tbody></table></div>
+      <p class="note">Bukan saran investasi. Aturan & parameter sengaja sederhana dan tetap (tidak dioptimasi) supaya backtest-nya jujur.</p>`;
+    if (state.lw) applyMarkers();
+  }
+  function applyMarkers() {
+    if (!state.lw || !state.sig || state.tf !== "D") return;
+    const have = new Set(state.data.ohlc.map((b) => b[0]));
+    const mk = state.sig.events.filter((e) => have.has(e.date)).map((e) => ({ time: e.date, position: e.type === "buy" ? "belowBar" : "aboveBar", color: e.type === "buy" ? css("--good") : css("--bad"), shape: e.type === "buy" ? "arrowUp" : "arrowDown", text: e.type === "buy" ? "B" : "S" }));
+    try { state.lw.cs.setMarkers(mk); } catch { /* */ }
+  }
+
   // ---------- event ----------
   function bind() {
     document.querySelectorAll(".controls .seg-btn").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
@@ -1458,6 +1610,11 @@
       document.querySelectorAll("#wlCols .tab").forEach((x) => x.classList.toggle("active", x === t)); renderWatch(); });
     $("wlTable").addEventListener("click", (e) => { const th = e.target.closest("th[data-i]"); if (th) { const i = +th.dataset.i; wl.dir = wl.sort === i ? -wl.dir : -1; wl.sort = i; renderWatch(); return; }
       const td = e.target.closest("td[data-s]"); if (td) openDetail(td.dataset.s); });
+    // AI & terminal
+    $("aiRun").addEventListener("click", runAI);
+    bindTerminal();
+    // fokus
+    $("focusBar").addEventListener("click", (e) => { const b = e.target.closest(".fchip"); if (b) setFocus(b.dataset.f); });
     // live
     $("liveToggle").addEventListener("click", () => { live.on = !live.on; $("liveToggle").classList.toggle("on", live.on); $("liveLbl").textContent = live.on ? "LIVE" : "LIVE OFF";
       if (live.on) startLive(); else { stopLive(); setLiveDot("closed", ""); $("liveStats").textContent = "Live dimatikan"; } });
@@ -1495,16 +1652,37 @@
     try { const { data } = await sb.from("sp_settings").select("data").eq("user_id", session.user.id).maybeSingle(); settings = (data && data.data) || {}; } catch { settings = {}; }
     if (settings.watchlist) $("wlQ").value = settings.watchlist;
     if (settings.quantlab) $("qlQ").value = settings.quantlab;
+    if (settings.focus) setFocus(settings.focus, false);
   }
-  let authMode = "login";
-  function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];
-    $("authSub").textContent = L[0]; $("authBtn").textContent = L[1]; $("authPass").hidden = $("authPassLbl").hidden = m === "reset";
-    $("authPass").autocomplete = m === "signup" ? "new-password" : "current-password"; $("authPass").required = m !== "reset";
-    $("authToSignup").hidden = m === "signup"; $("authToReset").hidden = m === "reset"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
+  let authMode = "login", otpEmail = "", resendAt = 0;
+  // sesi dianggap terverifikasi hanya bila login terakhir lewat kode/tautan email (klaim amr di token)
+  const VERIFIED = ["otp", "magiclink", "recovery"];
+  const amrOf = (sess) => { try { return JSON.parse(atob(sess.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).amr || []; } catch { return []; } };
+  const isVerified = (sess) => !!sess && amrOf(sess).some((a) => VERIFIED.includes(a.method));
+  function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"],
+      otp: ["Langkah 2 dari 2: verifikasi email", "Verifikasi"] }[m];
+    $("authSub").textContent = L[0]; $("authBtn").textContent = L[1];
+    $("authPass").hidden = $("authPassLbl").hidden = m === "reset" || m === "otp"; $("authEmail").readOnly = m === "otp";
+    $("authPass").autocomplete = m === "signup" ? "new-password" : "current-password"; $("authPass").required = m === "login" || m === "signup";
+    $("otpBox").hidden = m !== "otp"; $("authResend").hidden = m !== "otp";
+    $("authToSignup").hidden = m === "signup" || m === "otp"; $("authToReset").hidden = m === "reset" || m === "otp"; $("authToLogin").hidden = m === "login"; $("authMsg").textContent = ""; }
+  async function sendOtp(email) {
+    if (Date.now() < resendAt) { $("authMsg").textContent = `Tunggu ${Math.ceil((resendAt - Date.now()) / 1000)} detik sebelum kirim ulang.`; return; }
+    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname } });
+    if (error) throw error;
+    resendAt = Date.now() + 60000; try { sessionStorage.setItem("sp_otp_sent", email + "|" + Date.now()); } catch { /* */ }
+  }
+  async function startOtp(email, alreadySent) {
+    otpEmail = email; $("authEmail").value = email; setAuthMode("otp"); $("authGate").hidden = false; $("userBox").hidden = true;
+    $("otpNote").innerHTML = `Kode 6 digit dikirim ke <b>${esc(email)}</b>. Masukkan kodenya, atau klik tautan di email itu (membuka halaman ini). Cek folder spam bila tidak muncul.`;
+    if (!alreadySent) { try { $("authMsg").textContent = "Mengirim kode…"; await sendOtp(email); $("authMsg").textContent = ""; } catch (err) { $("authMsg").textContent = authErr(err); $("authMsg").classList.add("err"); } }
+    setTimeout(() => $("authCode").focus(), 50);
+  }
+  function recentlySent(email) { try { const [e, t] = (sessionStorage.getItem("sp_otp_sent") || "").split("|"); return e === email && Date.now() - +t < 600000; } catch { return false; } }
   function showAuth(msg) { $("authGate").hidden = false; $("userBox").hidden = true; stopLive(); if (msg) { $("authMsg").textContent = msg; $("authMsg").classList.add("err"); } }
   const authErr = (e) => { const m = (e && e.message) || String(e);
     return /Invalid login/i.test(m) ? "Email atau password salah." : /Email not confirmed/i.test(m) ? "Email belum dikonfirmasi — cek kotak masuk email kamu." : /already registered/i.test(m) ? "Email sudah terdaftar, silakan masuk." :
-      /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Terlalu banyak percobaan, coba lagi beberapa menit lagi." : m; };
+      /Password should/i.test(m) ? "Password minimal 6 karakter." : /rate limit/i.test(m) ? "Batas kirim email tercapai (Supabase bawaan ±2 email/jam). Coba lagi nanti." : /expired|invalid.*(otp|token)|Token has expired/i.test(m) ? "Kode salah atau sudah kedaluwarsa. Kirim ulang kode." : /Signups not allowed|not found|User not found/i.test(m) ? "Email ini belum terdaftar." : m; };
   async function onAuthed(s) {
     session = s; $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
     if (booted) return; booted = true;
@@ -1518,21 +1696,28 @@
     $("authToReset").onclick = (e) => { e.preventDefault(); setAuthMode("reset"); };
     $("authToLogin").onclick = (e) => { e.preventDefault(); setAuthMode("login"); };
     $("logoutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+    $("authResend").onclick = async (e) => { e.preventDefault(); try { await sendOtp(otpEmail); $("authMsg").classList.remove("err"); $("authMsg").textContent = "Kode baru sudah dikirim."; } catch (err) { $("authMsg").textContent = authErr(err); $("authMsg").classList.add("err"); } };
+    $("authToLogin").addEventListener("click", async () => { if (authMode === "otp") { try { await sb.auth.signOut(); } catch { /* */ } $("authEmail").readOnly = false; } });
     $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
       msg.classList.remove("err"); msg.textContent = "Memproses…"; $("authBtn").disabled = true;
       try {
-        if (authMode === "login") { const { data, error } = await sb.auth.signInWithPassword({ email, password: pass }); if (error) throw error; msg.textContent = ""; await onAuthed(data.session); }
+        if (authMode === "login") { const { data, error } = await sb.auth.signInWithPassword({ email, password: pass }); if (error) throw error; msg.textContent = "";
+          if (isVerified(data.session)) await onAuthed(data.session); else await startOtp(email, false); }
+        else if (authMode === "otp") { const code = $("authCode").value.replace(/\s/g, ""); if (code.length < 6) throw new Error("Masukkan kode dari email.");
+          const { data, error } = await sb.auth.verifyOtp({ email: otpEmail, token: code, type: "email" }); if (error) throw error;
+          try { sessionStorage.removeItem("sp_otp_sent"); } catch { /* */ } msg.textContent = ""; await onAuthed(data.session); }
         else if (authMode === "signup") { const { data, error } = await sb.auth.signUp({ email, password: pass, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error;
-          if (data.session) await onAuthed(data.session); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
+          if (data.session && isVerified(data.session)) await onAuthed(data.session); else if (data.session) await startOtp(email, false); else { msg.textContent = "Akun dibuat. Cek email kamu untuk konfirmasi, lalu masuk."; setTimeout(() => setAuthMode("login"), 50); } }
         else { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; msg.textContent = "Tautan atur ulang password sudah dikirim ke email kamu."; }
       } catch (err) { msg.textContent = authErr(err); msg.classList.add("err"); }
       finally { $("authBtn").disabled = false; } };
     if (!sb) { $("authMsg").textContent = "Gagal memuat modul login. Periksa koneksi lalu muat ulang."; $("authMsg").classList.add("err"); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
-      if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") showAuth();
+      if (s && isVerified(s)) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { if (authMode !== "otp") showAuth(); }
     });
-    const { data } = await sb.auth.getSession(); if (data.session) onAuthed(data.session);
+    const { data } = await sb.auth.getSession();
+    if (data.session) { if (isVerified(data.session)) onAuthed(data.session); else startOtp(data.session.user.email, recentlySent(data.session.user.email)); }
   }
   startAuth();
 })();

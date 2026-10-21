@@ -942,6 +942,36 @@
       exposure: mean(expo), turnoverYr: mean(turn) * ppy, tradeDays: trades, hit: strat.filter((r) => r > 0).length / Math.max(1, expo.filter((e) => e > 0).length), T };
   }
 
-  const api = { quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // ---------- sinyal beli/jual teknikal + backtest pada aset yang sama ----------
+  // skor_t = tren (±1) + momentum (±1) + RSI (+1 jenuh jual / −1 jenuh beli); beli bila skor ≥ entry, jual bila skor ≤ exit
+  function signalBacktest(dates, px, opt = {}) {
+    const o = { fast: 20, slow: 50, mom: 63, lo: 30, hi: 70, entry: 2, exit: -1, costBps: 20, split: 0.7, ppy: 252, rf: 0, ...opt };
+    const n = px.length, rsi = rsiSeries(px), cost = o.costBps / 1e4;
+    const sma = (k, t) => { let s = 0; for (let i = t - k + 1; i <= t; i++) s += px[i]; return s / k; };
+    const comp = (t) => { if (t < Math.max(o.slow, o.mom)) return null;
+      const f = sma(o.fast, t), sl = sma(o.slow, t), tr = px[t] > sl && f > sl ? 1 : px[t] < sl && f < sl ? -1 : 0;
+      const mo = px[t] / px[t - o.mom] - 1 > 0 ? 1 : -1, r = rsi[t], rs = r == null ? 0 : r < o.lo ? 1 : r > o.hi ? -1 : 0;
+      return { tr, mo, rs, score: tr + mo + rs, rsi: r, maF: f, maS: sl, momRet: px[t] / px[t - o.mom] - 1 }; };
+    let pos = 0, entryPx = 0, entryI = 0; const events = [], trades = [], strat = [], bh = [];
+    for (let t = 1; t < n; t++) {
+      const r = px[t] / px[t - 1] - 1; bh.push(r);
+      strat.push(pos * r);
+      const c = comp(t); if (!c) continue;
+      if (pos === 0 && c.score >= o.entry) { pos = 1; strat[strat.length - 1] -= cost; entryPx = px[t]; entryI = t; events.push({ date: dates[t], type: "buy", price: px[t], score: c.score }); }
+      else if (pos === 1 && c.score <= o.exit) { pos = 0; strat[strat.length - 1] -= cost; const ret = (px[t] / entryPx) * (1 - cost) / (1 + cost) - 1;
+        trades.push({ in: dates[entryI], out: dates[t], ret, days: t - entryI }); events.push({ date: dates[t], type: "sell", price: px[t], score: c.score, ret }); }
+    }
+    const k = Math.floor(strat.length * o.split);
+    const seg = (a, b) => ({ strat: perfStats(strat.slice(a, b), o.ppy, o.rf), bh: perfStats(bh.slice(a, b), o.ppy, o.rf) });
+    const eqS = [1], eqB = [1]; for (let i = 0; i < strat.length; i++) { eqS.push(eqS[i] * (1 + strat[i])); eqB.push(eqB[i] * (1 + bh[i])); }
+    const wins = trades.filter((x) => x.ret > 0);
+    return { now: comp(n - 1), position: pos, entryPx: pos ? entryPx : null, entryDate: pos ? dates[entryI] : null, events, trades, eqS, eqB,
+      is: seg(0, k), oos: seg(k, strat.length), all: seg(0, strat.length), splitDate: dates[k + 1],
+      winRate: trades.length ? wins.length / trades.length : NaN, avgTrade: trades.length ? mean(trades.map((x) => x.ret)) : NaN,
+      avgDays: trades.length ? mean(trades.map((x) => x.days)) : NaN, exposure: strat.filter((x) => x !== 0).length / strat.length, opt: o };
+  }
+
+  const api = { signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

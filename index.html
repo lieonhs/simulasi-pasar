@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" data-theme="terminal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261021134212">
+<link rel="stylesheet" href="style.css?v=20261021151944">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -24,9 +24,14 @@
     <input id="authEmail" type="email" autocomplete="email" required>
     <label class="lbl" for="authPass" id="authPassLbl">Password</label>
     <input id="authPass" type="password" autocomplete="current-password" minlength="6">
+    <div id="otpBox" hidden>
+      <label class="lbl" for="authCode">Kode verifikasi dari email</label>
+      <input id="authCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="6 digit">
+      <p class="note" id="otpNote"></p>
+    </div>
     <button id="authBtn" class="run" type="submit">Masuk</button>
     <div id="authMsg" class="status"></div>
-    <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a></div>
+    <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a><a href="#" id="authResend" hidden>Kirim ulang kode</a></div>
   </form>
 </div>
 <header class="top">
@@ -37,7 +42,24 @@
   </div>
 </header>
 
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen">Watchlist (banyak saham)</button><button class="view-btn" data-v="quant">Quant Lab</button><button class="view-btn active" data-v="detail">Analisis 1 aset</button></nav>
+<div class="topbar">
+<div class="tape" id="tape"><div class="tape-inner" id="tapeInner"><span class="tape-item">MEMUAT HARGA…</span></div></div>
+<div class="wrap cmdrow"><span class="cmd-brand">SIMULASI PASAR</span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="KETIK TICKER / NAMA lalu ENTER  ⟨GO⟩"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="themeBtn" title="Ganti tema">TERANG</button></div>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button></nav>
+<nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
+  <span class="fb-lbl">Fokus:</span>
+  <button class="fchip active" data-f="all">Semua</button>
+  <button class="fchip" data-f="overview">Ringkasan</button>
+  <button class="fchip" data-f="signal">Sinyal beli/jual</button>
+  <button class="fchip" data-f="candle">Candle & lot</button>
+  <button class="fchip" data-f="proj">Proyeksi</button>
+  <button class="fchip" data-f="plan">Rencana lot</button>
+  <button class="fchip" data-f="cmp">Perbandingan</button>
+  <button class="fchip" data-f="quant">Kuantitatif & opsi</button>
+  <button class="fchip" data-f="val">Valuasi</button>
+  <button class="fchip" data-f="news">Berita</button>
+  <button class="fchip" data-f="trust">Keyakinan model</button>
+</nav></div>
 
 <section class="wrap" id="screenView" hidden>
   <section class="card">
@@ -253,7 +275,7 @@
   </section>
 
   <section id="out" hidden>
-    <div class="card head">
+    <div class="card head" id="headCard">
       <div>
         <div id="asset" class="asset"></div>
         <div id="assetMeta" class="meta"></div>
@@ -268,8 +290,25 @@
       </div>
     </div>
 
-    <div id="kpis" class="kpis"></div>
+    <div id="kpis" class="kpis span-all"></div>
 
+
+    <div class="card price-only" id="signalCard">
+      <div class="card-h"><h2>Sinyal beli / jual</h2><span class="tag">aturan sistematis + backtest</span></div>
+      <div id="sigOut"></div>
+      <details class="formula"><summary>Rumus · sinyal</summary><div class="fx">
+        <p>Tren \( T_t = +1 \) bila \( C_t > \text{MA}_{50} \) dan \( \text{MA}_{20} > \text{MA}_{50} \); \( -1 \) bila keduanya di bawah; selain itu 0.</p>
+        <p>Momentum \( M_t = \text{sign}\left(\tfrac{C_t}{C_{t-63}} - 1\right) \); RSI \( R_t = +1 \) bila RSI < 30, \( -1 \) bila RSI > 70.</p>
+        <p>Skor teknikal \( S_t = T_t + M_t + R_t \in [-3, 3] \). Sistem <b>beli</b> saat \( S_t \ge 2 \), <b>jual</b> saat \( S_t \le -1 \); posisi berlaku besoknya, biaya 20 bps per transaksi.</p>
+        <p>Skor gabungan = \( S_t \) + valuasi (\( +1 \) bila nilai intrinsik > harga 20%, \( -1 \) bila < −20%) + AI (\( \pm1 \) bila arah naik/turun). ≥ 2 → BELI, ≤ −2 → JUAL, lainnya TAHAN.</p>
+        <p>Area beli: antara \( \max(\text{BB}_{bawah},\, Q_{0.25}(P_{t+5})) \) dan \( \text{MA}_{20} \); target & stop dari rencana jual per lot.</p></div></details>
+      <details class="howto"><summary>Cara baca</summary><ul>
+        <li><b>Sinyal</b> = ringkasan aturan sederhana yang bisa diuji, bukan ramalan. Setiap komponen dan kontribusinya ditampilkan supaya kamu tahu <i>kenapa</i>.</li>
+        <li><b>Area beli</b>: zona harga yang relatif murah terhadap pergerakan normal (bawah Bollinger / kuartil bawah proyeksi 1 minggu sampai MA20). Membeli di zona ini mengurangi risiko mengejar harga.</li>
+        <li><b>Target jual & stop loss</b> diambil dari bagian Rencana jual per lot (peluang tersentuh dari simulasi).</li>
+        <li><b>Tanda B/S di grafik candle (timeframe 1H)</b> = kapan aturan ini membeli/menjual di masa lalu.</li>
+        <li><b>Backtest</b>: kalau aturan ini tidak mengalahkan beli-dan-tahan di periode out-of-sample, jangan jadikan sinyal sebagai perintah. Untuk banyak saham, hasilnya memang begitu.</li></ul></details>
+    </div>
     <div class="card" id="candleCard">
       <div class="card-h">
         <h2>Pergerakan harga</h2>
@@ -317,7 +356,7 @@
       </details>
     </div>
 
-    <div class="card">
+    <div class="card" id="fanCard">
       <div class="card-h">
         <h2 id="fanTitle">Proyeksi</h2>
         <div id="modelTabs" class="tabs"></div>
@@ -506,6 +545,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
     <div class="card price-only" id="newsCard">
       <h2>Berita & dampaknya ke harga</h2>
       <div id="newsStatus" class="status"></div>
+      <div class="ai-row"><button id="aiRun" class="run alt ai-btn">Analisis berita dengan AI</button><span class="note" id="aiNote">Gemini membaca judul + ringkasan berita, lalu memberi arah, perkiraan peluang, dan ringkasan.</span></div>
+      <div id="aiOut"></div>
       <div id="newsSummary"></div>
       <div class="row"><div class="tabs" id="newsFilter"><button class="tab active" data-f="all">Semua</button><button class="tab" data-f="big">Reaksi signifikan</button><button class="tab" data-f="pos">Sentimen +</button><button class="tab" data-f="neg">Sentimen −</button></div></div>
       <div id="newsList" class="news-list"></div>
@@ -518,10 +559,11 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
         <li><b>3 hari</b> = jumlah reaksi abnormal hari itu + 2 hari bursa berikutnya (berita sering dicerna bertahap).</li>
         <li><b>Signifikan</b> jika reaksinya lebih dari ±1,96 standar deviasi harian biasa (peluang < 5% terjadi kebetulan pada hari tanpa berita).</li>
         <li><b>Sentimen judul</b> dihitung dari kamus kata (naik, laba, buyback vs turun, rugi, gugatan, dst.). Ini kasar; selalu baca beritanya sendiri.</li>
+        <li><b>Analisis AI</b> (Gemini): ringkasan berbahasa Indonesia, arah dampak, dan “peluang” per berita serta kesimpulan keseluruhan. Angka peluang AI adalah <b>penilaian model bahasa, bukan probabilitas terkalibrasi</b>. Bandingkan selalu dengan reaksi harga aktual di sebelahnya: bila AI bilang positif tapi harga turun signifikan, pasar tidak setuju.</li>
         <li><b>Penting:</b> jika ada beberapa berita di hari yang sama, reaksinya sama untuk semua. Pengaruh ini <i>korelasi waktu</i>, bukan bukti bahwa berita itu penyebabnya.</li></ul>
       </details>
     </div>
-    <div class="card">
+    <div class="card" id="sumCard">
       <h2>Distribusi di akhir horizon</h2>
       <div class="table-wrap"><table id="sumTable"></table></div>
       <details class="formula"><summary>Rumus</summary><div class="fx"><p>\( \text{VaR}_{95} = -Q_{0.05}\left(\tfrac{P_{t+h}}{P_t}-1\right),\quad \text{CVaR}_{95} = -\mathbb{E}\left[R \mid R \le -\text{VaR}_{95}\right] \)</p></div></details>
@@ -543,7 +585,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <p><b>Kupiec POF</b>: \( LR = -2\ln\dfrac{(1-p)^{n-x}p^x}{(1-\hat p)^{n-x}\hat p^{x}} \sim \chi^2_1,\ \ \hat p = x/n,\ p = 0{,}05 \)</p></div></details>
     </div>
 
-    <div class="card">
+    <div class="card" id="histCard">
       <h2 id="histTitle">Histogram nilai akhir</h2>
       <div class="chart-box"><canvas id="hist"></canvas></div>
       <details class="howto"><summary>Cara baca</summary>
@@ -551,7 +593,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
       </details>
     </div>
 
-    <div class="card">
+    <div class="card" id="paramCard">
       <h2>Parameter model</h2>
       <div id="params" class="params"></div>
       <details class="howto"><summary>Cara baca</summary>
@@ -562,7 +604,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
       </details>
     </div>
 
-    <details class="card caveats" open>
+    <details class="card caveats" id="caveatCard" open>
       <summary>Batasan yang perlu kamu ingat</summary>
       <ul id="caveats"></ul>
     </details>
@@ -572,8 +614,9 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
-<script>window.APP_V = "20261021134212";</script>
-<script src="engine.js?v=20261021134212"></script>
-<script src="app.js?v=20261021134212"></script>
+<script>try{var t=localStorage.getItem("sp_theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<script>window.APP_V = "20261021151944";</script>
+<script src="engine.js?v=20261021151944"></script>
+<script src="app.js?v=20261021151944"></script>
 </body>
 </html>
