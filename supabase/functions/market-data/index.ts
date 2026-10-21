@@ -5,6 +5,7 @@
 // GET ?action=search&q=bbca
 // GET ?action=news&symbol=BBCA.JK&q=saham BBCA
 // GET ?action=fundamentals&symbol=TLKM.JK
+// GET ?action=intraday&symbol=BBCA.JK&interval=5m   (1m,2m,5m,15m,30m,60m,90m)
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -146,6 +147,35 @@ async function getFundamentals(symbol: string) {
   return out;
 }
 
+
+// ---------- intraday (candlestick per menit/jam) ----------
+const INTRA: Record<string, string> = { "1m": "5d", "2m": "1mo", "5m": "1mo", "15m": "1mo", "30m": "1mo", "60m": "6mo", "90m": "1mo" };
+async function yahooIntraday(symbol: string, interval: string, range: string) {
+  for (const host of ["query1", "query2"]) {
+    const r = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`, { headers: UA });
+    if (!r.ok) continue;
+    const res = (await r.json())?.chart?.result?.[0];
+    if (!res?.timestamp) continue;
+    const q = res.indicators?.quote?.[0] ?? {}, bars: number[][] = [];
+    res.timestamp.forEach((t: number, i: number) => { const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+      if ([o, h, l, c].every((x) => x != null && isFinite(x) && x > 0)) bars.push([t, o, h, l, c, q.volume?.[i] ?? 0]); });
+    const m = res.meta ?? {};
+    return { source: "yahoo", symbol: m.symbol ?? symbol, interval, gmtoffset: m.gmtoffset ?? 0, timezone: m.exchangeTimezoneName ?? "", currency: m.currency ?? "",
+      price: m.regularMarketPrice ?? null, priceTime: m.regularMarketTime ?? null, prevClose: m.chartPreviousClose ?? m.previousClose ?? null,
+      period: m.currentTradingPeriod?.regular ?? null, bars };
+  }
+  return null;
+}
+async function binanceIntraday(symbol: string, interval: string) {
+  const m = symbol.toUpperCase().match(/^([A-Z0-9]+)-USDT?$/); if (!m) return null;
+  const iv = interval === "60m" ? "1h" : interval === "90m" ? "1h" : interval === "2m" ? "1m" : interval;
+  const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${m[1]}USDT&interval=${iv}&limit=1000`);
+  if (!r.ok) return null; const k = await r.json(); if (!Array.isArray(k) || !k.length) return null;
+  const bars = k.map((x: any) => [Math.floor(x[0] / 1000), +x[1], +x[2], +x[3], +x[4], +x[5]]);
+  const last = bars[bars.length - 1];
+  return { source: "binance", symbol: `${m[1]}-USDT`, interval, gmtoffset: 0, timezone: "UTC", currency: "USDT", price: last[4], priceTime: last[0], prevClose: null, period: null, bars };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const u = new URL(req.url);
@@ -159,6 +189,14 @@ Deno.serve(async (req) => {
       const j = await r.json();
       const quotes = (j.quotes ?? []).filter((x: any) => x.symbol).map((x: any) => ({ symbol: x.symbol, name: x.longname ?? x.shortname ?? "", exch: x.exchDisp ?? "", type: x.quoteType ?? "" }));
       return json({ quotes }, 200, 3600);
+    }
+    if (action === "intraday") {
+      const sym = (u.searchParams.get("symbol") ?? "").trim(), iv = u.searchParams.get("interval") ?? "5m";
+      if (!SYMBOL_RE.test(sym)) return json({ error: "Simbol tidak valid" }, 400);
+      if (!INTRA[iv]) return json({ error: "Interval tidak valid" }, 400);
+      const data = (await yahooIntraday(sym, iv, INTRA[iv])) ?? (await binanceIntraday(sym, iv));
+      if (!data || !data.bars.length) return json({ error: `Data intraday ${sym} tidak tersedia` }, 404);
+      return json(data, 200, 30);
     }
     if (action === "fundamentals") {
       const sym = (u.searchParams.get("symbol") ?? "").trim();

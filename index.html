@@ -152,7 +152,7 @@
     <div class="card" id="candleCard">
       <div class="card-h">
         <h2>Pergerakan harga</h2>
-        <div class="tabs" id="tfTabs"><button class="tab active" data-tf="D">Harian</button><button class="tab" data-tf="W">Mingguan</button><button class="tab" data-tf="M">Bulanan</button></div>
+        <div class="tabs" id="tfTabs"><button class="tab" data-tf="1m">1m</button><button class="tab" data-tf="5m">5m</button><button class="tab" data-tf="15m">15m</button><button class="tab" data-tf="30m">30m</button><button class="tab" data-tf="60m">1j</button><button class="tab active" data-tf="D">1H</button><button class="tab" data-tf="W">1Mg</button><button class="tab" data-tf="M">1B</button></div>
       </div>
       <div class="toolbar">
         <div class="tabs" id="rgTabs"><button class="tab" data-rg="90">3B</button><button class="tab active" data-rg="182">6B</button><button class="tab" data-rg="365">1T</button><button class="tab" data-rg="1095">3T</button><button class="tab" data-rg="0">Semua</button></div>
@@ -164,13 +164,15 @@
           <label><input type="checkbox" value="rsi" checked> RSI</label>
         </div>
       </div>
+      <div id="liveRow" class="live-row" hidden><label class="mini"><input type="checkbox" id="liveChk"> Live (perbarui tiap 60 detik)</label><span id="liveInfo" class="note"></span></div>
       <div id="ohlcLegend" class="ohlc-legend"></div>
       <div id="candle" class="candle-box"></div>
       <div id="rsiWrap"><div class="rsi-lbl">RSI 14</div><div id="rsi" class="rsi-box"></div></div>
       <div id="techStats" class="tech-stats"></div>
       <p id="techText" class="lead small-lead"></p>
       <details class="howto"><summary>Cara baca</summary>
-        <ul><li><b>Candle</b>: badan hijau = harga tutup lebih tinggi dari harga buka (naik), merah = turun. Sumbu tipis di atas/bawah menunjukkan harga tertinggi dan terendah di periode itu.</li>
+        <ul><li><b>Timeframe</b>: 1m/5m/15m/30m/1j = satu candle per menit/jam (intraday); 1H/1Mg/1B = harian/mingguan/bulanan. Data 1 menit hanya ±5 hari terakhir, 5–30 menit ±1 bulan, 1 jam ±6 bulan. Harga saham IDX dari Yahoo biasanya tertunda ±10–15 menit, jadi jangan dipakai untuk scalping.</li>
+        <li><b>Candle</b>: badan hijau = harga tutup lebih tinggi dari harga buka (naik), merah = turun. Sumbu tipis di atas/bawah menunjukkan harga tertinggi dan terendah di periode itu.</li>
         <li><b>MA20 / MA50</b>: rata-rata harga 20 dan 50 periode terakhir. Harga di atas keduanya = tren sedang naik; di bawah = tren turun. MA20 memotong MA50 ke atas sering disebut <i>golden cross</i>.</li>
         <li><b>Bollinger Band</b>: MA20 ± 2 standar deviasi. Pita menyempit = pasar tenang dan sering mendahului gerakan besar; harga menembus pita = gerakan kuat.</li>
         <li><b>Volume</b>: berapa banyak yang diperdagangkan. Kenaikan harga dengan volume besar lebih meyakinkan daripada dengan volume tipis.</li>

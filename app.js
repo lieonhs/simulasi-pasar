@@ -207,7 +207,7 @@
       state.res = res; state.cfg = cfg;
       state.sel = pickBest(res) || Object.keys(res.models)[0];
       $("out").hidden = false;
-      if (newSymbol) { setPlanDefaults(); setCmpDefaults(); state.cmp = null; $("cmpOut").hidden = true; }
+      if (newSymbol) { setPlanDefaults(); setCmpDefaults(); state.cmp = null; $("cmpOut").hidden = true; state.intra = null; }
       else { $("pEntry").placeholder = fmtNum(res.s0); }
       render();
       writeUrl();
@@ -468,17 +468,55 @@
       else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; out[i] = 100 - 100 / (1 + g / (l || 1e-12)); } }
     return out;
   }
-  function renderCandle() {
+  const INTRA_TF = { "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "60m": 3600 };
+  const isIntra = () => !!INTRA_TF[state.tf];
+  async function loadIntraday() {
+    const sym = state.data.symbol, iv = state.tf, key = sym + "|" + iv;
+    const r = await fetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=${iv}`);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || `Gagal ambil data intraday (${r.status})`);
+    // gabungkan tick terakhir yang belum genap satu interval ke candle sebelumnya
+    const step = INTRA_TF[iv], bars = [];
+    for (const b of j.bars) { const p = bars[bars.length - 1];
+      if (p && b[0] - p[0] < step && Math.floor(b[0] / step) === Math.floor(p[0] / step)) { p[2] = Math.max(p[2], b[2]); p[3] = Math.min(p[3], b[3]); p[4] = b[4]; p[5] += b[5]; }
+      else bars.push(b.slice()); }
+    state.intra = { key, data: j, bars, at: Date.now() };
+  }
+  function setRangeTabs() {
+    const opts = isIntra() ? [["1", "1 hari"], ["3", "3 hari"], ["5", "5 hari"], ["0", "Semua"]] : [["90", "3B"], ["182", "6B"], ["365", "1T"], ["1095", "3T"], ["0", "Semua"]];
+    if (!opts.some(([v]) => +v === state.rg)) state.rg = isIntra() ? 1 : 182;
+    $("rgTabs").innerHTML = opts.map(([v, l]) => `<button class="tab ${+v === state.rg ? "active" : ""}" data-rg="${v}">${l}</button>`).join("");
+    $("liveRow").hidden = !isIntra();
+  }
+  let liveTimer = null;
+  function setLive(on) { clearInterval(liveTimer); liveTimer = null;
+    if (on) liveTimer = setInterval(async () => { if (!isIntra() || $("candleCard").hidden || document.hidden) return; try { await loadIntraday(); renderCandle(true); } catch { /* coba lagi menit berikutnya */ } }, 60000); }
+  async function renderCandle(keepView) {
+    if (isIntra()) {
+      const key = state.data.symbol + "|" + state.tf;
+      if (!state.intra || state.intra.key !== key) {
+        $("ohlcLegend").textContent = "Mengambil data intraday…";
+        try { await loadIntraday(); } catch (e) { $("ohlcLegend").textContent = e.message; return; }
+      }
+    }
+    drawCandle(keepView);
+  }
+  function drawCandle(keepView) {
     const d = state.data;
     if (!d.ohlc || d.ohlc.length <= 30 || typeof LightweightCharts === "undefined") { $("candleCard").hidden = true; return; }
-    if (state.lw) { state.lw.main.remove(); state.lw.rsi.remove(); state.lw = null; }
-    const bars = aggregate(d.ohlc, state.tf), closes = bars.map((b) => b[4]);
+    const intra = isIntra() && state.intra, off = intra ? state.intra.data.gmtoffset || 0 : 0;
+    let prevRange = null, prevN = 0;
+    if (state.lw) { if (keepView) { prevRange = state.lw.main.timeScale().getVisibleLogicalRange(); prevN = state.lw.n; } state.lw.main.remove(); state.lw.rsi.remove(); state.lw = null; }
+    // intraday: waktu digeser ke jam bursa (sumbu menampilkan jam lokal bursa)
+    const bars = intra ? state.intra.bars.map((b) => [b[0] + off, b[1], b[2], b[3], b[4], b[5]]) : aggregate(d.ohlc, state.tf), closes = bars.map((b) => b[4]);
+    const tLabel = (t) => (typeof t === "number" ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") : t);
     const show = new Set([...document.querySelectorAll("#indChecks input:checked")].map((x) => x.value));
     const ink = css("--ink"), muted = css("--muted"), line = css("--line"), card = css("--card"), up = css("--good"), dn = css("--bad");
     const opts = (h) => ({ height: h, layout: { background: { color: card }, textColor: muted, fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
       grid: { vertLines: { color: line }, horzLines: { color: line } }, rightPriceScale: { borderColor: line }, timeScale: { borderColor: line },
       crosshair: { mode: 0 }, localization: { priceFormatter: (p) => fmtNum(p), locale: "id-ID" } });
-    const el = $("candle"), main = LightweightCharts.createChart(el, { ...opts(el.clientHeight), width: el.clientWidth });
+    const tsOpt = intra ? { timeVisible: true, secondsVisible: false } : {};
+    const el = $("candle"), base = opts(el.clientHeight), main = LightweightCharts.createChart(el, { ...base, width: el.clientWidth, timeScale: { ...base.timeScale, ...tsOpt } });
     const cs = main.addCandlestickSeries({ upColor: up, downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn });
     cs.setData(bars.map((b) => ({ time: b[0], open: b[1], high: b[2], low: b[3], close: b[4] })));
     const lineSer = (vals, color, w = 1.5, style = 0) => { const s = main.addLineSeries({ color, lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
@@ -501,19 +539,26 @@
     rs.createPriceLine({ price: 30, color: up, lineStyle: 2, lineWidth: 1, axisLabelVisible: false });
     rchart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top: 0.1, bottom: 0.1 } });
     main.timeScale().subscribeVisibleLogicalRangeChange((r) => r && rchart.timeScale().setVisibleLogicalRange(r));
-    state.lw = { main, rsi: rchart, cs };
+    state.lw = { main, rsi: rchart, cs, n: bars.length };
 
     // rentang tampilan
     const lastT = bars[bars.length - 1][0];
-    if (state.rg > 0) { const f = new Date(lastT); f.setDate(f.getDate() - state.rg); main.timeScale().setVisibleRange({ from: f.toISOString().slice(0, 10), to: lastT }); }
+    if (prevRange) { const sh = bars.length - prevN; main.timeScale().setVisibleLogicalRange({ from: prevRange.from + sh, to: prevRange.to + sh }); }
+    else if (intra && state.rg > 0) { const days = [...new Set(bars.map((b) => tLabel(b[0]).slice(0, 10)))]; const firstDay = days[Math.max(0, days.length - state.rg)];
+      const i0 = bars.findIndex((b) => tLabel(b[0]).slice(0, 10) === firstDay); main.timeScale().setVisibleLogicalRange({ from: i0 - 0.5, to: bars.length - 0.5 }); }
+    else if (!intra && state.rg > 0) { const f = new Date(lastT); f.setDate(f.getDate() - state.rg); main.timeScale().setVisibleRange({ from: f.toISOString().slice(0, 10), to: lastT }); }
     else main.timeScale().fitContent();
+    if (intra) { const D = state.intra.data, pt = D.priceTime ? new Date((D.priceTime + off) * 1000).toISOString().slice(11, 16) : "–";
+      const lastDay = tLabel(bars[bars.length - 1][0]).slice(0, 10), prevD = d.ohlc.filter((x) => x[0] < lastDay).pop(), dl = prevD ? prevD[4] : null, lastPx = bars[bars.length - 1][4];
+      const ago = D.priceTime ? Math.round((Date.now() / 1000 - D.priceTime) / 60) : null;
+      $("liveInfo").innerHTML = `Harga terakhir <b>${fmtNum(lastPx)}</b>${dl ? ` (<span class="${cls(lastPx / dl - 1)}">${spct(lastPx / dl - 1, 2)}</span> vs tutup kemarin)` : ""} · pukul ${pt} ${esc(D.timezone === "Asia/Jakarta" ? "WIB" : D.timezone)}${ago != null && ago > 20 ? ` · data ${ago} menit lalu (pasar tutup / tertunda)` : ""} · diperbarui ${new Date(state.intra.at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`; }
 
     const legend = (b, i) => { if (!b) return; const prev = i > 0 ? bars[i - 1][4] : b[1], ch = b[4] / prev - 1;
-      $("ohlcLegend").innerHTML = `${b[0]} · O ${fmtNum(b[1])} · H ${fmtNum(b[2])} · L ${fmtNum(b[3])} · C <span class="${cls(ch)}">${fmtNum(b[4])} (${spct(ch, 2)})</span> · Vol ${nf(0).format(b[5])}${rv[i] != null ? ` · RSI ${nf(0).format(rv[i])}` : ""}`; };
+      $("ohlcLegend").innerHTML = `${tLabel(b[0])} · O ${fmtNum(b[1])} · H ${fmtNum(b[2])} · L ${fmtNum(b[3])} · C <span class="${cls(ch)}">${fmtNum(b[4])} (${spct(ch, 2)})</span> · Vol ${nf(0).format(b[5])}${rv[i] != null ? ` · RSI ${nf(0).format(rv[i])}` : ""}`; };
     const idxOf = new Map(bars.map((b, i) => [b[0], i]));
     legend(bars[bars.length - 1], bars.length - 1);
     main.subscribeCrosshairMove((p) => { if (!p.time) return legend(bars[bars.length - 1], bars.length - 1);
-      const t = typeof p.time === "string" ? p.time : `${p.time.year}-${String(p.time.month).padStart(2, "0")}-${String(p.time.day).padStart(2, "0")}`;
+      const t = typeof p.time === "number" ? p.time : typeof p.time === "string" ? p.time : `${p.time.year}-${String(p.time.month).padStart(2, "0")}-${String(p.time.day).padStart(2, "0")}`;
       const i = idxOf.get(t); if (i != null) legend(bars[i], i); });
 
     // statistik teknikal (selalu dari data harian)
@@ -1062,7 +1107,8 @@
       const td = e.target.closest("td[data-s]"); if (td) openDetail(td.dataset.s); });
     // candlestick
     $("tfTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.tf = t.dataset.tf;
-      document.querySelectorAll("#tfTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
+      document.querySelectorAll("#tfTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); setRangeTabs(); renderCandle(); });
+    $("liveChk").addEventListener("change", (e) => setLive(e.target.checked));
     $("rgTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (!t) return; state.rg = +t.dataset.rg;
       document.querySelectorAll("#rgTabs .tab").forEach((x) => x.classList.toggle("active", x === t)); renderCandle(); });
     $("indChecks").addEventListener("change", renderCandle);
@@ -1070,7 +1116,8 @@
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.res && render());
   }
 
-  readUrl(); setMode(state.mode, true); bind(); wlLoad();
+  if (/[?&]debug\b/.test(location.search)) window.__sp = state;
+  readUrl(); setMode(state.mode, true); bind(); wlLoad(); setRangeTabs();
   const P = new URLSearchParams(location.search);
   if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
 })();

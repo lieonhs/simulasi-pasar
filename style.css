@@ -153,3 +153,8 @@ textarea:focus { border-color: var(--accent); }
 .howto-card summary { font-weight: 600; cursor: pointer; }
 .readme { margin: 10px 0 0; padding-left: 20px; font-size: 14px; } .readme li { margin-bottom: 7px; }
 .err-row td { color: var(--bad); }
+
+.live-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+#tfTabs .tab { padding: 5px 8px; }
+/* jangan biarkan gaya tabel umum mengganggu tabel internal Lightweight Charts */
+.candle-box td, .candle-box th, .rsi-box td, .rsi-box th { padding: 0 !important; border: 0 !important; min-width: 0 !important; max-width: none !important; white-space: nowrap; font-family: inherit; }
