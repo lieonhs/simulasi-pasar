@@ -1,6 +1,6 @@
 {
-  "name": "Simulasi Pasar",
-  "short_name": "SimPasar",
+  "name": "RAM Capital",
+  "short_name": "RAM Capital",
   "description": "Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran.",
   "lang": "id",
   "start_url": "./",

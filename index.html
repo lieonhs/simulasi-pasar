@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Simulasi Pasar</title>
+<title>RAM Capital · Quant &amp; Market Analytics</title>
 <meta name="description" content="Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran, sinyal beli/jual, shipping & freight.">
 <meta name="theme-color" content="#070b10">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -11,9 +11,9 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="SimPasar">
+<meta name="apple-mobile-web-app-title" content="RAM Capital">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Simulasi Pasar">
+<meta property="og:title" content="RAM Capital · Quant &amp; Market Analytics">
 <meta property="og:description" content="Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran.">
 <meta property="og:url" content="https://lieonhs.github.io/simulasi-pasar/">
 <meta property="og:image" content="https://lieonhs.github.io/simulasi-pasar/assets/og-image.png">
@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022161309">
+<link rel="stylesheet" href="style.css?v=20261022161918">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -44,7 +44,7 @@
   <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
-</svg><div class="splash-name">SIMULASI PASAR</div><div class="splash-bar"><i></i></div></div>
+</svg><div class="splash-name">RAM CAPITAL</div><div class="splash-tag">Quant &amp; Market Analytics</div><div class="splash-bar"><i></i></div></div>
 <div id="authGate" class="auth-gate" hidden>
   <form id="authForm" class="auth-card" autocomplete="on">
     <div class="brand brand-logo"><svg class="brand-mark" width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">  <defs>
@@ -60,7 +60,7 @@
   <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
-</svg><span>Simulasi Pasar</span></div>
+</svg><span>RAM Capital</span><small class="brand-tag">Quant &amp; Market Analytics</small></div>
     <p class="sub" id="authSub">Masuk untuk melanjutkan</p>
     <div id="authNameBox" hidden><label class="lbl" for="authName">Nama</label><input id="authName" autocomplete="name" maxlength="60">
       <label class="lbl" for="authReason">Alasan / siapa kamu (dibaca admin)</label><input id="authReason" maxlength="200" placeholder="mis. teman kuliah El, mau belajar analisis saham"></div>
@@ -88,7 +88,7 @@
   <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
-</svg><span>Simulasi Pasar</span></div>
+</svg><span>RAM Capital</span></div>
     <p class="sub" id="pendTitle">Menunggu persetujuan admin</p>
     <p id="pendText" class="lead small-lead"></p>
     <div id="pendRe" hidden><label class="lbl" for="pendReason">Alasan (kirim ulang permintaan)</label><input id="pendReason" maxlength="200"><button id="pendSend" class="run alt">Kirim ulang permintaan</button></div>
@@ -98,7 +98,7 @@
 </div>
 <header class="top">
   <div class="wrap top-row">
-    <div><div class="brand"><span class="dot"></span>Simulasi Pasar</div>
+    <div><div class="brand"><span class="dot"></span>RAM Capital</div>
     <div class="sub">Monte Carlo · GARCH · Jump · Bootstrap · Vasicek/CIR</div></div>
     <div class="user-box" id="userBox" hidden><span id="userEmail"></span><button id="logoutBtn" class="chip">Keluar</button></div>
   </div>
@@ -121,7 +121,7 @@
   <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
-</svg><span>SIMULASI PASAR</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
+</svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
 <nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
@@ -811,8 +811,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022161309";</script>
-<script src="engine.js?v=20261022161309"></script>
-<script src="app.js?v=20261022161309"></script>
+<script>window.APP_V = "20261022161918";</script>
+<script src="engine.js?v=20261022161918"></script>
+<script src="app.js?v=20261022161918"></script>
 </body>
 </html>

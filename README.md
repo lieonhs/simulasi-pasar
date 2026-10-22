@@ -1,4 +1,4 @@
-# Simulasi Pasar
+# RAM Capital
 
 Web app simulasi Monte Carlo untuk harga aset (kripto, saham IDX/global, indeks, emas, FX) dan yield obligasi, lengkap dengan uji keyakinan (backtest out-of-sample).
 

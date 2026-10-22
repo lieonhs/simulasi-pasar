@@ -1987,7 +1987,7 @@
       const hit = a.op === ">=" ? x.price >= a.v : a.op === "<=" ? x.price <= a.v : a.op === "pct+" ? c >= a.v : -c >= a.v;
       if (hit) { a.on = false; a.hit = true; a.seen = false; a.hitAt = new Date(Date.now() + 7 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
         const msg = `${a.s} ${a.op === ">=" ? "≥" : a.op === "<=" ? "≤" : a.op === "pct+" ? "naik" : "turun"} ${a.op.startsWith("pct") ? nf(1).format(a.v) + "%" : fmtNum(a.v)} · sekarang ${fmtNum(x.price)}${a.note ? " · " + a.note : ""}`;
-        toast("ALARM: " + msg); beep(); try { if ("Notification" in window && Notification.permission === "granted") new Notification("Simulasi Pasar · alarm", { body: msg }); } catch { /* */ } } }
+        toast("ALARM: " + msg); beep(); try { if ("Notification" in window && Notification.permission === "granted") new Notification("RAM Capital · alarm", { body: msg }); } catch { /* */ } } }
     if (changed) { alSave(); if (!$("fnPanel").hidden && /ALRT/.test($("fnTitle").textContent)) showAlerts(); }
   }
   function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; $("toasts").appendChild(t); setTimeout(() => t.remove(), 12000); t.onclick = () => t.remove(); }
@@ -2282,7 +2282,7 @@
     $("authGate").hidden = true; $("pendGate").hidden = false;
     const st = m.status, nm = m.name ? esc(m.name) + " · " : "";
     $("pendTitle").textContent = st === "pending" ? "Menunggu persetujuan admin" : st === "rejected" ? "Permintaan ditolak" : "Akses dicabut";
-    $("pendText").innerHTML = `${nm}<b>${esc(m.email || "")}</b><br>` + (st === "pending" ? `Akunmu sudah terdaftar sejak ${esc(String(m.requested_at || "").slice(0, 10))}. Admin harus menyetujui dulu sebelum kamu bisa memakai Simulasi Pasar. Halaman ini memeriksa otomatis tiap 30 detik.`
+    $("pendText").innerHTML = `${nm}<b>${esc(m.email || "")}</b><br>` + (st === "pending" ? `Akunmu sudah terdaftar sejak ${esc(String(m.requested_at || "").slice(0, 10))}. Admin harus menyetujui dulu sebelum kamu bisa memakai RAM Capital. Halaman ini memeriksa otomatis tiap 30 detik.`
       : st === "rejected" ? "Admin menolak permintaanmu. Kamu bisa mengirim ulang dengan alasan yang lebih jelas." : "Admin mencabut aksesmu. Hubungi admin bila menurutmu ini keliru.");
     $("pendRe").hidden = st !== "rejected";
   }
