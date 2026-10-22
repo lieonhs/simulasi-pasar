@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022163825">
+<link rel="stylesheet" href="style.css?v=20261022164311">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -451,14 +451,14 @@
       <button class="seg-btn" data-mode="bond">Yield obligasi</button>
     </div>
 
-    <label class="lbl" for="q">Cari ticker atau nama</label>
+    <div class="ctl-search"><label class="lbl" for="q">Cari ticker atau nama</label>
     <div class="search">
       <input id="q" autocomplete="off" spellcheck="false" placeholder="mis. BBCA.JK, bitcoin, emas, telkom">
       <ul id="sugg" class="sugg" hidden></ul>
     </div>
-    <div id="chips" class="chips"></div>
+    <div id="chips" class="chips"></div></div>
 
-    <div class="grid">
+    <div class="grid ctl-params">
       <div><label class="lbl" for="horizon">Horizon (periode)</label><input id="horizon" type="number" min="1" max="365" value="30"></div>
       <div><label class="lbl" for="range">Data historis</label>
         <select id="range"><option value="2y">2 tahun</option><option value="5y" selected>5 tahun</option><option value="10y">10 tahun</option><option value="max">Maksimal</option></select></div>
@@ -471,7 +471,7 @@
       <div class="bond-only" hidden><label class="lbl" for="maturity">Sisa tenor (th)</label><input id="maturity" type="number" step="0.5" value="10"></div>
     </div>
 
-    <div class="price-only">
+    <div class="ctl-models"><div class="price-only">
       <span class="lbl">Model</span>
       <div class="checks" id="models">
         <label><input type="checkbox" value="gbm" checked> GBM</label>
@@ -485,12 +485,12 @@
     <div class="row">
       <label class="toggle"><input type="checkbox" id="bt" checked> Uji keyakinan (backtest historis)</label>
       <label class="file">Upload CSV<input type="file" id="csv" accept=".csv,text/csv"></label>
-    </div>
+    </div></div>
 
-    <button id="run" class="run">Jalankan simulasi</button>
+    <div class="ctl-run"><button id="run" class="run">Jalankan simulasi</button>
     <div id="status" class="status" aria-live="polite"></div>
     <div id="didYouMean" class="dym" hidden></div>
-    <div class="bar"><div id="barFill"></div></div>
+    <div class="bar"><div id="barFill"></div></div></div>
   </section>
 
   <section id="out" hidden>
@@ -521,14 +521,6 @@
       </div>
     </div>
 
-    <div class="card price-only" id="tradeCard">
-      <div class="card-h"><h2>Order <span class="tag" id="tcSym"></span></h2>
-        <div class="seg small" id="tcTabs"><button class="seg-btn active" data-t="demo">Demo</button><button class="seg-btn" data-t="idx" id="tcTabIdx" hidden>Indodax (uang asli)</button></div></div>
-      <div id="tcPos" class="tc-pos"></div>
-      <div id="tcBody"></div>
-      <p class="note" id="tcNote"></p>
-      <div class="fn-actions"><button class="fn-key" data-cmd="DEMO">Akun demo lengkap (F6)</button></div>
-    </div>
 
     <div id="kpis" class="kpis span-all"></div>
 
@@ -897,13 +889,23 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
     </details>
   </section>
 
+  <aside id="sideCol" class="side-col">
+    <div class="card price-only" id="tradeCard">
+      <div class="card-h"><h2>Order <span class="tag" id="tcSym"></span></h2>
+        <div class="seg small" id="tcTabs"><button class="seg-btn active" data-t="demo">Demo</button><button class="seg-btn" data-t="idx" id="tcTabIdx" hidden>Indodax (uang asli)</button></div></div>
+      <div id="tcPos" class="tc-pos"></div>
+      <div id="tcBody"></div>
+      <p class="note" id="tcNote"></p>
+      <div class="fn-actions"><button class="fn-key" data-cmd="DEMO">Akun demo lengkap (F6)</button></div>
+    </div>
+  </aside>
 </main>
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022163825";</script>
-<script src="engine.js?v=20261022163825"></script>
-<script src="app.js?v=20261022163825"></script>
+<script>window.APP_V = "20261022164311";</script>
+<script src="engine.js?v=20261022164311"></script>
+<script src="app.js?v=20261022164311"></script>
 </body>
 </html>

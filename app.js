@@ -270,6 +270,7 @@
     $("kpis").innerHTML = k.map(([a, b, c]) => `<div class="kpi"><div class="k">${a}</div><div class="v">${b}</div><div class="h">${c}</div></div>`).join("");
 
     document.querySelectorAll(".price-only").forEach((el) => (el.hidden = bond));
+    $("customWrap").hidden = bond || $("drift").value !== "custom";
     $("candleCard").hidden = !(d.ohlc && d.ohlc.length > 30);
     $("modelTabs").innerHTML = Object.entries(res.models).map(([key, m]) => `<button class="tab ${key === state.sel ? "active" : ""}" data-m="${key}">${esc(m.label)}</button>`).join("");
     renderCandle(); renderSummary(); renderConfidence(); renderParams(); renderCaveats(); renderSelected(); renderSignal();
@@ -1169,7 +1170,7 @@
     window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
 
   // ---------- bilah fokus ----------
-  const FOCUS = { signal: ["headCard", "introCard", "tradeCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "introCard", "tradeCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard", "tradeCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
+  const FOCUS = { signal: ["headCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
     plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {

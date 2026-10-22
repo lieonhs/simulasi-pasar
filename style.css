@@ -463,3 +463,27 @@ body.mode-simple .pro-only, body.mode-simple details.formula { display: none !im
 @media (min-width: 1100px) { #out > #introCard { grid-column: span 1; } #out > #tradeCard { grid-column: span 1; } }
 @media (min-width: 1700px) { #out > #introCard { grid-column: span 2; } }
 #out.focused > #introCard, #out.focused > #tradeCard { grid-column: 1 / -1 !important; }
+
+/* ===== Analisis: pemilihan aset di atas, kolom samping khusus eksekusi ===== */
+#out[hidden] ~ #sideCol { display: none; }
+.side-col > .card { margin-bottom: 14px; }
+@media (min-width: 1100px) {
+  #detailView .wrap-inner { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); }
+  #detailView .wrap-inner > .controls { grid-column: 1 / -1; position: static; max-height: none; overflow: visible;
+    display: grid; grid-template-columns: 210px minmax(260px, 1.3fr) minmax(320px, 2fr) minmax(200px, 1fr) 210px; gap: 0 18px; align-items: start; }
+  #detailView .controls .seg { margin-top: 26px; }
+  #detailView .controls .ctl-params { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  #detailView .controls .ctl-models .checks { gap: 4px 12px; } #detailView .controls .ctl-models .row { margin-top: 8px; }
+  #detailView .controls .ctl-run .run { margin-top: 26px; }
+  #detailView .controls .ctl-search .chips { max-height: 64px; overflow: hidden; }
+  #detailView .wrap-inner > #sideCol { grid-column: 1; grid-row: 3; position: sticky; top: var(--tb, 170px); max-height: calc(100vh - var(--tb, 170px) - 12px); overflow-y: auto; }
+  #detailView .wrap-inner > #out { grid-column: 2; grid-row: 3; }
+  #detailView .wrap-inner:has(#tradeCard[hidden]) > #out { grid-column: 1 / -1; }
+  #detailView .wrap-inner > .guide { grid-row: 1; } #detailView .wrap-inner > .controls { grid-row: 2; }
+  #out > #introCard { grid-column: 1 / -1 !important; }
+}
+@media (min-width: 1100px) and (max-width: 1499px) {
+  #detailView .wrap-inner > .controls { grid-template-columns: 200px minmax(240px, 1fr) minmax(300px, 1.6fr); }
+  #detailView .controls .ctl-models { grid-column: 1 / 3; } #detailView .controls .ctl-run { grid-column: 3; }
+  #detailView .controls .ctl-run .run { margin-top: 10px; }
+}
