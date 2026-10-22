@@ -1169,7 +1169,7 @@
     window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
 
   // ---------- bilah fokus ----------
-  const FOCUS = { signal: ["headCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
+  const FOCUS = { signal: ["headCard", "introCard", "tradeCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "introCard", "tradeCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard", "tradeCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
     plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {
@@ -1189,7 +1189,8 @@
     $("focusBar").hidden = v !== "detail";
     if (v !== "detail") stopOB();
     if (v === "market") { stopLive(); if (!mk.at || Date.now() - mk.at > 120000) runMarket(); return; }
-    if (v === "trade") { stopLive(); renderPaper(); refreshPaper(); return; }
+    if (v === "trade") { stopLive(); mountTicket("trade"); setTradeTab(document.querySelector("#trTabs .seg-btn.active").dataset.t); renderPaper(); refreshPaper(); return; }
+    if (v === "detail" && pp.a) setTimeout(syncTradeCard, 0);
     if (v === "pf") { stopLive(); renderPfList(); if (!pf.res && pf.list.length && !$("pfRun").disabled) runPortfolio(); return; }
     if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
@@ -1900,7 +1901,7 @@
     const o = { id: Date.now().toString(36), t: new Date().toISOString(), s: P.s, name: (pp.q[P.s] || {}).symbol || P.s, side: pp.side, type: P.lim ? "limit" : "market", units: P.units, limit: P.lim ? P.px : null, status: "terbuka" };
     if (!P.lim) { ppFill(o, pp.q[P.s].price); $("dStatus").textContent = o.status === "terisi" ? `Order ${o.side === "buy" ? "beli" : "jual"} ${P.s} terisi di ${fmtNum(o.fillPx)}.` : `Ditolak: ${o.note}.`; if (o.status !== "terisi") $("dStatus").classList.add("err"); }
     else { pp.a.orders.push(o); $("dStatus").textContent = `Order limit ${o.side === "buy" ? "beli" : "jual"} ${P.s} @ ${fmtNum(P.px)} dipasang.`; checkLimits(); }
-    ppSnap(); ppSave(); renderPaper();
+    ppSnap(); ppSave(); renderPaper(); if (!$("detailView").hidden) renderTcPos();
   }
   function checkLimits() {
     let ch = false;
@@ -1940,7 +1941,10 @@
     drawChart("dEq", { type: "line", data: { labels: E.map((x) => x.d), datasets: [{ data: E.map((x) => x.v / 1e6), borderColor: css("--accent"), backgroundColor: css("--accent-soft"), fill: true, borderWidth: 1.8, pointRadius: E.length < 30 ? 3 : 0 }] },
       options: baseOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => "Rp " + nf(2).format(c.raw) + " jt" } } }, scales: { x: { ticks: { maxTicksLimit: 6 }, grid: { display: false } }, y: { ticks: { callback: (v) => v + " jt" }, grid: { color: css("--grid") } } } }) });
   }
-  function openTrade(sym, side = "buy") { setView("trade"); setTradeTab("demo"); pp.side = side; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side));
+  function openTrade(sym, side = "buy") {
+    if (state.data && state.data.symbol === sym && !$("detailView").hidden) { tcTab = "demo"; syncTradeCard(); pp.side = side; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side));
+      $("dSend").textContent = side === "buy" ? "Kirim order beli demo" : "Kirim order jual demo"; $("tradeCard").scrollIntoView({ behavior: "smooth", block: "center" }); flashCard($("tradeCard")); return; }
+    setView("trade"); setTradeTab("demo"); pp.side = side; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side));
     $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); }
   function setTradeTab(t) { document.querySelectorAll("#trTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.t === t)); $("demoPane").hidden = t !== "demo"; $("idxPane").hidden = t !== "idx";
     $("trHeadNote").innerHTML = t === "demo" ? "Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu." : "<b>Uang asli.</b> Order dikirim ke akun Indodax milikmu. Hanya kripto berpasangan rupiah.";
@@ -2004,9 +2008,42 @@
         <td><button class="x-btn" data-xcancel="${esc(x.order_id)}" data-pair="${esc(x.pair)}" data-type="${esc(x.type)}">Batal</button></td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Tidak ada order terbuka.</td></tr></tbody>';
     } catch (e) { $("xOpen").innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
   }
+
+  // ---------- tiket order di dalam Analisis 1 aset ----------
+  // Tiket yang sama dipindah antara F6 dan kartu Order di Analisis, jadi aturan & riwayatnya satu.
+  let tcTab = "demo";
+  function idxPairFor(sym) { const m = String(sym || "").toUpperCase().match(/^([A-Z0-9]+)-(USDT?|IDR)$/); if (!m || !ix.pairs) return null; return ix.pairs.find((p) => p.base === m[1].toLowerCase()) || null; }
+  function mountTicket(where) {
+    const demo = $("demoTicket"), idx = $("idxTicket");
+    if (where === "analysis") { const want = tcTab === "idx" && !$("tcTabIdx").hidden ? idx : demo; const other = want === demo ? idx : demo;
+      $("tcBody").appendChild(want); (other === demo ? $("demoPane") : $("idxPane")).prepend(other); }
+    else { $("demoPane").prepend(demo); $("idxPane").prepend(idx); }
+  }
+  async function syncTradeCard() {
+    if (!state.data || state.mode !== "price" || !pp.a) return;
+    const sym = state.data.symbol; $("tcSym").textContent = sym;
+    if (isOwner() && !ix.pairs) { try { const j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); ix.pairs = j.pairs || []; } catch { ix.pairs = []; } }
+    const pair = isOwner() ? idxPairFor(sym) : null; $("tcTabIdx").hidden = !pair; if (!pair && tcTab === "idx") tcTab = "demo";
+    document.querySelectorAll("#tcTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.t === tcTab));
+    if (!$("detailView").hidden) mountTicket("analysis");
+    if ($("dSym").value !== sym) { $("dSym").value = sym; $("dQty").value = ""; }
+    pp.q[sym] = pp.q[sym] || (state.res ? { symbol: sym, price: state.res.s0, currency: state.data.currency } : undefined);
+    if (pair) { ix.pair = pair; $("xPair").value = pair.base.toUpperCase(); if (!$("xPrice").value) $("xPrice").value = pair.last || ""; if (tcTab === "idx") idxInit(); }
+    ppQuotes([sym]).then(() => { ppPreview(); renderTcPos(); if (pair) idxPreview(); });
+    renderTcPos();
+  }
+  function renderTcPos() {
+    const sym = state.data && state.data.symbol, p = pp.a && pp.a.pos[sym], q = pp.q[sym], open = pp.a ? pp.a.orders.filter((o) => o.s === sym).length : 0;
+    if (!p) { $("tcPos").innerHTML = `Belum punya posisi demo di ${esc(sym || "")}. Kas demo ${big(pp.a ? pp.a.cash : 0, "IDR")}.${open ? ` ${open} order limit menunggu.` : ""}`; }
+    else { const fx = fxOf(sym), v = q ? p.units * q.price * fx : NaN, g = v - p.cost;
+      $("tcPos").innerHTML = `Posisi demo: <b>${kindOf(sym) === "idx" ? nf(0).format(p.units / 100) + " lot" : nf(6).format(p.units)}</b> · rata-rata ${fmtNum(p.cost / p.units / fx)} · nilai ${big(v, "IDR")} · <span class="${cls(g)}">${g >= 0 ? "+" : ""}${big(g, "IDR")} (${spct(g / p.cost)})</span>${open ? ` · ${open} order limit menunggu` : ""}`; }
+    const sig = state.sig && state.sig.now ? state.sig.now.score : null;
+    $("tcNote").innerHTML = tcTab === "idx" ? "<b>Uang asli</b> lewat Indodax (pasangan IDR). Konfirmasi ketik ulang wajib." : `Order demo memakai harga live; tercatat di akun demo.${sig != null ? ` Sinyal saat ini: <b>${sig >= 2 ? "BELI" : sig <= -2 ? "JUAL" : "TAHAN"}</b> — cek dulu kartu Intinya & Sinyal.` : ""}`;
+  }
   function bindTrade() {
     ppLoad(); if (Array.isArray(settings.idxLog)) ix.log = settings.idxLog;
     $("trTabIdx").hidden = !isOwner();
+    $("tcTabs").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn[data-t]"); if (!b || b.hidden) return; tcTab = b.dataset.t; syncTradeCard(); });
     $("trTabs").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn[data-t]"); if (b) setTradeTab(b.dataset.t); });
     $("dSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; pp.side = b.dataset.s; document.querySelectorAll("#dSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); $("dSend").textContent = pp.side === "buy" ? "Kirim order beli demo" : "Kirim order jual demo"; ppPreview(); });
     attachAC($("dSym"), { onPick: (sym) => { $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); } });
@@ -2193,7 +2230,7 @@
     if (fn === "W" || fn === "EQS") { closeFn(); setView("screen"); if (fn === "EQS") setTimeout(() => { const t = document.querySelector('#wlCols .tab[data-c="sinyal"]'); if (t) t.click(); }, 300); return; }
     if (fn === "PORT") { closeFn(); setView("pf"); return; }
     if (fn === "DEMO") { closeFn(); setView("trade"); setTradeTab("demo"); return; }
-    if (fn === "BUY" || fn === "SELL") { closeFn(); openTrade(sym || state.symbol, fn === "BUY" ? "buy" : "sell"); return; }
+    if (fn === "BUY" || fn === "SELL") { closeFn(); const t = sym || state.symbol; if (!state.data || state.data.symbol !== t || $("detailView").hidden) { setFocus("all", false); await openDetail(t); } openTrade(t, fn === "BUY" ? "buy" : "sell"); return; }
     if (fn === "QL") { closeFn(); setView("quant"); return; }
     const target = sym || state.symbol;
     if (fn === "DES") return showDes(target);
@@ -2394,7 +2431,7 @@
   // =====================================================================
   function renderSignal() {
     if (!state.res || state.res.mode !== "price" || !state.data) return;
-    setTimeout(renderIntro, 0);
+    setTimeout(renderIntro, 0); setTimeout(syncTradeCard, 0);
     const d = state.data, rf = (parseFloat($("rf") && $("rf").value) || DAMO.biRate * 100) / 100;
     const B = MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: state.res.ppy || 252 });
     state.sig = B; const c = B.now;

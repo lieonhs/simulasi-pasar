@@ -454,3 +454,12 @@ body.mode-simple .pro-only, body.mode-simple details.formula { display: none !im
 #wiDemo { margin-top: 8px; }
 .confirm-box { border: 1px solid var(--warn); background: rgba(242,182,90,.1); padding: 12px; border-radius: 6px; margin-top: 10px; }
 .confirm-box input { margin-top: 8px; font-family: var(--mono); }
+
+#tcBody > section { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; position: static !important; }
+#tcBody > section > h2 { display: none; }
+#tradeCard { border-left: 3px solid var(--good); }
+@media (min-width: 1100px) { #out > #tradeCard { grid-column: span 1; } }
+.tc-pos { font-size: 13.5px; margin-bottom: 8px; }
+@media (min-width: 1100px) { #out > #introCard { grid-column: span 1; } #out > #tradeCard { grid-column: span 1; } }
+@media (min-width: 1700px) { #out > #introCard { grid-column: span 2; } }
+#out.focused > #introCard, #out.focused > #tradeCard { grid-column: 1 / -1 !important; }

@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022163224">
+<link rel="stylesheet" href="style.css?v=20261022163825">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -124,7 +124,7 @@
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
 </svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="modeBtn" title="Mode tampilan">MODE: PRO</button><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Trading</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Akun trading</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
   <button class="fchip active" data-f="all">Semua</button>
@@ -272,7 +272,7 @@
     <p class="note" style="margin:0" id="trHeadNote">Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu.</p></div>
 
   <div id="demoPane" class="trade-grid">
-    <section class="card">
+    <section class="card" id="demoTicket">
       <h2>Tiket order demo</h2>
       <div class="seg" id="dSide"><button class="seg-btn active" data-s="buy">Beli</button><button class="seg-btn" data-s="sell">Jual</button></div>
       <label class="lbl" for="dSym">Ticker</label>
@@ -302,7 +302,7 @@
   </div>
 
   <div id="idxPane" class="trade-grid" hidden>
-    <section class="card">
+    <section class="card" id="idxTicket">
       <h2>Order Indodax <span class="tag">uang asli</span></h2>
       <div id="xStatus" class="status"></div>
       <div class="seg" id="xSide"><button class="seg-btn active" data-s="buy">Beli</button><button class="seg-btn" data-s="sell">Jual</button></div>
@@ -519,6 +519,15 @@
         <p class="note" id="wiNote"></p>
         <button class="btn" id="wiDemo">Coba beli di akun demo →</button>
       </div>
+    </div>
+
+    <div class="card price-only" id="tradeCard">
+      <div class="card-h"><h2>Order <span class="tag" id="tcSym"></span></h2>
+        <div class="seg small" id="tcTabs"><button class="seg-btn active" data-t="demo">Demo</button><button class="seg-btn" data-t="idx" id="tcTabIdx" hidden>Indodax (uang asli)</button></div></div>
+      <div id="tcPos" class="tc-pos"></div>
+      <div id="tcBody"></div>
+      <p class="note" id="tcNote"></p>
+      <div class="fn-actions"><button class="fn-key" data-cmd="DEMO">Akun demo lengkap (F6)</button></div>
     </div>
 
     <div id="kpis" class="kpis span-all"></div>
@@ -893,8 +902,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022163224";</script>
-<script src="engine.js?v=20261022163224"></script>
-<script src="app.js?v=20261022163224"></script>
+<script>window.APP_V = "20261022163825";</script>
+<script src="engine.js?v=20261022163825"></script>
+<script src="app.js?v=20261022163825"></script>
 </body>
 </html>
