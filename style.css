@@ -444,3 +444,13 @@ body.mode-simple .pro-only, body.mode-simple details.formula { display: none !im
   .cmdrow .cmd-btn { font-size: 10px; padding: 4px 6px; }
   .prof-btn { max-width: 90px; }
 }
+
+/* ===== trading ===== */
+.trade-grid { display: grid; grid-template-columns: 1fr; gap: 0 18px; align-items: start; }
+@media (min-width: 1100px) { .trade-grid { grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); } .trade-grid > section.card { position: sticky; top: var(--tb, 170px); } }
+.trade-grid > * { min-width: 0; }
+#dSide .seg-btn.active[data-s="buy"], #xSide .seg-btn.active[data-s="buy"] { background: var(--good); color: #04130f; }
+#dSide .seg-btn.active[data-s="sell"], #xSide .seg-btn.active[data-s="sell"] { background: var(--bad); color: #fff; }
+#wiDemo { margin-top: 8px; }
+.confirm-box { border: 1px solid var(--warn); background: rgba(242,182,90,.1); padding: 12px; border-radius: 6px; margin-top: 10px; }
+.confirm-box input { margin-top: 8px; font-family: var(--mono); }

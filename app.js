@@ -1185,10 +1185,11 @@
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
-    $("marketView").hidden = v !== "market"; $("pfView").hidden = v !== "pf";
+    $("marketView").hidden = v !== "market"; $("pfView").hidden = v !== "pf"; $("tradeView").hidden = v !== "trade";
     $("focusBar").hidden = v !== "detail";
     if (v !== "detail") stopOB();
     if (v === "market") { stopLive(); if (!mk.at || Date.now() - mk.at > 120000) runMarket(); return; }
+    if (v === "trade") { stopLive(); renderPaper(); refreshPaper(); return; }
     if (v === "pf") { stopLive(); renderPfList(); if (!pf.res && pf.list.length && !$("pfRun").disabled) runPortfolio(); return; }
     if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
@@ -1852,6 +1853,191 @@
   }
 
   // =====================================================================
+  // TRADING: akun demo (paper trading) + Indodax (uang asli, hanya pemilik)
+  // =====================================================================
+  const OWNER_EMAIL = "raafialmuchsin6805@gmail.com";
+  const wib = (iso) => new Date(new Date(iso).getTime() + 7 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+  const isOwner = () => !!session && (session.user.email || "").toLowerCase() === OWNER_EMAIL;
+  const PP_KEY = "sp_paper_v1";
+  const pp = { a: null, side: "buy", q: {}, fx: null, timer: null };
+  const newPaper = (start) => ({ start, cash: start, pos: {}, orders: [], hist: [], eq: [], created: new Date().toISOString() });
+  function ppLoad() { let a = settings.paper; if (!a) { try { a = JSON.parse(localStorage.getItem(PP_KEY) || "null"); } catch { /* */ } } pp.a = a && a.pos ? a : newPaper(100e6); }
+  function ppSave() { try { localStorage.setItem(PP_KEY, JSON.stringify(pp.a)); } catch { /* */ } saveSettings({ paper: pp.a }); }
+  const kindOf = (s) => (/\.JK$/i.test(s) ? "idx" : /-USDT?$|^(BTC|ETH|SOL|BNB|XRP|DOGE|ADA)-/i.test(s) ? "crypto" : "other");
+  const FEE = { idx: [0.0015, 0.0025], crypto: [0.003, 0.003], other: [0.001, 0.001] };
+  async function ppQuotes(syms) {
+    const list = [...new Set(syms.filter(Boolean))]; if (!list.length) return;
+    const q = await quotesFor([...list, "IDR=X"]); Object.assign(pp.q, q); if (q["IDR=X"]) pp.fx = q["IDR=X"].price;
+  }
+  const fxOf = (s) => { const q = pp.q[s]; const c = (q && q.currency) || (/\.JK$/i.test(s) ? "IDR" : "USD"); return c === "IDR" ? 1 : pp.fx || 16000; };
+  function ppPreview() {
+    const s = normTicker($("dSym").value.trim() || ""), k = kindOf(s), q = pp.q[s], lim = $("dType").value === "limit";
+    $("dQtyLbl").textContent = k === "idx" ? "Jumlah (lot)" : "Jumlah (unit/koin)"; $("dLimitWrap").hidden = !lim;
+    if (!s) { $("dPreview").innerHTML = "Isi ticker dulu."; return null; }
+    if (!q) { $("dPreview").innerHTML = `Harga ${esc(s)} belum dimuat. <a href="#" id="dLoadPx">Muat harga</a>`; return null; }
+    let px = lim ? parseFloat($("dLimit").value) : q.price; if (lim && k === "idx" && px > 0) px = MCEngine.roundTick(px, true, pp.side === "buy" ? -1 : 1);
+    const qty = parseFloat($("dQty").value) || 0, units = k === "idx" ? Math.floor(qty) * 100 : qty, fx = fxOf(s), [fb, fs] = FEE[k];
+    const gross = units * px * fx, fee = gross * (pp.side === "buy" ? fb : fs), pos = pp.a.pos[s];
+    const lines = [`Harga sekarang <b>${fmtNum(q.price)}</b>${q.currency && q.currency !== "IDR" ? " " + esc(q.currency) : ""}${lim ? ` · limit <b>${fmtNum(px)}</b>` : ""}`];
+    if (units > 0 && px > 0) lines.push(`${pp.side === "buy" ? "Biaya" : "Hasil"} ±<b>${big(pp.side === "buy" ? gross + fee : gross - fee, "IDR")}</b> (fee ${big(fee, "IDR")})`);
+    lines.push(pp.side === "buy" ? `Kas tersedia ${big(pp.a.cash, "IDR")}${units > 0 && gross + fee > pp.a.cash ? ' — <span class="neg">tidak cukup</span>' : ""}` : `Dimiliki ${pos ? (k === "idx" ? nf(0).format(pos.units / 100) + " lot" : nf(6).format(pos.units)) : "0"}`);
+    $("dPreview").innerHTML = lines.join("<br>");
+    return { s, k, px, units, fx, fee, gross, lim };
+  }
+  function ppFill(o, px) {
+    const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
+    if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
+      a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee; }
+    else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; }
+      const fee = gross * fs, costPart = p.cost * (o.units / p.units); o.pl = gross - fee - costPart; a.cash += gross - fee; p.units -= o.units; p.cost -= costPart; o.fee = fee;
+      if (p.units < 1e-9) delete a.pos[o.s]; }
+    o.status = "terisi"; o.fillPx = px; o.fillAt = new Date().toISOString(); a.hist.unshift(o); return true;
+  }
+  async function ppSend() {
+    $("dStatus").classList.remove("err"); await ppQuotes([normTicker($("dSym").value.trim())]); const P = ppPreview();
+    if (!P) return; if (!(P.units > 0)) { $("dStatus").textContent = "Jumlah harus lebih dari 0" + (P.k === "idx" ? " lot." : "."); return; }
+    if (P.lim && !(P.px > 0)) { $("dStatus").textContent = "Isi harga limit."; return; }
+    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s: P.s, name: (pp.q[P.s] || {}).symbol || P.s, side: pp.side, type: P.lim ? "limit" : "market", units: P.units, limit: P.lim ? P.px : null, status: "terbuka" };
+    if (!P.lim) { ppFill(o, pp.q[P.s].price); $("dStatus").textContent = o.status === "terisi" ? `Order ${o.side === "buy" ? "beli" : "jual"} ${P.s} terisi di ${fmtNum(o.fillPx)}.` : `Ditolak: ${o.note}.`; if (o.status !== "terisi") $("dStatus").classList.add("err"); }
+    else { pp.a.orders.push(o); $("dStatus").textContent = `Order limit ${o.side === "buy" ? "beli" : "jual"} ${P.s} @ ${fmtNum(P.px)} dipasang.`; checkLimits(); }
+    ppSnap(); ppSave(); renderPaper();
+  }
+  function checkLimits() {
+    let ch = false;
+    for (const o of pp.a.orders.filter((x) => x.status === "terbuka")) { const q = pp.q[o.s]; if (!q) continue;
+      if ((o.side === "buy" && q.price <= o.limit) || (o.side === "sell" && q.price >= o.limit)) { ppFill(o, o.limit); ch = true; toast(`Demo: order limit ${o.side === "buy" ? "beli" : "jual"} ${o.s} terisi di ${fmtNum(o.limit)}`); } }
+    pp.a.orders = pp.a.orders.filter((x) => x.status === "terbuka"); if (ch) { ppSnap(); ppSave(); } return ch;
+  }
+  function ppEquity() { let v = pp.a.cash; for (const [s, p] of Object.entries(pp.a.pos)) { const q = pp.q[s]; v += q ? p.units * q.price * fxOf(s) : p.cost; } return v; }
+  function ppSnap() { const d = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), e = ppEquity(), L = pp.a.eq; if (L.length && L[L.length - 1].d === d) L[L.length - 1].v = e; else L.push({ d, v: e }); if (L.length > 400) L.splice(0, L.length - 400); }
+  async function refreshPaper() {
+    await ppQuotes([...Object.keys(pp.a.pos), ...pp.a.orders.map((o) => o.s), normTicker($("dSym").value.trim() || "")]);
+    checkLimits(); ppSnap(); renderPaper(); ppPreview();
+  }
+  function renderPaper() {
+    const a = pp.a, eq = ppEquity(), pl = eq - a.start, R = (v) => big(v, "IDR"), first = a.eq.length > 1 ? a.eq[a.eq.length - 2].v : a.start, day = eq - first;
+    const done = a.hist.filter((o) => o.side === "sell" && o.pl != null), wins = done.filter((o) => o.pl > 0).length;
+    $("dKpi").innerHTML = [["Nilai akun demo", R(eq), `modal awal ${R(a.start)}`], ["Untung/rugi total", `<span class="${cls(pl)}">${pl >= 0 ? "+" : ""}${R(pl)}</span>`, `<span class="${cls(pl)}">${spct(pl / a.start)}</span>`],
+      ["Perubahan sejak kemarin", `<span class="${cls(day)}">${day >= 0 ? "+" : ""}${R(day)}</span>`, ""], ["Kas", R(a.cash), `${pct(a.cash / eq, 0)} dari akun`],
+      ["Transaksi jual", `${done.length}`, done.length ? `${pct(wins / done.length, 0)} untung` : "belum ada"]]
+      .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
+    const P = Object.entries(a.pos);
+    $("dPos").innerHTML = P.length ? `<thead><tr><th>Aset</th><th>Jumlah</th><th>Harga rata-rata</th><th>Harga kini</th><th>Nilai</th><th>Untung/rugi</th><th>%</th><th></th></tr></thead><tbody>` + P.map(([s, p]) => {
+      const q = pp.q[s], fx = fxOf(s), v = q ? p.units * q.price * fx : NaN, g = v - p.cost, avg = p.cost / p.units / fx, k = kindOf(s);
+      return `<tr><td><span class="pf-sym" data-s="${esc(s)}">${esc(s)}</span></td><td>${k === "idx" ? nf(0).format(p.units / 100) + " lot" : nf(p.units < 1 ? 6 : 2).format(p.units)}</td><td>${fmtNum(avg)}</td><td>${q ? fmtNum(q.price) : "–"}</td><td>${R(v)}</td>
+        <td><span class="${cls(g)}">${g >= 0 ? "+" : ""}${R(g)}</span></td><td>${pc(g / p.cost)}</td><td><button class="fn-key" data-sellall="${esc(s)}">Jual</button></td></tr>`; }).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Belum ada posisi. Pasang order beli di tiket sebelah kiri.</td></tr></tbody>';
+    const O = a.orders;
+    $("dOpen").innerHTML = O.length ? `<thead><tr><th>Waktu</th><th>Aset</th><th>Sisi</th><th>Limit</th><th>Jumlah</th><th>Harga kini</th><th></th></tr></thead><tbody>` + O.map((o, i) => `<tr><td>${wib(o.t)}</td><td>${esc(o.s)}</td>
+      <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "BELI" : "JUAL"}</td><td>${fmtNum(o.limit)}</td><td>${kindOf(o.s) === "idx" ? nf(0).format(o.units / 100) + " lot" : nf(6).format(o.units)}</td><td>${pp.q[o.s] ? fmtNum(pp.q[o.s].price) : "–"}</td><td><button class="x-btn" data-dcancel="${i}">Batal</button></td></tr>`).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Tidak ada order limit yang menunggu.</td></tr></tbody>';
+    const H = a.hist.slice(0, 200), realized = done.reduce((x, o) => x + o.pl, 0);
+    $("dStats").textContent = done.length ? `laba terealisasi ${R(realized)} · ${wins}/${done.length} jual untung` : "";
+    $("dHist").innerHTML = H.length ? `<thead><tr><th>Waktu isi</th><th>Aset</th><th>Sisi</th><th>Jenis</th><th>Harga</th><th>Jumlah</th><th>Fee</th><th>Laba (jual)</th></tr></thead><tbody>` + H.map((o) => `<tr><td>${wib(o.fillAt || o.t)}</td><td>${esc(o.s)}</td>
+      <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "BELI" : "JUAL"}</td><td>${o.type}</td><td>${fmtNum(o.fillPx)}</td><td>${kindOf(o.s) === "idx" ? nf(0).format(o.units / 100) + " lot" : nf(6).format(o.units)}</td><td>${R(o.fee)}</td><td>${o.pl != null ? `<span class="${cls(o.pl)}">${R(o.pl)}</span>` : ""}</td></tr>`).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Belum ada transaksi.</td></tr></tbody>';
+    const E = a.eq.length ? a.eq : [{ d: "mulai", v: a.start }];
+    drawChart("dEq", { type: "line", data: { labels: E.map((x) => x.d), datasets: [{ data: E.map((x) => x.v / 1e6), borderColor: css("--accent"), backgroundColor: css("--accent-soft"), fill: true, borderWidth: 1.8, pointRadius: E.length < 30 ? 3 : 0 }] },
+      options: baseOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => "Rp " + nf(2).format(c.raw) + " jt" } } }, scales: { x: { ticks: { maxTicksLimit: 6 }, grid: { display: false } }, y: { ticks: { callback: (v) => v + " jt" }, grid: { color: css("--grid") } } } }) });
+  }
+  function openTrade(sym, side = "buy") { setView("trade"); setTradeTab("demo"); pp.side = side; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side));
+    $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); }
+  function setTradeTab(t) { document.querySelectorAll("#trTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.t === t)); $("demoPane").hidden = t !== "demo"; $("idxPane").hidden = t !== "idx";
+    $("trHeadNote").innerHTML = t === "demo" ? "Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu." : "<b>Uang asli.</b> Order dikirim ke akun Indodax milikmu. Hanya kripto berpasangan rupiah.";
+    if (t === "idx") idxInit(); }
+
+  // ---------- Indodax ----------
+  const ix = { pairs: null, side: "buy", pair: null, log: [], cfg: null };
+  async function idxCall(method, params = {}, confirm) {
+    const r = await apiFetch(`${API}?action=indodax`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.success === 0) throw new Error(j.error || j.message || `Gagal (${r.status})`); return j;
+  }
+  async function idxInit() {
+    if (!isOwner()) { $("xStatus").textContent = "Fitur Indodax hanya untuk akun pemilik."; return; }
+    try { ix.cfg = await idxCall("status"); $("xStatus").innerHTML = ix.cfg.configured ? `<span class="pos">Tersambung ke server.</span> Batas per order Rp ${nf(0).format(ix.cfg.maxIdr)}.` : '<span class="neg">Belum dikonfigurasi.</span> Ikuti langkah di kanan untuk menambahkan API key.'; }
+    catch (e) { $("xStatus").textContent = e.message; }
+    if (!ix.pairs) { try { const j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); ix.pairs = j.pairs || []; $("xPair").placeholder = `ketik: btc, eth… (${ix.pairs.length} koin)`; } catch { ix.pairs = []; } }
+    renderIdxLog();
+  }
+  function idxPreview() {
+    const p = ix.pair, lim = $("xType").value === "limit"; $("xPriceWrap").hidden = !lim;
+    $("xAmtLbl").textContent = ix.side === "buy" && !lim ? "Jumlah rupiah (Rp)" : `Jumlah koin${p ? " (" + p.base.toUpperCase() + ")" : ""}`;
+    if (!p) { $("xPreview").textContent = "Pilih koin dulu."; return null; }
+    const px = lim ? parseFloat($("xPrice").value) : p.last, amt = parseFloat($("xAmt").value) || 0, value = ix.side === "buy" && !lim ? amt : amt * (px || 0);
+    $("xPreview").innerHTML = `${esc(p.base.toUpperCase())}/IDR terakhir <b>Rp ${fmtNum(p.last)}</b> · 24 jam: ${fmtNum(p.low)} – ${fmtNum(p.high)} · volume Rp ${big(p.volIdr)}<br>` +
+      (value > 0 ? `Nilai order ±<b>Rp ${nf(0).format(value)}</b>${ix.cfg && value > ix.cfg.maxIdr ? ' — <span class="neg">melebihi batas per order</span>' : ""}` : "Isi jumlah.") + (p.minIdr ? ` · minimal ±Rp ${nf(0).format(p.minIdr)}` : "");
+    return { p, lim, px, amt, value };
+  }
+  function idxReview() {
+    const P = idxPreview(); if (!P || !(P.amt > 0) || (P.lim && !(P.px > 0))) return;
+    const word = `${ix.side} ${P.p.pair}`;
+    $("xPreview").insertAdjacentHTML("beforeend", `<div class="confirm-box" id="xConfirm"><b>Konfirmasi order UANG ASLI</b><br>${ix.side === "buy" ? "BELI" : "JUAL"} ${esc(P.p.base.toUpperCase())} · ${P.lim ? `limit Rp ${fmtNum(P.px)}` : "market"} · ${ix.side === "buy" && !P.lim ? "Rp " + nf(0).format(P.amt) : nf(8).format(P.amt) + " " + esc(P.p.base.toUpperCase())} · ±Rp ${nf(0).format(P.value)}
+      <br>Ketik <code>${esc(word)}</code> lalu tekan Kirim.<input id="xWord" autocomplete="off"><button class="run" id="xGo" style="background:var(--bad)">Kirim ke Indodax</button></div>`);
+    $("xGo").onclick = async () => { if ($("xWord").value.trim() !== word) { toast("Teks konfirmasi tidak cocok."); return; }
+      const params = { pair: P.p.pair, type: ix.side, order_type: P.lim ? "limit" : "market" }; if (P.lim) params.price = String(P.px);
+      if (ix.side === "buy" && !P.lim) params.idr = String(Math.floor(P.amt)); else params[P.p.base] = String(P.amt);
+      $("xGo").disabled = true;
+      try { const j = await idxCall("trade", params, word); const ret = j.return || {}; ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, id: ret.order_id || "", ok: true });
+        toast(`Indodax: order ${ix.side === "buy" ? "beli" : "jual"} ${P.p.base.toUpperCase()} terkirim${ret.order_id ? " (#" + ret.order_id + ")" : ""}`); }
+      catch (e) { ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, ok: false, err: e.message }); toast("Indodax gagal: " + e.message); }
+      saveSettings({ idxLog: ix.log.slice(0, 100) }); renderIdxLog(); idxPreview(); };
+  }
+  function renderIdxLog() {
+    $("xLog").innerHTML = ix.log.length ? `<thead><tr><th>Waktu</th><th>Pair</th><th>Sisi</th><th>Jenis</th><th>Harga</th><th>Jumlah</th><th>Nilai</th><th>Hasil</th></tr></thead><tbody>` + ix.log.map((o) => `<tr><td>${wib(o.t)}</td><td>${esc(o.pair)}</td>
+      <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "BELI" : "JUAL"}</td><td>${o.type}</td><td>${o.price ? fmtNum(o.price) : "market"}</td><td>${nf(8).format(o.amt)}</td><td>Rp ${nf(0).format(o.value)}</td><td class="txt">${o.ok ? `terkirim ${esc(String(o.id))}` : `<span class="neg">${esc(o.err || "")}</span>`}</td></tr>`).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Belum ada order dari web ini.</td></tr></tbody>';
+  }
+  async function idxBalance() {
+    try { const j = await idxCall("getInfo"); const r = j.return || {}, bal = r.balance || {}, hold = r.balance_hold || {};
+      const px = (c) => (c === "idr" ? 1 : ((ix.pairs || []).find((p) => p.base === c) || {}).last || 0);
+      const rows = Object.keys(bal).map((c) => ({ c, b: +bal[c] || 0, h: +hold[c] || 0 })).filter((x) => x.b > 0 || x.h > 0).map((x) => ({ ...x, v: (x.b + x.h) * px(x.c) })).sort((a, b) => b.v - a.v);
+      const tot = rows.reduce((a, x) => a + x.v, 0);
+      $("xBalTable").innerHTML = `<thead><tr><th>Aset</th><th>Tersedia</th><th>Di order</th><th>Nilai (Rp)</th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(x.c.toUpperCase())}</td><td>${x.c === "idr" ? nf(0).format(x.b) : nf(8).format(x.b)}</td><td>${x.h ? nf(8).format(x.h) : ""}</td><td>${nf(0).format(x.v)}</td></tr>`).join("") +
+        `<tr><td><b>Total</b></td><td></td><td></td><td><b>${nf(0).format(tot)}</b></td></tr></tbody>`;
+    } catch (e) { $("xBalTable").innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
+  }
+  async function idxOpenOrders() {
+    try { const j = await idxCall("openOrders"); const o = j.return && j.return.orders ? j.return.orders : {}; const rows = [];
+      for (const [pair, L] of Object.entries(o)) for (const x of (Array.isArray(L) ? L : [])) rows.push({ pair, ...x });
+      $("xOpen").innerHTML = rows.length ? `<thead><tr><th>Pair</th><th>Sisi</th><th>Harga</th><th>Sisa</th><th>Waktu</th><th></th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(x.pair)}</td><td class="${x.type === "buy" ? "pos" : "neg"}">${esc(x.type)}</td><td>${fmtNum(+x.price)}</td>
+        <td class="txt">${esc(Object.entries(x).filter(([k]) => /^remain_/.test(k)).map(([k, v]) => k.replace("remain_", "") + " " + v).join(", "))}</td><td>${x.submit_time ? new Date(+x.submit_time * 1000).toLocaleString("id-ID") : ""}</td>
+        <td><button class="x-btn" data-xcancel="${esc(x.order_id)}" data-pair="${esc(x.pair)}" data-type="${esc(x.type)}">Batal</button></td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Tidak ada order terbuka.</td></tr></tbody>';
+    } catch (e) { $("xOpen").innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
+  }
+  function bindTrade() {
+    ppLoad(); if (Array.isArray(settings.idxLog)) ix.log = settings.idxLog;
+    $("trTabIdx").hidden = !isOwner();
+    $("trTabs").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn[data-t]"); if (b) setTradeTab(b.dataset.t); });
+    $("dSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; pp.side = b.dataset.s; document.querySelectorAll("#dSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); $("dSend").textContent = pp.side === "buy" ? "Kirim order beli demo" : "Kirim order jual demo"; ppPreview(); });
+    attachAC($("dSym"), { onPick: (sym) => { $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); } });
+    ["dType", "dLimit", "dQty"].forEach((id) => $(id).addEventListener("input", ppPreview));
+    $("dSym").addEventListener("change", () => ppQuotes([normTicker($("dSym").value.trim())]).then(ppPreview));
+    $("dPreview").addEventListener("click", (e) => { if (e.target.id === "dLoadPx") { e.preventDefault(); ppQuotes([normTicker($("dSym").value.trim())]).then(ppPreview); } });
+    $("dSend").onclick = ppSend; $("dRefresh").onclick = refreshPaper;
+    $("dReset").onclick = () => { const v = Math.max(1e6, parseFloat($("dStart").value) || 100e6); if (!confirmReset()) return; pp.a = newPaper(v); ppSave(); renderPaper(); toast("Akun demo direset."); };
+    $("tradeView").addEventListener("click", (e) => {
+      const s = e.target.closest(".pf-sym[data-s]"); if (s) { openDetail(s.dataset.s); return; }
+      const sa = e.target.closest("[data-sellall]"); if (sa) { const sym = sa.dataset.sellall, p = pp.a.pos[sym]; pp.side = "sell"; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === "sell"));
+        $("dSym").value = sym; $("dType").value = "market"; $("dQty").value = kindOf(sym) === "idx" ? p.units / 100 : p.units; ppPreview(); $("dSym").scrollIntoView({ block: "center" }); return; }
+      const dc = e.target.closest("[data-dcancel]"); if (dc) { pp.a.orders.splice(+dc.dataset.dcancel, 1); ppSave(); renderPaper(); return; }
+      const xc = e.target.closest("[data-xcancel]"); if (xc) { idxCall("cancelOrder", { pair: xc.dataset.pair, order_id: xc.dataset.xcancel, type: xc.dataset.type }).then(() => { toast("Order Indodax dibatalkan."); idxOpenOrders(); }).catch((er) => toast("Gagal batal: " + er.message)); } });
+    // Indodax
+    $("xSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; ix.side = b.dataset.s; document.querySelectorAll("#xSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); idxPreview(); });
+    $("xPair").addEventListener("input", () => { const v = $("xPair").value.trim().toLowerCase(), ul = $("xSugg"); if (!v || !ix.pairs) { ul.hidden = true; return; }
+      const m = ix.pairs.filter((p) => p.base.startsWith(v) || String(p.name).toLowerCase().includes(v)).slice(0, 10);
+      ul.innerHTML = m.map((p) => `<li data-pair="${esc(p.pair)}"><div class="left"><b>${esc(p.base.toUpperCase())}</b></div><span>Rp ${fmtNum(p.last)} · vol Rp ${big(p.volIdr)}</span></li>`).join(""); ul.hidden = !m.length; });
+    $("xSugg").addEventListener("mousedown", (e) => { const li = e.target.closest("li[data-pair]"); if (!li) return; e.preventDefault(); ix.pair = ix.pairs.find((p) => p.pair === li.dataset.pair); $("xPair").value = ix.pair.base.toUpperCase(); $("xSugg").hidden = true;
+      if (!$("xPrice").value) $("xPrice").value = ix.pair.last || ""; idxPreview(); });
+    $("xPair").addEventListener("blur", () => setTimeout(() => ($("xSugg").hidden = true), 150));
+    ["xType", "xPrice", "xAmt"].forEach((id) => $(id).addEventListener("input", idxPreview));
+    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders;
+    $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
+      openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
+    pp.timer = setInterval(() => { if (!document.hidden && pp.a.orders.length) refreshPaper(); }, 60000);
+  }
+  const confirmReset = () => window.confirm("Reset akun demo? Semua posisi dan riwayat demo akan dihapus.");
+
+  // =====================================================================
   // KENYAMANAN: "Intinya", kalkulator kalau-aku-beli, mode Pemula/Pro, istilah, tur, cetak
   // =====================================================================
   const volClass = (v) => (v < 0.2 ? ["rendah", "pos"] : v < 0.35 ? ["sedang", ""] : v < 0.6 ? ["tinggi", "neg"] : ["sangat tinggi", "neg"]);
@@ -1976,10 +2162,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2006,6 +2192,8 @@
       setTimeout(() => { const el = $(market[fn]); (el.closest(".card") || el).scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el.closest(".card") || el); }, 400); return; }
     if (fn === "W" || fn === "EQS") { closeFn(); setView("screen"); if (fn === "EQS") setTimeout(() => { const t = document.querySelector('#wlCols .tab[data-c="sinyal"]'); if (t) t.click(); }, 300); return; }
     if (fn === "PORT") { closeFn(); setView("pf"); return; }
+    if (fn === "DEMO") { closeFn(); setView("trade"); setTradeTab("demo"); return; }
+    if (fn === "BUY" || fn === "SELL") { closeFn(); openTrade(sym || state.symbol, fn === "BUY" ? "buy" : "sell"); return; }
     if (fn === "QL") { closeFn(); setView("quant"); return; }
     const target = sym || state.symbol;
     if (fn === "DES") return showDes(target);
@@ -2161,7 +2349,7 @@
     themeBtnLbl();
     attachAC($("cmdQ"), { onPick: (sym) => runCommand(sym) }); bindBbg();
     $("tape").addEventListener("click", (e) => { const t = e.target.closest(".tape-item[data-s]"); if (t) openDetail(t.dataset.s); });
-    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf" }, k = e.altKey && /^[1-5]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf"][+e.key - 1] : map[e.key];
+    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf", F6: "trade" }, k = e.altKey && /^[1-6]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf", "trade"][+e.key - 1] : map[e.key];
       if (k && $("authGate").hidden) { e.preventDefault(); setView(k); }
       if (e.key === "/" && document.activeElement && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("cmdQ").focus(); } });
     tickClock(); setInterval(tickClock, 1000); updateTape(); setInterval(updateTape, 60000);
@@ -2421,7 +2609,7 @@
     $("cmdUser").textContent = (me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : "");
     if (me.role === "admin") refreshAdminBadge();
     if (booted) return; booted = true;
-    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort();
+    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade();
     const P = new URLSearchParams(location.search);
     if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
   }

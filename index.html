@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022162233">
+<link rel="stylesheet" href="style.css?v=20261022163224">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -124,7 +124,7 @@
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
 </svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="modeBtn" title="Mode tampilan">MODE: PRO</button><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Trading</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
   <button class="fchip active" data-f="all">Semua</button>
@@ -263,6 +263,74 @@
       <li><b>Kontribusi risiko</b> lebih penting daripada bobot: satu saham dengan bobot 20% bisa menyumbang 40% risiko kalau sangat bergejolak atau bergerak searah dengan yang lain.</li>
       <li><b>VaR 95%</b>: dalam 1 dari 20 hari, kerugian bisa lebih besar dari angka ini. Bukan batas maksimal kerugian.</li>
       <li>Simulasi memakai pola return 2 tahun terakhir. Krisis yang belum pernah terjadi di periode itu tidak ikut terhitung.</li></ol></details>
+  </div>
+</section>
+
+<section class="wrap" id="tradeView" hidden>
+  <div class="card trade-head"><div class="card-h"><h2>Trading</h2>
+    <div class="seg small" id="trTabs"><button class="seg-btn active" data-t="demo">Akun demo</button><button class="seg-btn" data-t="idx" id="trTabIdx">Indodax (uang asli)</button></div></div>
+    <p class="note" style="margin:0" id="trHeadNote">Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu.</p></div>
+
+  <div id="demoPane" class="trade-grid">
+    <section class="card">
+      <h2>Tiket order demo</h2>
+      <div class="seg" id="dSide"><button class="seg-btn active" data-s="buy">Beli</button><button class="seg-btn" data-s="sell">Jual</button></div>
+      <label class="lbl" for="dSym">Ticker</label>
+      <div class="search"><input id="dSym" autocomplete="off" spellcheck="false" placeholder="mis. BBCA.JK, BTC-USD"><ul class="sugg" hidden></ul></div>
+      <div class="grid">
+        <div><label class="lbl" for="dType">Jenis</label><select id="dType"><option value="market">Market (harga sekarang)</option><option value="limit">Limit (harga tertentu)</option></select></div>
+        <div id="dLimitWrap" hidden><label class="lbl" for="dLimit">Harga limit</label><input id="dLimit" type="number" step="any" min="0"></div>
+        <div><label class="lbl" for="dQty" id="dQtyLbl">Jumlah (lot)</label><input id="dQty" type="number" step="any" min="0"></div>
+      </div>
+      <div id="dPreview" class="verdict"></div>
+      <button id="dSend" class="run">Kirim order demo</button>
+      <div id="dStatus" class="status"></div>
+      <details class="howto"><summary>Aturan akun demo</summary><ul>
+        <li><b>Market</b> terisi langsung di harga terakhir. <b>Limit</b> beli terisi bila harga ≤ limit, limit jual bila harga ≥ limit; dicek tiap 60 detik selama web terbuka.</li>
+        <li>Fee: saham IDX beli 0,15%, jual 0,25% (termasuk pajak 0,1%); kripto 0,3%; aset lain 0,1%. Saham IDX per lot (100 lembar) dan harga limit dibulatkan ke fraksi BEI.</li>
+        <li>Tidak ada short selling dan margin. Aset dolar dihitung ke rupiah dengan kurs USD/IDR terakhir.</li>
+        <li>Hasil demo tidak memperhitungkan slippage dan antrean; di pasar nyata harga isi bisa lebih buruk.</li></ul></details>
+    </section>
+    <div>
+      <div class="kpis" id="dKpi"></div>
+      <div class="card"><div class="card-h"><h2>Posisi demo</h2><button class="btn" id="dRefresh">Perbarui harga</button></div><div class="table-wrap"><table id="dPos"></table></div></div>
+      <div class="card"><h2>Order terbuka</h2><div class="table-wrap"><table id="dOpen"></table></div></div>
+      <div class="card"><h2>Kurva nilai akun</h2><div class="chart-box short"><canvas id="dEq"></canvas></div></div>
+      <div class="card"><div class="card-h"><h2>Riwayat transaksi</h2><span class="note" id="dStats"></span></div><div class="table-wrap hp-wrap"><table id="dHist"></table></div></div>
+      <div class="card"><h2>Reset akun demo</h2><div class="row" style="margin-top:0"><input id="dStart" type="number" step="1000000" min="1000000" value="100000000" style="max-width:220px"><button class="btn" id="dReset">Reset dengan modal ini</button></div><p class="note">Menghapus semua posisi, order, dan riwayat demo.</p></div>
+    </div>
+  </div>
+
+  <div id="idxPane" class="trade-grid" hidden>
+    <section class="card">
+      <h2>Order Indodax <span class="tag">uang asli</span></h2>
+      <div id="xStatus" class="status"></div>
+      <div class="seg" id="xSide"><button class="seg-btn active" data-s="buy">Beli</button><button class="seg-btn" data-s="sell">Jual</button></div>
+      <label class="lbl" for="xPair">Koin (pasangan IDR)</label>
+      <div class="search"><input id="xPair" autocomplete="off" spellcheck="false" placeholder="ketik: btc, eth, sol…"><ul class="sugg" id="xSugg" hidden></ul></div>
+      <div class="grid">
+        <div><label class="lbl" for="xType">Jenis</label><select id="xType"><option value="limit">Limit</option><option value="market">Market</option></select></div>
+        <div id="xPriceWrap"><label class="lbl" for="xPrice">Harga per koin (Rp)</label><input id="xPrice" type="number" step="any" min="0"></div>
+        <div><label class="lbl" for="xAmt" id="xAmtLbl">Jumlah koin</label><input id="xAmt" type="number" step="any" min="0"></div>
+      </div>
+      <div id="xPreview" class="verdict"></div>
+      <button id="xSend" class="run">Tinjau order</button>
+      <p class="note">Setiap order harus kamu konfirmasi dengan mengetik ulang. Batas per order diatur di server (secret INDODAX_MAX_IDR). Fitur ini hanya aktif untuk akun pemilik.</p>
+    </section>
+    <div>
+      <div class="card"><div class="card-h"><h2>Saldo Indodax</h2><button class="btn" id="xBal">Muat saldo</button></div><div class="table-wrap"><table id="xBalTable"></table></div></div>
+      <div class="card"><div class="card-h"><h2>Order terbuka di Indodax</h2><button class="btn" id="xOpenBtn">Muat</button></div><div class="table-wrap"><table id="xOpen"></table></div></div>
+      <div class="card"><h2>Log order dari web ini</h2><div class="table-wrap"><table id="xLog"></table></div></div>
+      <div class="card"><h2>Langkah menyambungkan Indodax</h2><ol class="readme" id="xSteps">
+        <li>Login ke indodax.com → menu <b>Trade API</b> (pengaturan akun) → buat API key baru. Pastikan akunmu sudah verifikasi identitas.</li>
+        <li>Centang izin <b>view</b> dan <b>trade</b> saja. <b>Jangan centang withdraw.</b> Web ini memang tidak punya fungsi tarik dana, jadi izin itu tidak dibutuhkan.</li>
+        <li>Simpan <b>API key</b> dan <b>secret key</b> yang muncul. Jangan kirim lewat chat atau taruh di kode.</li>
+        <li>Buka Supabase → project <b>my_pricess</b> → Edge Functions → <b>Secrets</b>. Tambahkan <code>INDODAX_KEY</code> dan <code>INDODAX_SECRET</code>.</li>
+        <li>Opsional: <code>INDODAX_MAX_IDR</code> = batas nilai per order (default Rp 2.000.000).</li>
+        <li>Kembali ke tab ini → <b>Muat saldo</b>. Kalau saldo muncul, sambungan berhasil. Mulai dengan order kecil (limit, jauh dari harga pasar) lalu batalkan, untuk memastikan semua jalan.</li>
+        <li>Kalau key bocor: hapus di Indodax (Trade API) dan buat ulang. Key lama langsung tidak berlaku.</li></ol>
+        <p class="note">Indodax hanya menjual kripto berpasangan rupiah. Saham IDX dan saham AS tidak bisa dieksekusi di sini. Untuk saham, latih dulu di akun demo lalu eksekusi di aplikasi sekuritasmu.</p></div>
+    </div>
   </div>
 </section>
 
@@ -449,6 +517,7 @@
         <div class="whatif-row"><input id="wiAmt" type="number" min="0" step="100000" value="10000000"><div class="chips" id="wiChips"><button class="chip" data-v="1000000">1 jt</button><button class="chip" data-v="10000000">10 jt</button><button class="chip" data-v="50000000">50 jt</button><button class="chip" data-v="100000000">100 jt</button></div></div>
         <div id="wiOut" class="kpis compact"></div>
         <p class="note" id="wiNote"></p>
+        <button class="btn" id="wiDemo">Coba beli di akun demo →</button>
       </div>
     </div>
 
@@ -824,8 +893,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022162233";</script>
-<script src="engine.js?v=20261022162233"></script>
-<script src="app.js?v=20261022162233"></script>
+<script>window.APP_V = "20261022163224";</script>
+<script src="engine.js?v=20261022163224"></script>
+<script src="app.js?v=20261022163224"></script>
 </body>
 </html>
