@@ -1,0 +1,17 @@
+{
+  "name": "Simulasi Pasar",
+  "short_name": "SimPasar",
+  "description": "Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran.",
+  "lang": "id",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1016",
+  "theme_color": "#070b10",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

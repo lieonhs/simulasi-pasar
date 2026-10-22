@@ -2333,6 +2333,8 @@
         <div><span>Keluar otomatis</span><b>${IDLE_MIN} menit tidak aktif · saat jendela ditutup</b></div><div><span>Alarm aktif</span><b>${al.list.filter((a) => a.on).length}</b></div><div><span>Posisi portofolio</span><b>${pf.list.length}</b></div></div></div>
       <div class="fn-actions"><button class="fn-key" id="profSave">Simpan nama</button><button class="fn-key" data-cmd="HELP">HELP</button><button class="fn-key" id="profOut">Keluar</button></div>${admin}`);
   }
+  function hideSplash() { const sp = $("splash"); if (!sp || sp.classList.contains("out")) return; sp.classList.add("out"); setTimeout(() => sp.remove(), 400); }
+  setTimeout(hideSplash, 8000); // jaring pengaman bila jaringan lambat
   async function startAuth() {
     setAuthMode("login");
     $("authToSignup").onclick = (e) => { e.preventDefault(); setAuthMode("signup"); };
@@ -2359,13 +2361,13 @@
         else { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; msg.textContent = "Tautan atur ulang password sudah dikirim ke email kamu."; }
       } catch (err) { msg.textContent = authErr(err); msg.classList.add("err"); }
       finally { $("authBtn").disabled = false; } };
-    if (!sb) { $("authMsg").textContent = "Gagal memuat modul login. Periksa koneksi lalu muat ulang."; $("authMsg").classList.add("err"); return; }
+    if (!sb) { hideSplash(); showAuth("Gagal memuat modul login. Periksa koneksi lalu muat ulang."); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
       if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { $("pendGate").hidden = true; showAuth(); }
     });
     const { data } = await sb.auth.getSession();
-    if (data.session) onAuthed(data.session);
+    if (data.session) { try { await onAuthed(data.session); } finally { hideSplash(); } } else { showAuth(); hideSplash(); }
   }
   startAuth();
 })();

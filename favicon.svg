@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Simulasi Pasar">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14202e"/><stop offset="1" stop-color="#070b10"/></linearGradient>
+    <linearGradient id="fan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5cb4f0" stop-opacity=".55"/><stop offset="1" stop-color="#5cb4f0" stop-opacity=".12"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M8 48H56" stroke="#33404f" stroke-width="1"/>
+  <!-- kerucut proyeksi Monte Carlo -->
+  <path d="M37 27 L57 10 L57 44 Z" fill="url(#fan)"/>
+  <path d="M37 27 L57 19" stroke="#5cb4f0" stroke-width="2.4" stroke-linecap="round"/>
+  <!-- candlestick -->
+  <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
+  <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
+  <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
+</svg>
