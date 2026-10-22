@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022161918">
+<link rel="stylesheet" href="style.css?v=20261022162233">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -107,6 +107,8 @@
 <div class="topbar">
 <div id="fnPanel" class="fn-panel" hidden tabindex="-1"><div class="fn-box" role="dialog" aria-modal="true"><div class="fn-head"><span id="fnTitle"></span><span class="note">Esc = tutup</span><button class="cmd-btn" id="fnClose">✕</button></div><div id="fnBody" class="fn-body"></div></div></div>
 <div id="toasts" class="toasts"></div>
+<div id="tour" class="tour" hidden><div class="tour-card" id="tourCard"><div class="tour-step" id="tourStep"></div><h3 id="tourTitle"></h3><p id="tourText"></p><div class="tour-btns"><button class="cmd-btn" id="tourSkip">Lewati</button><button class="fn-key" id="tourNext">Lanjut</button></div></div></div>
+<div id="glPop" class="gl-pop" hidden></div>
 <div class="tape" id="tape"><div class="tape-inner" id="tapeInner"><span class="tape-item">MEMUAT HARGA…</span></div></div>
 <div class="wrap cmdrow"><span class="cmd-brand"><svg class="cmd-mark" width="22" height="22" viewBox="0 0 64 64" aria-hidden="true">  <defs>
     <linearGradient id="bgc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14202e"/><stop offset="1" stop-color="#070b10"/></linearGradient>
@@ -121,7 +123,7 @@
   <path d="M15 22V46" stroke="#ff6b68" stroke-width="1.8" stroke-linecap="round"/><rect x="11.5" y="30" width="7" height="11" rx="1.2" fill="#ff6b68"/>
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
-</svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
+</svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="modeBtn" title="Mode tampilan">MODE: PRO</button><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
 <nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
@@ -132,11 +134,11 @@
   <button class="fchip" data-f="proj">Proyeksi</button>
   <button class="fchip" data-f="plan">Rencana lot</button>
   <button class="fchip" data-f="cmp">Perbandingan</button>
-  <button class="fchip" data-f="quant">Kuantitatif & opsi</button>
+  <button class="fchip pro-only" data-f="quant">Kuantitatif & opsi</button>
   <button class="fchip" data-f="val">Valuasi</button>
   <button class="fchip" data-f="news">Berita</button>
-  <button class="fchip" data-f="math">Matematika</button>
-  <button class="fchip" data-f="trust">Keyakinan model</button>
+  <button class="fchip pro-only" data-f="math">Matematika</button>
+  <button class="fchip pro-only" data-f="trust">Keyakinan model</button>
 </nav></div>
 
 <section class="wrap" id="screenView" hidden>
@@ -436,6 +438,17 @@
       <div class="live-bar">
         <button id="liveToggle" class="live-btn on" title="Harga live"><span id="liveDot" class="dot-live"></span><span id="liveLbl">LIVE</span></button>
         <span id="liveStats" class="live-stats"></span>
+        <button id="printBtn" class="live-btn" title="Cetak / simpan sebagai PDF">⎙ CETAK / PDF</button>
+      </div>
+    </div>
+    <div class="card intro-card price-only" id="introCard">
+      <div class="card-h"><h2>Intinya <span class="tag">bahasa sehari-hari</span></h2><span class="note" id="introAsOf"></span></div>
+      <ul id="introList" class="intro-list"></ul>
+      <div class="whatif">
+        <label class="lbl" for="wiAmt">Kalau aku beli senilai (Rp)</label>
+        <div class="whatif-row"><input id="wiAmt" type="number" min="0" step="100000" value="10000000"><div class="chips" id="wiChips"><button class="chip" data-v="1000000">1 jt</button><button class="chip" data-v="10000000">10 jt</button><button class="chip" data-v="50000000">50 jt</button><button class="chip" data-v="100000000">100 jt</button></div></div>
+        <div id="wiOut" class="kpis compact"></div>
+        <p class="note" id="wiNote"></p>
       </div>
     </div>
 
@@ -602,7 +615,7 @@ Estimasi MLE: \( \max \sum_t \left[\ln\Gamma\!\left(\tfrac{\nu+1}{2}\right) - \l
     </div>
 
 
-    <div class="card price-only" id="quantCard">
+    <div class="card price-only pro-only" id="quantCard">
       <h2>Analisis kuantitatif <span class="tag">gaya hedge fund</span></h2>
       <div class="grid"><div><label class="lbl" for="rf">Risk-free rate (%/th)</label><input id="rf" type="number" step="0.05"></div><div><label class="lbl">Benchmark</label><div id="qBench" class="meta pad"></div></div></div>
       <div id="qStatus" class="status"></div>
@@ -724,7 +737,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
         <li><b>Penting:</b> jika ada beberapa berita di hari yang sama, reaksinya sama untuk semua. Pengaruh ini <i>korelasi waktu</i>, bukan bukti bahwa berita itu penyebabnya.</li></ul>
       </details>
     </div>
-    <div class="card price-only" id="mathCard">
+    <div class="card price-only pro-only" id="mathCard">
       <div class="card-h"><h2>Lab matematika <span class="tag">Gaussian · Student-t · GMM · HMM · KDE · Hurst</span></h2><span id="mathStatus" class="note"></span></div>
       <div class="kpis compact" id="mathKpi"></div>
       <div class="math-grid">
@@ -770,7 +783,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
       </details>
     </div>
 
-    <div class="card" id="confCard">
+    <div class="card pro-only" id="confCard">
       <h2>Seberapa bisa dipercaya? <span class="tag">backtest out-of-sample</span></h2>
       <p id="confLead" class="lead"></p>
       <div class="table-wrap"><table id="confTable"></table></div>
@@ -781,7 +794,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <p><b>Kupiec POF</b>: \( LR = -2\ln\dfrac{(1-p)^{n-x}p^x}{(1-\hat p)^{n-x}\hat p^{x}} \sim \chi^2_1,\ \ \hat p = x/n,\ p = 0{,}05 \)</p></div></details>
     </div>
 
-    <div class="card" id="histCard">
+    <div class="card pro-only" id="histCard">
       <h2 id="histTitle">Histogram nilai akhir</h2>
       <div class="chart-box"><canvas id="hist"></canvas></div>
       <details class="howto"><summary>Cara baca</summary>
@@ -789,7 +802,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
       </details>
     </div>
 
-    <div class="card" id="paramCard">
+    <div class="card pro-only" id="paramCard">
       <h2>Parameter model</h2>
       <div id="params" class="params"></div>
       <details class="howto"><summary>Cara baca</summary>
@@ -811,8 +824,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022161918";</script>
-<script src="engine.js?v=20261022161918"></script>
-<script src="app.js?v=20261022161918"></script>
+<script>window.APP_V = "20261022162233";</script>
+<script src="engine.js?v=20261022162233"></script>
+<script src="app.js?v=20261022162233"></script>
 </body>
 </html>

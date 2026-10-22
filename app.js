@@ -1169,7 +1169,7 @@
     window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
 
   // ---------- bilah fokus ----------
-  const FOCUS = { signal: ["headCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
+  const FOCUS = { signal: ["headCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
     plan: ["headCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {
@@ -1794,7 +1794,7 @@
   async function runMath() {
     const d = state.data; if (!d || state.mode !== "price" || d.values.length < 120) { $("mathCard").hidden = true; return; }
     $("mathCard").hidden = false; $("mathStatus").textContent = "Menghitung…";
-    try { state.math = await compute("math", { px: d.values, o: { n: 1000, ppy: state.res ? state.res.ppy : 252 } }); renderMath(); }
+    try { state.math = await compute("math", { px: d.values, o: { n: 1000, ppy: state.res ? state.res.ppy : 252 } }); renderMath(); renderIntro(); }
     catch (e) { $("mathStatus").textContent = "Gagal: " + e.message; }
   }
   function renderMath() {
@@ -1852,6 +1852,123 @@
   }
 
   // =====================================================================
+  // KENYAMANAN: "Intinya", kalkulator kalau-aku-beli, mode Pemula/Pro, istilah, tur, cetak
+  // =====================================================================
+  const volClass = (v) => (v < 0.2 ? ["rendah", "pos"] : v < 0.35 ? ["sedang", ""] : v < 0.6 ? ["tinggi", "neg"] : ["sangat tinggi", "neg"]);
+  function renderIntro() {
+    const res = state.res, d = state.data; if (!res || res.mode !== "price" || !d) { $("introCard").hidden = true; return; }
+    $("introCard").hidden = false;
+    const m = res.models[state.sel] || Object.values(res.models)[0], s0 = res.s0, q = m.summary.q, days = state.cfg.days;
+    const unit = isCrypto() ? "hari" : "hari bursa", vol = res.stats ? res.stats.volAnn : NaN, [vc, vcls] = volClass(vol);
+    const best = typeof pickBest === "function" ? res.models[pickBest(res)] : null, grade = best && best.backtest ? best.backtest.grade : null;
+    const L = [];
+    L.push(`Dalam <b>${days} ${unit}</b>, 9 dari 10 skenario model berakhir di antara <b>${fmtNum(q[0])}</b> dan <b>${fmtNum(q[6])}</b> (<span class="neg">${spct(q[0] / s0 - 1, 0)}</span> s/d <span class="pos">${spct(q[6] / s0 - 1, 0)}</span>). Titik tengahnya ${fmtNum(q[3])}.`);
+    if (isFinite(vol)) L.push(`Tingkat gejolak: <b class="${vcls}">${vc}</b> (volatilitas ${pct(vol, 0)} per tahun). ${vol >= 0.35 ? "Siapkan mental untuk naik-turun tajam." : "Pergerakannya relatif wajar untuk aset sejenis."}`);
+    const g = state.sig && state.sig.now ? state.sig.now.score : null;
+    if (state.sig && state.sig.now) { const beat = state.sig.oos.strat.sharpe > state.sig.oos.bh.sharpe, v = g >= 2 ? "BELI" : g <= -2 ? "JUAL" : "TAHAN";
+      L.push(`Sinyal teknikal: <b class="${g >= 2 ? "pos" : g <= -2 ? "neg" : ""}">${v}</b> (skor ${g > 0 ? "+" : ""}${g}). ${beat ? "Aturan ini pernah lebih baik dari sekadar menahan saham ini." : "Tapi aturan ini <b>tidak</b> lebih baik dari sekadar menahan saham ini di masa lalu, jadi anggap sebagai info tambahan saja."}`); }
+    if (state.valUpside != null && isFinite(state.valUpside)) L.push(`Valuasi Damodaran (asumsi default): nilai wajar ${state.valUpside > 0 ? "di atas" : "di bawah"} harga sekarang sekitar <b class="${cls(state.valUpside)}">${spct(state.valUpside, 0)}</b>. Angka ini sangat bergantung pada asumsi pertumbuhan.`);
+    if (state.math && state.math.hmm) { const p = state.math.hmm.probHighNow; L.push(`Kondisi pasar untuk aset ini: ${p > 0.6 ? "<b class='neg'>sedang bergejolak</b>" : p < 0.3 ? "<b class='pos'>sedang tenang</b>" : "di antara tenang dan bergejolak"} (peluang rezim bergejolak ${pct(p, 0)}).${state.math.kurt > 1 ? " Kejadian ekstrem lebih sering dari perkiraan kurva normal." : ""}`); }
+    if (grade) L.push(`Seberapa bisa dipercaya: uji historis menilai model ini <b class="g-${grade}">${grade}</b>${grade === "Buruk" ? " — rentang di atas jangan dijadikan pegangan" : ""}.`);
+    $("introList").innerHTML = L.map((x) => `<li>${x}</li>`).join("");
+    $("introAsOf").textContent = `data s/d ${d.dates[d.dates.length - 1]}`;
+    renderWhatIf();
+  }
+  function renderWhatIf() {
+    const res = state.res; if (!res || res.mode !== "price") return;
+    const m = res.models[state.sel] || Object.values(res.models)[0], s0 = res.s0, q = m.summary.q, idr = (state.data.currency || "") === "IDR";
+    const amt = Math.max(0, parseFloat($("wiAmt").value) || 0), idx = isIdx();
+    const fb = idx ? 0.0015 : 0.001, fs = idx ? 0.0025 : 0.001; // fee beli/jual (IDX: jual termasuk PPh final 0,1%)
+    let units, cost;
+    if (idx) { const lot = Math.floor(amt / (s0 * 100 * (1 + fb))); units = lot * 100; cost = units * s0 * (1 + fb); }
+    else { units = amt / (s0 * (1 + fb)); cost = amt; }
+    if (!units) { $("wiOut").innerHTML = ""; $("wiNote").textContent = idx ? `Belum cukup untuk 1 lot (butuh ±${money(s0 * 100 * (1 + fb))}).` : ""; return; }
+    const val = (p) => units * p * (1 - fs) - cost, cur = (v) => (idr ? "Rp " : (state.data.currency || "") + " ") + big(Math.abs(v)).replace(/^Rp /, "");
+    const pl = (v) => `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${cur(v)}</span>`;
+    const pLoss = m.probUp != null ? 1 - m.probUp[m.probUp.length - 1] : NaN;
+    $("wiOut").innerHTML = [[idx ? "Dapat" : "Dapat", idx ? `${nf(0).format(units / 100)} lot` : `${nf(units < 1 ? 6 : 2).format(units)} unit`, `modal terpakai ${cur(cost)}`],
+      ["Skenario buruk (P5)", pl(val(q[0])), "1 dari 20 kemungkinan lebih jelek"], ["Skenario tengah", pl(val(q[3])), "median"], ["Skenario bagus (P95)", pl(val(q[6])), "1 dari 20 kemungkinan lebih bagus"],
+      ["Peluang rugi", isFinite(pLoss) ? pct(pLoss, 0) : "–", `di akhir ${state.cfg.days} periode, sebelum fee`]]
+      .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
+    $("wiNote").textContent = `Sudah termasuk perkiraan fee beli ${pct(fb, 2)} dan jual ${pct(fs, 2)}${idx ? " (termasuk pajak jual 0,1%)" : ""}; belum termasuk dividen. Ukur dulu: sanggupkah kamu menanggung angka skenario buruk tanpa panik?`;
+  }
+
+  // ---------- mode Pemula / Pro ----------
+  function applyMode(mode, save = true) {
+    document.body.classList.toggle("mode-simple", mode === "simple");
+    $("modeBtn").textContent = mode === "simple" ? "MODE: PEMULA" : "MODE: PRO";
+    $("modeBtn").title = mode === "simple" ? "Tampilan ringkas untuk pemula. Klik untuk semua fitur (Pro)." : "Semua fitur tampil. Klik untuk tampilan ringkas (Pemula).";
+    if (mode === "simple" && ["math", "trust", "quant"].includes(state.focus)) setFocus("all", false);
+    try { localStorage.setItem("sp_mode", mode); } catch { /* */ } if (save) saveSettings({ mode });
+    setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+  }
+
+  // ---------- kamus istilah (ketuk istilah bergaris titik) ----------
+  const GLOSS = {
+    "VaR 95%": "Value at Risk: kerugian yang hanya dilampaui 1 dari 20 kali. Bukan rugi maksimal.", "CVaR": "Rata-rata kerugian di 5% kasus terburuk.",
+    "Volatilitas": "Seberapa liar harga bergerak, dalam % per tahun. Makin tinggi makin berisiko.", "Sharpe": "Imbal hasil di atas bunga bebas risiko per unit risiko. > 1 bagus, < 0 kalah dari deposito.",
+    "Beta": "Seberapa besar aset ikut gerak indeks. 1 = sama, 2 = dua kali lipat, 0,5 = setengahnya.", "Korelasi": "Seberapa searah dua aset bergerak (−1 sampai 1).",
+    "RSI": "Kecepatan gerak 14 hari. > 70 sudah naik sangat cepat, < 30 sudah turun sangat cepat.", "MACD": "Selisih rata-rata cepat dan lambat. Memotong garis sinyal ke atas = momentum membaik.",
+    "Stochastic": "Posisi harga di rentang 14 hari terakhir. > 80 dekat puncak, < 20 dekat dasar.", "Bollinger": "Pita MA20 ± 2 standar deviasi. Harga di luar pita = gerak tidak biasa.",
+    "Fib": "Level Fibonacci: titik acuan konvensi trader di antara puncak dan dasar.", "ATR": "Rata-rata rentang harian; dipakai untuk mengukur jarak stop loss.",
+    "Max drawdown": "Penurunan terdalam dari titik tertinggi sebelumnya.", "Max DD": "Penurunan terdalam dari titik tertinggi sebelumnya.",
+    "P/E": "Harga dibagi laba per saham. Bandingkan hanya dalam satu sektor.", "P/BV": "Harga dibagi nilai buku per saham.", "ROE": "Laba bersih dibagi ekuitas: seberapa efisien modal pemegang saham dipakai.",
+    "Peluang naik": "Porsi skenario simulasi yang berakhir di atas harga sekarang. Sekitar 50% itu normal.", "Rentang 90%": "9 dari 10 skenario simulasi berakhir di rentang ini.",
+    "Kurtosis": "Ketebalan ekor distribusi. > 0 = kejadian ekstrem lebih sering dari kurva normal.", "Skewness": "Kemiringan distribusi. Negatif = penurunan tajam lebih sering daripada kenaikan tajam.",
+    "Jarque": "Uji apakah return berdistribusi normal. p < 0,05 = tidak normal.", "Kolmogorov": "Uji apakah return berdistribusi normal. p < 0,05 = tidak normal.",
+    "Hurst": "Memori jangka panjang. Di atas nilai acak = tren cenderung berlanjut, di bawahnya = cenderung berbalik.", "Hill": "Indeks ekor rugi. < 4 = ekor tebal; < 2 = sangat ekstrem.",
+    "Ljung": "Uji apakah ada pola berulang dalam return (atau dalam besarnya gejolak).", "Market cap": "Harga × jumlah saham beredar: nilai pasar perusahaan.",
+    "Div. yield": "Dividen setahun dibagi harga saham.", "Dividend yield": "Dividen setahun dibagi harga saham.", "EPS": "Laba bersih per lembar saham.",
+    "Nilai transaksi": "Harga × volume: berapa rupiah yang diperdagangkan. Kecil = sulit jual cepat.", "Porsi risiko": "Berapa persen risiko portofolio yang berasal dari posisi ini.",
+    "VWAP": "Harga rata-rata tertimbang volume hari itu.", "POC": "Harga dengan transaksi terbanyak; sering jadi support/resistance.",
+    "Kelly": "Ukuran posisi teoretis yang memaksimalkan pertumbuhan. Hampir selalu terlalu agresif; pakai setengahnya atau kurang.",
+  };
+  const GLOSS_KEYS = Object.keys(GLOSS).sort((a, b) => b.length - a.length);
+  let glTimer = null;
+  function applyGloss() {
+    document.querySelectorAll(".kpi .k, th, .tech-stats div, .kvs span, .lbl").forEach((el) => {
+      if (el.dataset.gl || el.children.length > 2) return; const t = el.textContent.trim(); if (!t || t.length > 60) return;
+      const k = GLOSS_KEYS.find((k) => t.toLowerCase().startsWith(k.toLowerCase()) || t.toLowerCase().includes(k.toLowerCase()));
+      el.dataset.gl = k || "-"; if (k) { el.classList.add("gl"); el.title = GLOSS[k]; } });
+  }
+  function showGloss(el, e) { const p = $("glPop"), k = el.dataset.gl; if (!GLOSS[k]) return; p.innerHTML = `<b>${esc(k)}</b><br>${esc(GLOSS[k])}`; p.hidden = false;
+    const r = el.getBoundingClientRect(); p.style.left = Math.min(innerWidth - 300, Math.max(8, r.left)) + "px"; p.style.top = (r.bottom + 6) + "px"; }
+
+  // ---------- tur pengenalan ----------
+  const TOUR = [
+    ["#cmdQ", "Baris perintah", "Ketik kode saham lalu Enter, misalnya BBCA. Tambahkan fungsi seperti BBCA DES atau TLKM HP. Ketik HELP untuk semua perintah."],
+    ["#views", "Lima layar utama", "Watchlist untuk banyak saham, Quant Lab untuk portofolio, Analisis 1 aset, Pasar hari ini, dan Portofolio milikmu. Pintasan: F1–F5."],
+    ["#modeBtn", "Mode Pemula / Pro", "Mode Pemula menyembunyikan bagian yang sangat teknis. Pindah ke Pro kapan saja untuk semua fitur."],
+    ["#introCard", "Intinya", "Di Analisis 1 aset, kartu ini merangkum semuanya dalam bahasa sehari-hari, plus kalkulator: kalau beli Rp 10 juta, skenario terburuk dan terbaiknya berapa."],
+    ["#cmdUser", "Profil & bantuan", "Ganti nama dan tema di sini. Istilah yang bergaris titik bisa diketuk untuk melihat artinya."],
+  ];
+  let tourI = 0;
+  function startTour() { tourI = 0; $("tour").hidden = false; showTourStep(); }
+  function showTourStep() {
+    document.querySelectorAll(".tour-hl").forEach((x) => x.classList.remove("tour-hl"));
+    if (tourI >= TOUR.length) { $("tour").hidden = true; try { localStorage.setItem("sp_toured", "1"); } catch { /* */ } saveSettings({ toured: true }); return; }
+    const [sel, t, txt] = TOUR[tourI]; let el = document.querySelector(sel);
+    if (sel === "#introCard" && el && el.offsetParent === null) el = null;
+    if (el) { el.classList.add("tour-hl"); el.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    $("tourStep").textContent = `${tourI + 1} / ${TOUR.length}`; $("tourTitle").textContent = t; $("tourText").textContent = txt; $("tourNext").textContent = tourI === TOUR.length - 1 ? "Selesai" : "Lanjut";
+    const c = $("tourCard"); if (el) { const r = el.getBoundingClientRect(); c.style.top = Math.min(innerHeight - 220, r.bottom + 12) + "px"; c.style.left = Math.min(innerWidth - 360, Math.max(12, r.left)) + "px"; c.style.transform = "none"; }
+    else { c.style.top = "40%"; c.style.left = "50%"; c.style.transform = "translate(-50%,-50%)"; }
+  }
+  function bindComfort() {
+    let mode = null; try { mode = localStorage.getItem("sp_mode"); } catch { /* */ }
+    applyMode(settings.mode || mode || (me && me.role === "admin" ? "pro" : "simple"), false);
+    $("modeBtn").onclick = () => applyMode(document.body.classList.contains("mode-simple") ? "pro" : "simple");
+    $("wiAmt").addEventListener("input", renderWhatIf);
+    $("wiChips").addEventListener("click", (e) => { const c = e.target.closest(".chip[data-v]"); if (c) { $("wiAmt").value = c.dataset.v; renderWhatIf(); } });
+    $("printBtn").onclick = () => { setFocus("all", false); document.body.classList.add("printing"); setTimeout(() => { window.print(); document.body.classList.remove("printing"); }, 300); };
+    new MutationObserver(() => { clearTimeout(glTimer); glTimer = setTimeout(applyGloss, 400); }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", (e) => { const g = e.target.closest(".gl"); if (g && !e.target.closest("th[data-i]")) { showGloss(g, e); e.stopPropagation(); } else $("glPop").hidden = true; });
+    $("tourNext").onclick = () => { tourI++; showTourStep(); }; $("tourSkip").onclick = () => { tourI = TOUR.length; showTourStep(); };
+    let toured = settings.toured; try { toured = toured || localStorage.getItem("sp_toured"); } catch { /* */ }
+    if (!toured) setTimeout(startTour, 1500);
+  }
+
+  // =====================================================================
   // GAYA BLOOMBERG: perintah mnemonic, panel fungsi (DES, HP, ALRT, HELP)
   // =====================================================================
   const FN = {
@@ -1859,7 +1976,7 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
     CAL: "ECO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
@@ -1882,6 +1999,7 @@
     fnHist.unshift(String(raw).toUpperCase()); fnHist.length = Math.min(fnHist.length, 20);
     if (fn === "MENU") { closeFn(); return; }
     if (fn === "HELP") return showHelp();
+    if (fn === "TOUR") { closeFn(); return startTour(); }
     if (fn === "ALRT") return showAlerts(sym);
     const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
     if (market[fn]) { closeFn(); setView("market"); if (fn === "MOST") { mk.mov = "value"; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.m === "value")); if (mk.at) renderMovers(); }
@@ -1909,6 +2027,7 @@
       <div class="fn-cols"><div><div class="subh">Satu aset</div><table>${Object.keys(FN).filter((k) => FN[k][1] === "aset").map(row).join("")}</table></div>
       <div><div class="subh">Pasar & alat</div><table>${Object.keys(FN).filter((k) => FN[k][1] !== "aset").map(row).join("")}</table></div></div>
       ${me && me.role === "admin" ? '<p class="note"><a href="https://claude.ai/artifact/Gsh64n2QBhwzjocJJWqDbU" target="_blank" rel="noopener">Buku panduan lengkap</a> (dokumen pribadi admin; bagikan ke anggota bila perlu).</p>' : '<p class="note">Buku panduan lengkap dibagikan oleh admin.</p>'}
+      <p class="note"><button class="fn-key" data-cmd="TOUR">Ulangi tur pengenalan</button></p>
       <p class="note">Contoh: <code>BBCA DES</code>, <code>TLKM HP</code>, <code>BBRI GIP</code>, <code>ANTM N</code>, <code>WEI</code>, <code>MOST</code>, <code>SHIP</code>, <code>ALRT</code>. ${fnHist.length ? "Terakhir: " + fnHist.slice(0, 6).map((x) => `<code>${esc(x)}</code>`).join(" ") : ""}</p>`);
   }
   async function showDes(sym) {
@@ -2087,6 +2206,7 @@
   // =====================================================================
   function renderSignal() {
     if (!state.res || state.res.mode !== "price" || !state.data) return;
+    setTimeout(renderIntro, 0);
     const d = state.data, rf = (parseFloat($("rf") && $("rf").value) || DAMO.biRate * 100) / 100;
     const B = MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: state.res.ppy || 252 });
     state.sig = B; const c = B.now;
@@ -2301,7 +2421,7 @@
     $("cmdUser").textContent = (me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : "");
     if (me.role === "admin") refreshAdminBadge();
     if (booted) return; booted = true;
-    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs();
+    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort();
     const P = new URLSearchParams(location.search);
     if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
   }
