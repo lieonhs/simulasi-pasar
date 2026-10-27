@@ -1089,6 +1089,212 @@
       hurst: hu.H, hurstNull: hu.Hnull, hurstPts: hu.pts, vr: vrs, hillL: alphaL, hillR: alphaR, sig4, expected4, entropy: ent, entropyN: entN, h, ppy: opt.ppy || 252 };
   }
 
-  const api = { mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+
+  // =====================================================================
+  // PERPUSTAKAAN STRATEGI: 50 strategi harian + noise band intraday + isi candle
+  // =====================================================================
+  const T = {
+    sma(a, n) { const o = new Array(a.length).fill(null); let s = 0; for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) o[i] = s / n; } return o; },
+    ema(a, n) { const k = 2 / (n + 1), o = new Array(a.length).fill(null); let e = null; for (let i = 0; i < a.length; i++) { if (a[i] == null) continue; e = e == null ? a[i] : a[i] * k + e * (1 - k); o[i] = i >= n - 1 ? e : null; } return o; },
+    std(a, n) { const o = new Array(a.length).fill(null); for (let i = n - 1; i < a.length; i++) { let m = 0; for (let j = i - n + 1; j <= i; j++) m += a[j]; m /= n; let v = 0; for (let j = i - n + 1; j <= i; j++) v += (a[j] - m) ** 2; o[i] = Math.sqrt(v / n); } return o; },
+    hh(a, n) { const o = new Array(a.length).fill(null); for (let i = n - 1; i < a.length; i++) { let m = -Infinity; for (let j = i - n + 1; j <= i; j++) m = Math.max(m, a[j]); o[i] = m; } return o; },
+    ll(a, n) { const o = new Array(a.length).fill(null); for (let i = n - 1; i < a.length; i++) { let m = Infinity; for (let j = i - n + 1; j <= i; j++) m = Math.min(m, a[j]); o[i] = m; } return o; },
+    rsi(c, n) { const o = new Array(c.length).fill(null); let g = 0, l = 0; for (let i = 1; i < c.length; i++) { const d = c[i] - c[i - 1], u = Math.max(d, 0), dn = Math.max(-d, 0);
+      if (i <= n) { g += u / n; l += dn / n; if (i === n) o[i] = 100 - 100 / (1 + g / (l || 1e-12)); } else { g = (g * (n - 1) + u) / n; l = (l * (n - 1) + dn) / n; o[i] = 100 - 100 / (1 + g / (l || 1e-12)); } } return o; },
+    tr(h, l, c) { return h.map((x, i) => (i ? Math.max(x - l[i], Math.abs(x - c[i - 1]), Math.abs(l[i] - c[i - 1])) : x - l[i])); },
+    atr(h, l, c, n) { const t = T.tr(h, l, c), o = new Array(c.length).fill(null); let a = null; for (let i = 0; i < c.length; i++) { a = a == null ? t[i] : (a * (n - 1) + t[i]) / n; if (i >= n - 1) o[i] = a; } return o; },
+    roc(c, n) { return c.map((x, i) => (i >= n ? x / c[i - n] - 1 : null)); },
+    shift(a, k = 1) { return a.map((_, i) => (i >= k ? a[i - k] : null)); },
+  };
+  // posisi target per hari: 1 = beli/pegang, 0 = keluar, -1 = short (diabaikan bila short tidak diizinkan)
+  // helper state machine: masuk saat entry, keluar saat exit
+  function machine(n, entry, exit, side = 1) { const p = new Array(n).fill(0); let s = 0; for (let i = 0; i < n; i++) { if (s === 0 && entry(i)) s = side; else if (s !== 0 && exit(i)) s = 0; p[i] = s; } return p; }
+  function holdN(n, entry, k) { const p = new Array(n).fill(0); let left = 0; for (let i = 0; i < n; i++) { if (left > 0) { left--; p[i] = 1; } else if (entry(i)) { left = k - 1; p[i] = 1; } } return p; }
+  const ok = (...x) => x.every((v) => v != null && isFinite(v));
+  const STRATS = [
+    // ---- TREN ----
+    ["sma2050", "Tren", "SMA 20/50", "Pegang selama SMA20 di atas SMA50.", (D) => { const a = T.sma(D.c, 20), b = T.sma(D.c, 50); return D.c.map((_, i) => (ok(a[i], b[i]) ? (a[i] > b[i] ? 1 : -1) : 0)); }],
+    ["golden", "Tren", "Golden cross 50/200", "Pegang selama SMA50 di atas SMA200.", (D) => { const a = T.sma(D.c, 50), b = T.sma(D.c, 200); return D.c.map((_, i) => (ok(a[i], b[i]) ? (a[i] > b[i] ? 1 : -1) : 0)); }],
+    ["ema1226", "Tren", "EMA 12/26", "Pegang selama EMA12 di atas EMA26.", (D) => { const a = T.ema(D.c, 12), b = T.ema(D.c, 26); return D.c.map((_, i) => (ok(a[i], b[i]) ? (a[i] > b[i] ? 1 : -1) : 0)); }],
+    ["above200", "Tren", "Di atas SMA200", "Pegang selama harga di atas SMA200 (filter tren panjang).", (D) => { const a = T.sma(D.c, 200); return D.c.map((x, i) => (ok(a[i]) ? (x > a[i] ? 1 : -1) : 0)); }],
+    ["macdsig", "Tren", "MACD > sinyal", "Pegang selama MACD(12,26) di atas garis sinyal 9.", (D) => { const a = T.ema(D.c, 12), b = T.ema(D.c, 26), m = a.map((x, i) => (ok(x, b[i]) ? x - b[i] : null)), s = T.ema(m.map((x) => x ?? 0), 9); return m.map((x, i) => (ok(x, s[i]) && i > 35 ? (x > s[i] ? 1 : -1) : 0)); }],
+    ["donch20", "Tren", "Donchian 20/10", "Beli saat tutup di atas tertinggi 20 hari; keluar saat di bawah terendah 10 hari.", (D) => { const H = T.shift(T.hh(D.h, 20)), L = T.shift(T.ll(D.l, 10)); return machine(D.n, (i) => ok(H[i]) && D.c[i] > H[i], (i) => ok(L[i]) && D.c[i] < L[i]); }],
+    ["turtle", "Tren", "Turtle 55/20", "Beli saat tutup di atas tertinggi 55 hari; keluar di bawah terendah 20 hari.", (D) => { const H = T.shift(T.hh(D.h, 55)), L = T.shift(T.ll(D.l, 20)); return machine(D.n, (i) => ok(H[i]) && D.c[i] > H[i], (i) => ok(L[i]) && D.c[i] < L[i]); }],
+    ["supertrend", "Tren", "Supertrend (10, 3)", "Mengikuti arah Supertrend berbasis ATR.", (D) => { const a = T.atr(D.h, D.l, D.c, 10), p = new Array(D.n).fill(0); let up = null, dn = null, dir = 1;
+      for (let i = 0; i < D.n; i++) { if (!ok(a[i])) continue; const m = (D.h[i] + D.l[i]) / 2, bu = m + 3 * a[i], bl = m - 3 * a[i];
+        up = up == null || bu < up || D.c[i - 1] > up ? bu : up; dn = dn == null || bl > dn || D.c[i - 1] < dn ? bl : dn;
+        if (D.c[i] > up) dir = 1; else if (D.c[i] < dn) dir = -1; p[i] = dir; } return p; }],
+    ["psar", "Tren", "Parabolic SAR", "Mengikuti arah Parabolic SAR (0,02/0,2).", (D) => { const p = new Array(D.n).fill(0); if (D.n < 3) return p; let up = true, sar = D.l[0], ep = D.h[0], af = 0.02;
+      for (let i = 1; i < D.n; i++) { sar = sar + af * (ep - sar);
+        if (up) { sar = Math.min(sar, D.l[i - 1], D.l[Math.max(0, i - 2)]); if (D.l[i] < sar) { up = false; sar = ep; ep = D.l[i]; af = 0.02; } else if (D.h[i] > ep) { ep = D.h[i]; af = Math.min(0.2, af + 0.02); } }
+        else { sar = Math.max(sar, D.h[i - 1], D.h[Math.max(0, i - 2)]); if (D.h[i] > sar) { up = true; sar = ep; ep = D.h[i]; af = 0.02; } else if (D.l[i] < ep) { ep = D.l[i]; af = Math.min(0.2, af + 0.02); } }
+        p[i] = i > 10 ? (up ? 1 : -1) : 0; } return p; }],
+    ["ichimoku", "Tren", "Ichimoku", "Beli saat harga di atas awan dan Tenkan > Kijun; keluar saat di bawah awan.", (D) => { const mid = (n) => T.hh(D.h, n).map((x, i) => (ok(x) ? (x + T.ll(D.l, n)[i]) / 2 : null));
+      const tk = mid(9), kj = mid(26), sa = T.shift(tk.map((x, i) => (ok(x, kj[i]) ? (x + kj[i]) / 2 : null)), 26), sb = T.shift(mid(52), 26);
+      return machine(D.n, (i) => ok(sa[i], sb[i], tk[i], kj[i]) && D.c[i] > Math.max(sa[i], sb[i]) && tk[i] > kj[i], (i) => ok(sa[i], sb[i]) && D.c[i] < Math.min(sa[i], sb[i])); }],
+    ["adx", "Tren", "ADX tren kuat", "Pegang saat ADX(14) > 25 dan +DI > −DI.", (D) => { const n = 14, pd = [0], md = [0]; for (let i = 1; i < D.n; i++) { const u = D.h[i] - D.h[i - 1], d = D.l[i - 1] - D.l[i]; pd.push(u > d && u > 0 ? u : 0); md.push(d > u && d > 0 ? d : 0); }
+      const a = T.atr(D.h, D.l, D.c, n), sp = T.ema(pd, 2 * n - 1), sm = T.ema(md, 2 * n - 1), dip = sp.map((x, i) => (ok(x, a[i]) ? (100 * x) / a[i] : null)), dim = sm.map((x, i) => (ok(x, a[i]) ? (100 * x) / a[i] : null));
+      const dx = dip.map((x, i) => (ok(x, dim[i]) && x + dim[i] > 0 ? (100 * Math.abs(x - dim[i])) / (x + dim[i]) : null)), adx = T.ema(dx.map((x) => x ?? 0), 2 * n - 1);
+      return D.c.map((_, i) => (i > 3 * n && ok(adx[i], dip[i], dim[i]) && adx[i] > 25 ? (dip[i] > dim[i] ? 1 : -1) : 0)); }],
+    // ---- MOMENTUM ----
+    ["tsm12", "Momentum", "Momentum 12 bulan", "Pegang bila return 12 bulan terakhir positif (time-series momentum).", (D) => { const r = T.roc(D.c, 252); return r.map((x) => (ok(x) ? (x > 0 ? 1 : -1) : 0)); }],
+    ["tsm3", "Momentum", "Momentum 3 bulan", "Pegang bila return 63 hari positif.", (D) => { const r = T.roc(D.c, 63); return r.map((x) => (ok(x) ? (x > 0 ? 1 : -1) : 0)); }],
+    ["tsm1", "Momentum", "Momentum 1 bulan", "Pegang bila return 21 hari positif.", (D) => { const r = T.roc(D.c, 21); return r.map((x) => (ok(x) ? (x > 0 ? 1 : -1) : 0)); }],
+    ["rsi50", "Momentum", "RSI di atas 50", "Pegang selama RSI(14) > 50.", (D) => { const r = T.rsi(D.c, 14); return r.map((x) => (ok(x) ? (x > 50 ? 1 : -1) : 0)); }],
+    ["aroon", "Momentum", "Aroon (25)", "Pegang saat Aroon Up > 70 dan > Aroon Down.", (D) => { const n = 25, p = new Array(D.n).fill(0);
+      for (let i = n; i < D.n; i++) { let hi = 0, lo = 0; for (let j = 1; j <= n; j++) { if (D.h[i - j] > D.h[i - hi]) hi = j; if (D.l[i - j] < D.l[i - lo]) lo = j; } const au = (100 * (n - hi)) / n, ad = (100 * (n - lo)) / n; p[i] = au > 70 && au > ad ? 1 : ad > 70 && ad > au ? -1 : p[i - 1]; } return p; }],
+    ["linslope", "Momentum", "Kemiringan regresi 50 hari", "Pegang bila garis regresi linier 50 hari miring naik.", (D) => { const n = 50, p = new Array(D.n).fill(0), xm = (n - 1) / 2, sxx = (n * (n * n - 1)) / 12;
+      for (let i = n - 1; i < D.n; i++) { let ym = 0; for (let j = 0; j < n; j++) ym += Math.log(D.c[i - n + 1 + j]); ym /= n; let sxy = 0; for (let j = 0; j < n; j++) sxy += (j - xm) * (Math.log(D.c[i - n + 1 + j]) - ym); p[i] = sxy / sxx > 0 ? 1 : -1; } return p; }],
+    ["hi52", "Momentum", "Dekat puncak 52 minggu", "Pegang saat harga dalam 5% dari tertinggi 252 hari; keluar bila turun > 10% dari puncak.", (D) => { const H = T.hh(D.h, 252); return machine(D.n, (i) => ok(H[i]) && D.c[i] >= 0.95 * H[i], (i) => ok(H[i]) && D.c[i] < 0.9 * H[i]); }],
+    ["accel", "Momentum", "Momentum berakselerasi", "Pegang bila return 1 bulan > sepertiga return 3 bulan dan return 3 bulan positif.", (D) => { const a = T.roc(D.c, 21), b = T.roc(D.c, 63); return a.map((x, i) => (ok(x, b[i]) ? (b[i] > 0 && x > b[i] / 3 ? 1 : 0) : 0)); }],
+    // ---- MEAN REVERSION ----
+    ["rsi2", "Mean reversion", "RSI(2) Connors", "Beli saat RSI(2) < 10 dan di atas SMA200; jual saat tutup di atas SMA5.", (D) => { const r = T.rsi(D.c, 2), m200 = T.sma(D.c, 200), m5 = T.sma(D.c, 5); return machine(D.n, (i) => ok(r[i], m200[i]) && r[i] < 10 && D.c[i] > m200[i], (i) => ok(m5[i]) && D.c[i] > m5[i]); }],
+    ["rsi3070", "Mean reversion", "RSI 30/70", "Beli saat RSI(14) < 30; jual saat RSI > 70.", (D) => { const r = T.rsi(D.c, 14); return machine(D.n, (i) => ok(r[i]) && r[i] < 30, (i) => ok(r[i]) && r[i] > 70); }],
+    ["bbrev", "Mean reversion", "Bollinger kembali ke tengah", "Beli saat tutup di bawah pita bawah (20, 2σ); jual saat kembali ke MA20.", (D) => { const m = T.sma(D.c, 20), s = T.std(D.c, 20); return machine(D.n, (i) => ok(m[i], s[i]) && D.c[i] < m[i] - 2 * s[i], (i) => ok(m[i]) && D.c[i] > m[i]); }],
+    ["zrev", "Mean reversion", "Z-score 20 hari", "Beli saat z-score harga < −2; jual saat z > 0.", (D) => { const m = T.sma(D.c, 20), s = T.std(D.c, 20), z = D.c.map((x, i) => (ok(m[i], s[i]) && s[i] > 0 ? (x - m[i]) / s[i] : null)); return machine(D.n, (i) => ok(z[i]) && z[i] < -2, (i) => ok(z[i]) && z[i] > 0); }],
+    ["willr", "Mean reversion", "Williams %R", "Beli saat %R(14) < −90; jual saat > −20.", (D) => { const H = T.hh(D.h, 14), L = T.ll(D.l, 14), w = D.c.map((x, i) => (ok(H[i], L[i]) && H[i] > L[i] ? (-100 * (H[i] - x)) / (H[i] - L[i]) : null)); return machine(D.n, (i) => ok(w[i]) && w[i] < -90, (i) => ok(w[i]) && w[i] > -20); }],
+    ["stoch", "Mean reversion", "Stochastic 20/80", "Beli saat %K(14,3) naik melewati 20; jual saat > 80.", (D) => { const H = T.hh(D.h, 14), L = T.ll(D.l, 14), k = T.sma(D.c.map((x, i) => (ok(H[i], L[i]) && H[i] > L[i] ? (100 * (x - L[i])) / (H[i] - L[i]) : 50)), 3);
+      return machine(D.n, (i) => i > 16 && ok(k[i], k[i - 1]) && k[i - 1] < 20 && k[i] >= 20, (i) => ok(k[i]) && k[i] > 80); }],
+    ["cci", "Mean reversion", "CCI ±100", "Beli saat CCI(20) < −100; jual saat > +100.", (D) => { const tp = D.c.map((x, i) => (D.h[i] + D.l[i] + x) / 3), m = T.sma(tp, 20), md = tp.map((_, i) => { if (!ok(m[i])) return null; let s = 0; for (let j = i - 19; j <= i; j++) s += Math.abs(tp[j] - m[i]); return s / 20; });
+      const cc = tp.map((x, i) => (ok(m[i], md[i]) && md[i] > 0 ? (x - m[i]) / (0.015 * md[i]) : null)); return machine(D.n, (i) => ok(cc[i]) && cc[i] < -100, (i) => ok(cc[i]) && cc[i] > 100); }],
+    ["ibs", "Mean reversion", "Internal Bar Strength", "Beli saat tutup di 20% bawah rentang hari itu; jual saat di 80% atas.", (D) => { const b = D.c.map((x, i) => (D.h[i] > D.l[i] ? (x - D.l[i]) / (D.h[i] - D.l[i]) : 0.5)); return machine(D.n, (i) => b[i] < 0.2, (i) => b[i] > 0.8); }],
+    ["down3", "Mean reversion", "3 hari turun beruntun", "Beli setelah 3 penutupan turun berturut-turut; jual pada penutupan naik pertama.", (D) => machine(D.n, (i) => i > 3 && D.c[i] < D.c[i - 1] && D.c[i - 1] < D.c[i - 2] && D.c[i - 2] < D.c[i - 3], (i) => D.c[i] > D.c[i - 1])],
+    ["drop2s", "Mean reversion", "Rebound setelah anjlok", "Beli setelah turun > 2σ harian; tahan 3 hari.", (D) => { const r = D.c.map((x, i) => (i ? Math.log(x / D.c[i - 1]) : 0)), s = T.std(r, 60); return holdN(D.n, (i) => ok(s[i]) && r[i] < -2 * s[i], 3); }],
+    ["double7", "Mean reversion", "Double 7s", "Beli saat tutup di terendah 7 hari dan di atas SMA200; jual saat di tertinggi 7 hari.", (D) => { const L = T.ll(D.c, 7), H = T.hh(D.c, 7), m = T.sma(D.c, 200); return machine(D.n, (i) => ok(L[i], m[i]) && D.c[i] <= L[i] && D.c[i] > m[i], (i) => ok(H[i]) && D.c[i] >= H[i]); }],
+    ["kcrev", "Mean reversion", "Keltner kembali ke tengah", "Beli saat di bawah Keltner bawah (EMA20 − 2 ATR); jual di EMA20.", (D) => { const e = T.ema(D.c, 20), a = T.atr(D.h, D.l, D.c, 20); return machine(D.n, (i) => ok(e[i], a[i]) && D.c[i] < e[i] - 2 * a[i], (i) => ok(e[i]) && D.c[i] > e[i]); }],
+    ["linreg", "Mean reversion", "Kanal regresi 50 hari", "Beli saat harga 2σ di bawah garis regresi 50 hari; jual saat kembali ke garis.", (D) => { const n = 50, z = new Array(D.n).fill(null), xm = (n - 1) / 2, sxx = (n * (n * n - 1)) / 12;
+      for (let i = n - 1; i < D.n; i++) { let ym = 0; for (let j = 0; j < n; j++) ym += D.c[i - n + 1 + j]; ym /= n; let sxy = 0; for (let j = 0; j < n; j++) sxy += (j - xm) * (D.c[i - n + 1 + j] - ym); const b = sxy / sxx, a0 = ym - b * xm; let se = 0; for (let j = 0; j < n; j++) se += (D.c[i - n + 1 + j] - (a0 + b * j)) ** 2; se = Math.sqrt(se / n); z[i] = se > 0 ? (D.c[i] - (a0 + b * (n - 1))) / se : 0; }
+      return machine(D.n, (i) => ok(z[i]) && z[i] < -2, (i) => ok(z[i]) && z[i] > 0); }],
+    // ---- VOLATILITAS / BREAKOUT ----
+    ["atrbo", "Volatilitas", "Breakout ATR", "Beli saat tutup naik > 1,5 ATR dari kemarin; keluar saat di bawah SMA10.", (D) => { const a = T.atr(D.h, D.l, D.c, 14), m = T.sma(D.c, 10); return machine(D.n, (i) => i > 0 && ok(a[i - 1]) && D.c[i] > D.c[i - 1] + 1.5 * a[i - 1], (i) => ok(m[i]) && D.c[i] < m[i]); }],
+    ["squeeze", "Volatilitas", "Squeeze Bollinger–Keltner", "Setelah pita Bollinger masuk ke dalam Keltner (volatilitas menyempit), beli saat tutup di atas pita atas; keluar di bawah MA20.", (D) => { const m = T.sma(D.c, 20), s = T.std(D.c, 20), e = T.ema(D.c, 20), a = T.atr(D.h, D.l, D.c, 20);
+      const sq = D.c.map((_, i) => ok(m[i], s[i], e[i], a[i]) && m[i] + 2 * s[i] < e[i] + 1.5 * a[i] && m[i] - 2 * s[i] > e[i] - 1.5 * a[i]);
+      return machine(D.n, (i) => i > 5 && sq.slice(i - 5, i).some(Boolean) && D.c[i] > m[i] + 2 * s[i], (i) => ok(m[i]) && D.c[i] < m[i]); }],
+    ["nr7", "Volatilitas", "NR7 breakout", "Setelah hari dengan rentang tersempit 7 hari, beli bila tutup di atas tertinggi hari itu; tahan 5 hari.", (D) => { const rg = D.h.map((x, i) => x - D.l[i]); return holdN(D.n, (i) => i > 8 && rg[i - 1] <= Math.min(...rg.slice(i - 7, i)) && D.c[i] > D.h[i - 1], 5); }],
+    ["insidebar", "Volatilitas", "Inside bar breakout", "Setelah inside bar, beli bila tutup di atas tertinggi bar induk; tahan 5 hari.", (D) => holdN(D.n, (i) => i > 2 && D.h[i - 1] < D.h[i - 2] && D.l[i - 1] > D.l[i - 2] && D.c[i] > D.h[i - 2], 5)],
+    ["kcbo", "Volatilitas", "Breakout Keltner", "Beli saat tutup di atas EMA20 + 2 ATR; keluar di bawah EMA20.", (D) => { const e = T.ema(D.c, 20), a = T.atr(D.h, D.l, D.c, 20); return machine(D.n, (i) => ok(e[i], a[i]) && D.c[i] > e[i] + 2 * a[i], (i) => ok(e[i]) && D.c[i] < e[i]); }],
+    ["bbbo", "Volatilitas", "Breakout Bollinger", "Beli saat tutup di atas pita atas (20, 2σ); keluar di bawah MA20.", (D) => { const m = T.sma(D.c, 20), s = T.std(D.c, 20); return machine(D.n, (i) => ok(m[i], s[i]) && D.c[i] > m[i] + 2 * s[i], (i) => ok(m[i]) && D.c[i] < m[i]); }],
+    ["voltarget", "Volatilitas", "Tren + target volatilitas", "Di atas SMA100, ukuran posisi = 15% ÷ volatilitas 20 hari (maks 100%).", (D) => { const m = T.sma(D.c, 100), r = D.c.map((x, i) => (i ? Math.log(x / D.c[i - 1]) : 0)), s = T.std(r, 20); return D.c.map((x, i) => (ok(m[i], s[i]) && s[i] > 0 && x > m[i] ? Math.min(1, 0.15 / (s[i] * Math.sqrt(252))) : 0)); }],
+    ["lowvol", "Volatilitas", "Rezim volatilitas rendah", "Pegang saat volatilitas 20 hari di bawah volatilitas 100 hari dan harga di atas SMA50.", (D) => { const r = D.c.map((x, i) => (i ? Math.log(x / D.c[i - 1]) : 0)), a = T.std(r, 20), b = T.std(r, 100), m = T.sma(D.c, 50); return D.c.map((x, i) => (ok(a[i], b[i], m[i]) ? (a[i] < b[i] && x > m[i] ? 1 : 0) : 0)); }],
+    // ---- VOLUME ----
+    ["obv", "Volume", "OBV di atas rata-ratanya", "Pegang saat On-Balance Volume di atas SMA20-nya.", (D) => { const o = [0]; for (let i = 1; i < D.n; i++) o.push(o[i - 1] + (D.c[i] > D.c[i - 1] ? D.v[i] : D.c[i] < D.c[i - 1] ? -D.v[i] : 0)); const m = T.sma(o, 20); return o.map((x, i) => (ok(m[i]) ? (x > m[i] ? 1 : -1) : 0)); }],
+    ["volspike", "Volume", "Lonjakan volume + breakout", "Beli saat volume > 2× rata-rata 20 hari dan tutup di atas tertinggi 20 hari; tahan 10 hari.", (D) => { const av = T.shift(T.sma(D.v, 20)), H = T.shift(T.hh(D.h, 20)); return holdN(D.n, (i) => ok(av[i], H[i]) && av[i] > 0 && D.v[i] > 2 * av[i] && D.c[i] > H[i], 10); }],
+    ["mfi", "Volume", "Money Flow Index 20/80", "Beli saat MFI(14) < 20; jual saat > 80.", (D) => { const tp = D.c.map((x, i) => (D.h[i] + D.l[i] + x) / 3), mf = new Array(D.n).fill(null);
+      for (let i = 14; i < D.n; i++) { let p = 0, q = 0; for (let j = i - 13; j <= i; j++) { const f = tp[j] * D.v[j]; if (tp[j] > tp[j - 1]) p += f; else if (tp[j] < tp[j - 1]) q += f; } mf[i] = 100 - 100 / (1 + p / (q || 1e-12)); }
+      return machine(D.n, (i) => ok(mf[i]) && mf[i] < 20, (i) => ok(mf[i]) && mf[i] > 80); }],
+    ["cmf", "Volume", "Chaikin Money Flow", "Pegang saat CMF(20) > +0,05; keluar saat < −0,05.", (D) => { const mfv = D.c.map((x, i) => (D.h[i] > D.l[i] ? ((x - D.l[i] - (D.h[i] - x)) / (D.h[i] - D.l[i])) * D.v[i] : 0)), a = T.sma(mfv, 20), b = T.sma(D.v, 20);
+      const cmf = a.map((x, i) => (ok(x, b[i]) && b[i] > 0 ? x / b[i] : null)); return machine(D.n, (i) => ok(cmf[i]) && cmf[i] > 0.05, (i) => ok(cmf[i]) && cmf[i] < -0.05); }],
+    ["adline", "Volume", "Garis akumulasi/distribusi", "Pegang saat garis A/D di atas SMA20-nya (ada akumulasi).", (D) => { const o = []; let s = 0; for (let i = 0; i < D.n; i++) { s += D.h[i] > D.l[i] ? ((D.c[i] - D.l[i] - (D.h[i] - D.c[i])) / (D.h[i] - D.l[i])) * D.v[i] : 0; o.push(s); } const m = T.sma(o, 20); return o.map((x, i) => (ok(m[i]) ? (x > m[i] ? 1 : 0) : 0)); }],
+    ["vwap20", "Volume", "Di atas VWAP 20 hari", "Pegang saat harga di atas harga rata-rata tertimbang volume 20 hari.", (D) => { const pv = T.sma(D.c.map((x, i) => ((D.h[i] + D.l[i] + x) / 3) * D.v[i]), 20), vv = T.sma(D.v, 20); return D.c.map((x, i) => (ok(pv[i], vv[i]) && vv[i] > 0 ? (x > pv[i] / vv[i] ? 1 : -1) : 0)); }],
+    ["pocrev", "Volume", "Kembali ke POC 60 hari", "Beli saat harga > 5% di bawah POC (harga dengan volume terbanyak) 60 hari; jual saat menyentuh POC.", (D) => { const poc = new Array(D.n).fill(null), B = 30;
+      for (let i = 60; i < D.n; i++) { let lo = Infinity, hi = -Infinity; for (let j = i - 59; j <= i; j++) { lo = Math.min(lo, D.l[j]); hi = Math.max(hi, D.h[j]); } const w = (hi - lo) / B || 1, bins = new Array(B).fill(0);
+        for (let j = i - 59; j <= i; j++) { const a = Math.floor((D.l[j] - lo) / w), b = Math.min(B - 1, Math.floor((D.h[j] - lo) / w)); for (let k = a; k <= b; k++) bins[k] += D.v[j] / (b - a + 1); }
+        const k = bins.indexOf(Math.max(...bins)); poc[i] = lo + (k + 0.5) * w; }
+      return machine(D.n, (i) => ok(poc[i]) && D.c[i] < 0.95 * poc[i], (i) => ok(poc[i]) && D.c[i] >= poc[i]); }],
+    ["volma", "Volume", "Tren dikonfirmasi volume", "Pegang saat SMA20 > SMA50 dan OBV naik dalam 20 hari.", (D) => { const a = T.sma(D.c, 20), b = T.sma(D.c, 50), o = [0]; for (let i = 1; i < D.n; i++) o.push(o[i - 1] + (D.c[i] > D.c[i - 1] ? D.v[i] : D.c[i] < D.c[i - 1] ? -D.v[i] : 0));
+      return D.c.map((_, i) => (ok(a[i], b[i]) && i >= 20 ? (a[i] > b[i] && o[i] > o[i - 20] ? 1 : 0) : 0)); }],
+    // ---- MUSIMAN / STATISTIK ----
+    ["tom", "Musiman", "Turn of the month", "Pegang di hari bursa terakhir bulan dan 3 hari bursa pertama bulan berikutnya.", (D) => { const p = new Array(D.n).fill(0); for (let i = 0; i < D.n; i++) { const m = D.d[i].slice(0, 7); let k = 0; for (let j = i; j >= 0 && D.d[j].slice(0, 7) === m; j--) k++; const last = i + 1 < D.n && D.d[i + 1].slice(0, 7) !== m; if (last || k <= 3) p[i] = 1; }
+      // posisi berlaku untuk return hari berikutnya: geser satu supaya hari pertama s/d ketiga ikut terhitung
+      return p.map((_, i) => (i + 1 < D.n ? p[i + 1] : 0)); }],
+    ["trendlowvol", "Statistik", "Tren + volatilitas di bawah median", "Pegang saat SMA50 > SMA200 dan volatilitas 20 hari di bawah median 1 tahunnya.", (D) => { const a = T.sma(D.c, 50), b = T.sma(D.c, 200), r = D.c.map((x, i) => (i ? Math.log(x / D.c[i - 1]) : 0)), s = T.std(r, 20);
+      return D.c.map((_, i) => { if (!ok(a[i], b[i], s[i]) || i < 252) return 0; const w = s.slice(i - 251, i + 1).filter((x) => x != null).sort((x, y) => x - y); return a[i] > b[i] && s[i] < w[w.length >> 1] ? 1 : 0; }); }],
+  ];
+  function perf(r, dates, ppy, rf = 0) {
+    const n = r.length; if (!n) return null; let eq = 1, pk = 1, mdd = 0; const curve = [1];
+    for (const x of r) { eq *= 1 + x; curve.push(eq); pk = Math.max(pk, eq); mdd = Math.max(mdd, 1 - eq / pk); }
+    const yrs = n / ppy, m = mean(r), s = std(r), dn = Math.sqrt(r.reduce((a, x) => a + Math.min(0, x) ** 2, 0) / n);
+    const cagr = eq > 0 ? Math.pow(eq, 1 / Math.max(yrs, 1e-9)) - 1 : -1;
+    return { total: eq - 1, cagr, vol: s * Math.sqrt(ppy), sharpe: s > 0 ? ((m - rf / ppy) / s) * Math.sqrt(ppy) : 0, sortino: dn > 0 ? ((m - rf / ppy) / dn) * Math.sqrt(ppy) : 0, maxDD: mdd, calmar: mdd > 0 ? cagr / mdd : 0, curve, yrs };
+  }
+  function periodReturns(r, dates) { // rate of return per bulan & per tahun
+    const M = {}, Y = {}; r.forEach((x, i) => { const d = dates[i], ym = d.slice(0, 7), y = d.slice(0, 4); M[ym] = (M[ym] ?? 1) * (1 + x); Y[y] = (Y[y] ?? 1) * (1 + x); });
+    for (const k in M) M[k] -= 1; for (const k in Y) Y[k] -= 1; return { monthly: M, yearly: Y };
+  }
+  function runStrategy(id, D, o = {}) {
+    const S = STRATS.find((x) => x[0] === id); if (!S) throw new Error("Strategi tidak dikenal");
+    const raw = S[4](D), cost = (o.costBps ?? 20) / 1e4, allowShort = !!o.short, ppy = o.ppy || 252, rf = o.rf || 0;
+    const pos = raw.map((x) => (x == null || !isFinite(x) ? 0 : x < 0 ? (allowShort ? Math.max(-1, x) : 0) : Math.min(1, x)));
+    const r = [], rb = [], dates = [], trades = []; let prev = 0, open = null;
+    for (let t = 0; t < D.n - 1; t++) { // posisi ditentukan saat tutup hari t, berlaku untuk return t → t+1
+      const ret = D.c[t + 1] / D.c[t] - 1, chg = Math.abs(pos[t] - prev);
+      r.push(pos[t] * ret - cost * chg); rb.push(ret); dates.push(D.d[t + 1]);
+      if (prev === 0 && pos[t] !== 0) open = { in: D.d[t], px: D.c[t], side: Math.sign(pos[t]), w: Math.abs(pos[t]) };
+      else if (prev !== 0 && (pos[t] === 0 || Math.sign(pos[t]) !== Math.sign(prev)) && open) { trades.push({ ...open, out: D.d[t], pxOut: D.c[t], ret: open.side * (D.c[t] / open.px - 1) - 2 * cost, days: D.d.indexOf(D.d[t]) - D.d.indexOf(open.in) }); open = pos[t] !== 0 ? { in: D.d[t], px: D.c[t], side: Math.sign(pos[t]), w: Math.abs(pos[t]) } : null; }
+      prev = pos[t]; }
+    if (open) trades.push({ ...open, out: null, pxOut: D.c[D.n - 1], ret: open.side * (D.c[D.n - 1] / open.px - 1) - cost, days: D.n - 1 - D.d.indexOf(open.in), openNow: true });
+    const k = Math.floor(r.length * (o.split ?? 0.7)), closed = trades.filter((x) => !x.openNow), wins = closed.filter((x) => x.ret > 0);
+    const gp = closed.filter((x) => x.ret > 0).reduce((a, x) => a + x.ret, 0), gl = -closed.filter((x) => x.ret < 0).reduce((a, x) => a + x.ret, 0);
+    return { id, name: S[2], cat: S[1], desc: S[3], dates, r, rb, pos: pos[D.n - 1], posPrev: pos[D.n - 2], trades,
+      all: perf(r, dates, ppy, rf), bh: perf(rb, dates, ppy, rf), is: perf(r.slice(0, k), dates, ppy, rf), oos: perf(r.slice(k), dates, ppy, rf), oosBh: perf(rb.slice(k), dates, ppy, rf), splitDate: dates[k],
+      exposure: pos.filter((x) => x !== 0).length / pos.length, nTrades: closed.length, winRate: closed.length ? wins.length / closed.length : NaN, avgTrade: closed.length ? mean(closed.map((x) => x.ret)) : NaN,
+      profitFactor: gl > 0 ? gp / gl : gp > 0 ? Infinity : NaN, avgDays: closed.length ? mean(closed.map((x) => x.days)) : NaN, periods: periodReturns(r, dates), periodsBh: periodReturns(rb, dates) };
+  }
+  function runAllStrategies(D, o = {}) {
+    const out = STRATS.map((S) => { try { const R = runStrategy(S[0], D, o); return { id: R.id, name: R.name, cat: R.cat, total: R.all.total, cagr: R.all.cagr, sharpe: R.all.sharpe, maxDD: R.all.maxDD, oosSharpe: R.oos.sharpe, isSharpe: R.is.sharpe, nTrades: R.nTrades, winRate: R.winRate, exposure: R.exposure, pos: R.pos, posPrev: R.posPrev }; } catch (e) { return { id: S[0], name: S[2], cat: S[1], error: e.message }; } });
+    const bh = runStrategy(STRATS[0][0], D, o); const yrsOos = bh.oos.yrs;
+    // Sharpe tertinggi yang diharapkan muncul HANYA karena kebetulan dari N strategi (Bailey & López de Prado)
+    const N = out.length, g = 0.5772, z = qnorm;
+    const sdSR = 1 / Math.sqrt(Math.max(yrsOos, 0.25)), luck = sdSR * ((1 - g) * z(1 - 1 / N) + g * z(1 - 1 / (N * Math.E)));
+    return { list: out, bh: { total: bh.bh.total, cagr: bh.bh.cagr, sharpe: bh.bh.sharpe, maxDD: bh.bh.maxDD, oosSharpe: bh.oosBh.sharpe }, luckSharpe: luck, yrsOos, splitDate: bh.splitDate };
+  }
+
+  // ---------- Noise band (Zarattini, Aziz & Barbon 2024) ----------
+  // batas = max/min(open hari ini, tutup kemarin) × (1 ± rata-rata |tutup jam itu / open − 1| dalam 14 hari)
+  function noiseBand(bars, o = {}) {
+    const look = o.lookback ?? 14, every = Math.max(1, o.every ?? 1), cost = (o.costBps ?? 10) / 1e4, allowShort = !!o.short, useVwap = o.vwapStop !== false;
+    const off = o.gmtoffset || 0, days = []; let cur = null;
+    for (const b of bars) { const d = new Date((b[0] + off) * 1000).toISOString().slice(0, 10); if (!cur || cur.d !== d) { cur = { d, bars: [] }; days.push(cur); } cur.bars.push(b); }
+    const moves = days.map((D) => D.bars.map((b) => Math.abs(b[4] / D.bars[0][1] - 1)));
+    const dayRet = [], trades = [], lastDay = { up: [], lo: [], vwap: [], t: [] }; let eq = 1;
+    for (let k = 1; k < days.length; k++) {
+      const D = days[k], prevC = days[k - 1].bars[days[k - 1].bars.length - 1][4], open = D.bars[0][1], hist = moves.slice(Math.max(0, k - look), k);
+      if (hist.length < Math.min(look, 5)) continue;
+      let pos = 0, entryPx = 0, r = 1, pv = 0, vv = 0;
+      for (let j = 0; j < D.bars.length; j++) {
+        const b = D.bars[j], vals = hist.map((h) => h[Math.min(j, h.length - 1)]).filter((x) => x != null), sig = vals.length ? mean(vals) : 0;
+        const up = Math.max(open, prevC) * (1 + sig), lo = Math.min(open, prevC) * (1 - sig);
+        pv += ((b[2] + b[3] + b[4]) / 3) * (b[5] || 1); vv += b[5] || 1; const vwap = pv / vv;
+        if (k === days.length - 1) { lastDay.up.push(up); lastDay.lo.push(lo); lastDay.vwap.push(vwap); lastDay.t.push(b[0]); }
+        if (j > 0 && pos !== 0) r *= 1 + pos * (b[4] / D.bars[j - 1][4] - 1);
+        const isLast = j === D.bars.length - 1, decide = (j + 1) % every === 0;
+        if (isLast) { if (pos !== 0) { r *= 1 - cost; trades.push({ d: D.d, side: pos, in: entryPx, out: b[4], ret: pos * (b[4] / entryPx - 1) - 2 * cost, why: "tutup pasar" }); pos = 0; } break; }
+        if (!decide) continue;
+        if (pos === 1 && b[4] < (useVwap ? Math.max(up, vwap) : lo)) { r *= 1 - cost; trades.push({ d: D.d, side: 1, in: entryPx, out: b[4], ret: b[4] / entryPx - 1 - 2 * cost, why: "stop" }); pos = 0; }
+        else if (pos === -1 && b[4] > (useVwap ? Math.min(lo, vwap) : up)) { r *= 1 - cost; trades.push({ d: D.d, side: -1, in: entryPx, out: b[4], ret: -(b[4] / entryPx - 1) - 2 * cost, why: "stop" }); pos = 0; }
+        if (pos === 0) { if (b[4] > up) { pos = 1; entryPx = b[4]; r *= 1 - cost; } else if (allowShort && b[4] < lo) { pos = -1; entryPx = b[4]; r *= 1 - cost; } }
+      }
+      dayRet.push({ d: D.d, r: r - 1, bh: D.bars[D.bars.length - 1][4] / prevC - 1 }); eq *= r;
+    }
+    const rs = dayRet.map((x) => x.r), dd = dayRet.map((x) => x.d), ppy = o.ppy || 252;
+    const L = days[days.length - 1], lastBar = L.bars[L.bars.length - 1], n = lastDay.up.length;
+    const now = n ? { up: lastDay.up[n - 1], lo: lastDay.lo[n - 1], vwap: lastDay.vwap[n - 1], px: lastBar[4], state: lastBar[4] > lastDay.up[n - 1] ? "di atas batas atas (momentum naik)" : lastBar[4] < lastDay.lo[n - 1] ? "di bawah batas bawah (momentum turun)" : "di dalam area noise (tidak ada sinyal)" } : null;
+    return { days: dayRet, trades, all: perf(rs, dd, ppy), bh: perf(dayRet.map((x) => x.bh), dd, ppy), periods: periodReturns(rs, dd), lastDay, now, nDays: dayRet.length,
+      winRate: trades.length ? trades.filter((t) => t.ret > 0).length / trades.length : NaN, nTrades: trades.length, avgTrade: trades.length ? mean(trades.map((t) => t.ret)) : NaN };
+  }
+
+  // ---------- Isi candle: konsentrasi beli/jual per harga dari bar yang lebih kecil ----------
+  function candleFootprint(bars, o = {}) {
+    if (!bars.length) return null; let lo = Infinity, hi = -Infinity; for (const b of bars) { lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
+    let step = o.tick || (hi - lo) / 30 || 1; if (o.idx) { step = idxTick((lo + hi) / 2); lo = Math.floor(lo / step) * step; }
+    const nb = Math.max(1, Math.min(120, Math.round((hi - lo) / step) + 1)); if (!o.idx) step = (hi - lo) / Math.max(1, nb - 1) || 1;
+    const lv = Array.from({ length: nb }, (_, k) => ({ p: lo + k * step, buy: 0, sell: 0 }));
+    let tb = 0, ts = 0;
+    for (const b of bars) { const v = b[5] || 0; if (!v) continue;
+      const clv = b[2] > b[3] ? (b[4] - b[3]) / (b[2] - b[3]) : b[4] >= b[1] ? 1 : 0, dir = b[4] > b[1] ? 1 : b[4] < b[1] ? 0 : 0.5, fb = 0.5 * clv + 0.5 * dir;
+      const a = Math.max(0, Math.round((b[3] - lo) / step)), z = Math.min(nb - 1, Math.round((b[2] - lo) / step)), w = v / (z - a + 1);
+      for (let k = a; k <= z; k++) { lv[k].buy += w * fb; lv[k].sell += w * (1 - fb); } tb += v * fb; ts += v * (1 - fb); }
+    const tot = lv.map((x) => x.buy + x.sell), all = tb + ts, pocI = tot.indexOf(Math.max(...tot));
+    let a = pocI, b = pocI, acc = tot[pocI]; while (acc < 0.7 * all && (a > 0 || b < nb - 1)) { const L = a > 0 ? tot[a - 1] : -1, R = b < nb - 1 ? tot[b + 1] : -1; if (R >= L) { b++; acc += R; } else { a--; acc += L; } }
+    const bI = lv.reduce((m, x, i) => (x.buy > lv[m].buy ? i : m), 0), sI = lv.reduce((m, x, i) => (x.sell > lv[m].sell ? i : m), 0);
+    const imb = lv.filter((x) => x.buy + x.sell > 0.02 * all && (x.buy > 3 * x.sell || x.sell > 3 * x.buy)).map((x) => ({ p: x.p, side: x.buy > x.sell ? "beli" : "jual", ratio: x.buy > x.sell ? x.buy / Math.max(x.sell, 1e-9) : x.sell / Math.max(x.buy, 1e-9) }));
+    const vwap = bars.reduce((s, x) => s + ((x[2] + x[3] + x[4]) / 3) * (x[5] || 0), 0) / (all || 1);
+    const pAbove = lv.filter((x) => x.p > lv[pocI].p).reduce((s, x) => s + x.buy + x.sell, 0) / (all || 1);
+    return { levels: lv.reverse(), step, lo, hi, buy: tb, sell: ts, total: all, buyPct: all ? tb / all : NaN, delta: tb - ts, poc: lv[nb - 1 - pocI].p, vaLo: lo + a * step, vaHi: lo + b * step,
+      topBuy: lo + bI * step, topSell: lo + sI * step, imbalances: imb, vwap, nBars: bars.length, open: bars[0][1], close: bars[bars.length - 1][4], pAbovePoc: pAbove };
+  }
+
+  const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
+  const api = { STRAT_LIST, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

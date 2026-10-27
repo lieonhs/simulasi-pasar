@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261022164311">
+<link rel="stylesheet" href="style.css?v=20261027070623">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -106,6 +106,13 @@
 
 <div class="topbar">
 <div id="fnPanel" class="fn-panel" hidden tabindex="-1"><div class="fn-box" role="dialog" aria-modal="true"><div class="fn-head"><span id="fnTitle"></span><span class="note">Esc = tutup</span><button class="cmd-btn" id="fnClose">✕</button></div><div id="fnBody" class="fn-body"></div></div></div>
+<button id="chatBtn" class="chat-btn" title="Tanya panduan">? Tanya</button>
+<div id="chatBox" class="chat-box" hidden>
+  <div class="chat-head"><b>Panduan RAM Capital</b><label class="toggle note"><input type="checkbox" id="chatAi" checked> AI</label><button class="cmd-btn" id="chatClose">✕</button></div>
+  <div id="chatLog" class="chat-log"></div>
+  <div class="chat-sugg"><button class="chip" data-chatq="cara mulai">Cara mulai</button><button class="chip" data-chatq="cara baca isi candle">Isi candle</button><button class="chip" data-chatq="noise band">Noise band</button><button class="chip" data-chatq="50 strategi">50 strategi</button><button class="chip" data-chatq="apa itu VaR">VaR</button><button class="chip" data-chatq="sinyal beli jual">Sinyal</button></div>
+  <form id="chatForm" class="chat-form"><input id="chatIn" autocomplete="off" placeholder="Tanya: cara baca RSI, kenapa sinyal tahan, …"><button class="fn-key" type="submit">Kirim</button></form>
+</div>
 <div id="toasts" class="toasts"></div>
 <div id="tour" class="tour" hidden><div class="tour-card" id="tourCard"><div class="tour-step" id="tourStep"></div><h3 id="tourTitle"></h3><p id="tourText"></p><div class="tour-btns"><button class="cmd-btn" id="tourSkip">Lewati</button><button class="fn-key" id="tourNext">Lanjut</button></div></div></div>
 <div id="glPop" class="gl-pop" hidden></div>
@@ -268,7 +275,7 @@
 
 <section class="wrap" id="tradeView" hidden>
   <div class="card trade-head"><div class="card-h"><h2>Trading</h2>
-    <div class="seg small" id="trTabs"><button class="seg-btn active" data-t="demo">Akun demo</button><button class="seg-btn" data-t="idx" id="trTabIdx">Indodax (uang asli)</button></div></div>
+    <div class="seg small seg3" id="trTabs"><button class="seg-btn active" data-t="demo">Akun demo</button><button class="seg-btn" data-t="strat">Strategi (50)</button><button class="seg-btn" data-t="idx" id="trTabIdx">Indodax (uang asli)</button></div></div>
     <p class="note" style="margin:0" id="trHeadNote">Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu.</p></div>
 
   <div id="demoPane" class="trade-grid">
@@ -298,6 +305,56 @@
       <div class="card"><h2>Kurva nilai akun</h2><div class="chart-box short"><canvas id="dEq"></canvas></div></div>
       <div class="card"><div class="card-h"><h2>Riwayat transaksi</h2><span class="note" id="dStats"></span></div><div class="table-wrap hp-wrap"><table id="dHist"></table></div></div>
       <div class="card"><h2>Reset akun demo</h2><div class="row" style="margin-top:0"><input id="dStart" type="number" step="1000000" min="1000000" value="100000000" style="max-width:220px"><button class="btn" id="dReset">Reset dengan modal ini</button></div><p class="note">Menghapus semua posisi, order, dan riwayat demo.</p></div>
+    </div>
+  </div>
+
+  <div id="stratPane" class="trade-grid" hidden>
+    <section class="card" id="stratCtl">
+      <h2>Uji strategi</h2>
+      <label class="lbl" for="sSym">Aset</label>
+      <div class="search"><input id="sSym" autocomplete="off" spellcheck="false" placeholder="mis. BBCA.JK"><ul class="sugg" hidden></ul></div>
+      <label class="lbl" for="sPick">Strategi harian (50)</label>
+      <select id="sPick"></select>
+      <p class="note" id="sDesc"></p>
+      <div class="grid">
+        <div><label class="lbl" for="sRange">Data</label><select id="sRange"><option value="2y">2 tahun</option><option value="5y" selected>5 tahun</option><option value="10y">10 tahun</option></select></div>
+        <div><label class="lbl" for="sCost">Biaya per transaksi (bps)</label><input id="sCost" type="number" min="0" step="5" value="20"></div>
+      </div>
+      <div class="row"><label class="toggle"><input type="checkbox" id="sShort"> Boleh short (jual dulu)</label></div>
+      <button id="sRun" class="run">Jalankan strategi</button>
+      <button id="sAll" class="run alt">Bandingkan semua 50</button>
+      <div id="sStatus" class="status"></div>
+      <div class="subh">Intraday: Noise band</div>
+      <p class="note">Zarattini, Aziz &amp; Barbon (2024): masuk saat harga keluar dari “area noise” hari itu, keluar di batas/VWAP, semua posisi ditutup sebelum pasar tutup.</p>
+      <div class="grid">
+        <div><label class="lbl" for="nbIv">Data</label><select id="nbIv"><option value="60m" selected>Per jam (±1 tahun)</option><option value="15m">15 menit (±1 bulan)</option><option value="5m">5 menit (±1 bulan)</option></select></div>
+        <div><label class="lbl" for="nbLook">Lookback (hari)</label><input id="nbLook" type="number" min="5" max="30" value="14"></div>
+        <div><label class="lbl" for="nbEvery">Cek tiap (menit)</label><select id="nbEvery"><option value="30">30</option><option value="60" selected>60</option><option value="15">15</option></select></div>
+      </div>
+      <div class="row"><label class="toggle"><input type="checkbox" id="nbVwap" checked> Stop di VWAP</label><label class="toggle"><input type="checkbox" id="nbShort"> Boleh short</label></div>
+      <button id="nbRun" class="run alt">Jalankan noise band</button>
+    </section>
+    <div id="stratOut">
+      <div class="card" id="sNowCard" hidden><div class="card-h"><h2>Sinyal hari ini</h2><span class="tag" id="sNowTag"></span></div><div id="sNow"></div></div>
+      <div class="kpis" id="sKpi"></div>
+      <div class="card" id="sEqCard" hidden><h2>Pertumbuhan Rp 1 (strategi vs beli-dan-tahan)</h2><div class="chart-box tall"><canvas id="sEq"></canvas></div><p class="note" id="sEqNote"></p></div>
+      <div class="card" id="sRorCard" hidden><div class="card-h"><h2>Rate of return per bulan &amp; tahun</h2><div class="tabs small-tabs" id="sRorTabs"><button class="tab active" data-w="s">Strategi</button><button class="tab" data-w="b">Beli &amp; tahan</button></div></div><div class="table-wrap"><table id="sRor" class="heat"></table></div></div>
+      <div class="card" id="sAllCard" hidden><div class="card-h"><h2>Peringkat 50 strategi</h2><span class="note" id="sAllNote"></span></div><div class="table-wrap sticky"><table id="sAllTable"></table></div><div class="verdict" id="sLuck"></div></div>
+      <div class="card" id="nbCard" hidden><h2>Noise band · hari terakhir</h2><div class="chart-box tall"><canvas id="nbChart"></canvas></div><p class="note" id="nbNow"></p></div>
+      <div class="card" id="sTrCard" hidden><h2>Transaksi</h2><div class="table-wrap hp-wrap"><table id="sTrades"></table></div></div>
+      <details class="card formula"><summary>Rumus · rate of return &amp; metrik</summary><div class="fx">
+        <p>Return harian strategi: \( r^{s}_{t+1} = w_t\,\big(\tfrac{C_{t+1}}{C_t}-1\big) - c\,|w_t - w_{t-1}| \), posisi \( w_t \) ditentukan saat tutup hari \( t \)</p>
+        <p>Rate of return total \( = \prod_t (1+r_t) - 1 \); CAGR \( = (1+R)^{1/\text{tahun}} - 1 \); return bulanan \( = \prod_{t\in\text{bulan}}(1+r_t)-1 \)</p>
+        <p>Sharpe \( = \bar r/\sigma_r\sqrt{252} \); Sortino memakai deviasi sisi turun saja; Calmar \( = \text{CAGR}/\text{MaxDD} \); profit factor \( = \sum \text{untung}/\sum \text{rugi} \)</p>
+        <p>Noise band: \( \sigma_{m} = \tfrac{1}{14}\sum_{i=1}^{14}\big|\tfrac{C_{d-i,m}}{O_{d-i}}-1\big| \), batas atas \( = \max(O_d, C_{d-1})(1+\sigma_m) \), batas bawah \( = \min(O_d, C_{d-1})(1-\sigma_m) \)</p>
+        <p>Sharpe yang bisa muncul karena kebetulan dari \( N \) strategi: \( \mathbb E[\max SR] \approx \sigma_{SR}\big[(1-\gamma)\Phi^{-1}(1-\tfrac1N)+\gamma\Phi^{-1}(1-\tfrac{1}{Ne})\big] \), \( \sigma_{SR}\approx 1/\sqrt{\text{tahun}} \)</p></div></details>
+      <details class="card howto-card"><summary>Cara baca</summary><ol class="readme">
+        <li><b>Rate of return</b>: berapa persen uang tumbuh. Total = sepanjang periode; CAGR = rata-rata per tahun; tabel bulanan menunjukkan kapan untung dan rugi terjadi.</li>
+        <li>Selalu bandingkan dengan <b>beli-dan-tahan</b>. Strategi yang kalah dari sekadar menahan saham tidak berguna, walau untung.</li>
+        <li>Lihat kolom <b>OOS</b> (out-of-sample, 30% data terakhir yang tidak dipakai untuk menilai). Hasil in-sample hampir selalu terlalu indah.</li>
+        <li>Saat membandingkan 50 strategi, yang terbaik pasti terlihat bagus karena kebetulan. Kotak di bawah peringkat memberi <b>ambang kebetulan</b>: Sharpe OOS di bawah angka itu belum bukti apa-apa.</li>
+        <li><b>Sinyal hari ini</b> = posisi yang diminta strategi untuk besok. Tombol order mengirim ke <b>akun demo</b>, bukan uang asli.</li>
+        <li>Biaya, slippage, dan antrean di pasar nyata membuat hasil lebih buruk. Mulai dari biaya 20–30 bps untuk saham IDX.</li></ol></details>
     </div>
   </div>
 
@@ -558,14 +615,14 @@
         </div>
       </div>
       <div id="liveRow" class="live-row" hidden><label class="mini" hidden><input type="checkbox" id="liveChk"> Live</label><span id="liveInfo" class="note"></span></div>
-      <div id="ohlcLegend" class="ohlc-legend"></div>
+      <div id="ohlcLegend" class="ohlc-legend"></div><p class="note fp-hint">Klik sebuah candle untuk melihat <b>isinya</b>: di harga berapa beli dan jual terkonsentrasi.</p>
       <div class="candle-grid">
         <div class="candle-main">
           <div id="candle" class="candle-box"></div>
           <div id="rsiWrap"><div class="osc-head"><div class="tabs small-tabs" id="oscTabs"><button class="tab active" data-o="rsi">RSI</button><button class="tab" data-o="macd">MACD</button><button class="tab" data-o="stoch">Stochastic</button></div><span class="rsi-lbl" id="oscLbl">RSI 14</span></div><div id="rsi" class="rsi-box"></div></div>
         </div>
         <aside class="book-side">
-          <div class="tabs" id="bookTabs"><button class="tab active" data-b="vp">Lot per harga</button><button class="tab" data-b="ob">Bid / Offer</button></div>
+          <div class="tabs" id="bookTabs"><button class="tab active" data-b="vp">Lot per harga</button><button class="tab" data-b="fp">Isi candle</button><button class="tab" data-b="ob">Bid / Offer</button></div>
           <div class="tabs small-tabs" id="vpRange"><button class="tab active" data-d="1">Hari ini</button><button class="tab" data-d="5">5 hari</button></div>
           <div id="bookBody" class="book-body"></div>
           <div id="bookNote" class="note"></div>
@@ -904,8 +961,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261022164311";</script>
-<script src="engine.js?v=20261022164311"></script>
-<script src="app.js?v=20261022164311"></script>
+<script>window.APP_V = "20261027070623";</script>
+<script src="engine.js?v=20261027070623"></script>
+<script src="app.js?v=20261027070623"></script>
 </body>
 </html>

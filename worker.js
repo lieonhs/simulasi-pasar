@@ -5,6 +5,9 @@ self.onmessage = (e) => {
   try {
     let res;
     if (type === "plan") res = MCEngine.evalPlan(cfg);
+    else if (type === "strat") res = MCEngine.runStrategy(cfg.id, cfg.D, cfg.o);
+    else if (type === "stratAll") res = MCEngine.runAllStrategies(cfg.D, cfg.o);
+    else if (type === "noise") res = MCEngine.noiseBand(cfg.bars, cfg.o);
     else if (type === "math") res = MCEngine.mathLab(cfg.px, cfg.o);
     else if (type === "qport") res = MCEngine.quantPortfolio(cfg.series, cfg.opt);
     else if (type === "qbt") res = MCEngine.backtest(cfg.series, cfg.opt);
