@@ -1,0 +1,10 @@
+{
+  "name": "ram-capital",
+  "private": true,
+  "description": "RAM Capital — web analisis pasar (statis, GitHub Pages + Supabase)",
+  "scripts": {
+    "test": "node --test tests/engine.test.cjs",
+    "smoke": "node tests/smoke.mjs",
+    "stamp": "python3 stamp.py"
+  }
+}
