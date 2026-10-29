@@ -1343,8 +1343,8 @@
   // =====================================================================
   const ML_FEATS = ["Return 1 hari", "Return 5 hari", "Return 20 hari", "Return 60 hari", "Jarak ke MA20", "Jarak ke MA50", "Jarak ke MA200", "RSI 14", "Volatilitas 20 hari",
     "Rasio vol 20/60", "ATR / harga", "Volume vs rata-rata 20h", "Posisi di rentang 20h", "MACD hist / harga", "Jarak dari puncak 1 th", "%B Bollinger", "Suara 50 strategi",
-    "Volume 5h vs 60h", "Tekanan beli-jual 5h (volume bertanda)", "Korelasi harga–volume 20h"];
-  function mlFeatures(D, vote) {
+    "Volume 5h vs 60h", "Tekanan beli-jual 5h (volume bertanda)", "Korelasi harga–volume 20h", "Sentimen berita 5h", "Jumlah berita 5h"];
+  function mlFeatures(D, vote, news) {
     const c = D.c, n = D.n, lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0));
     const m20 = T.sma(c, 20), m50 = T.sma(c, 50), m200 = T.sma(c, 200), rsi = T.rsi(c, 14), s20 = T.std(lr, 20), s60 = T.std(lr, 60), atr = T.atr(D.h, D.l, c, 14);
     const hh = T.hh(D.h, 20), ll = T.ll(D.l, 20), e12 = T.ema(c, 12), e26 = T.ema(c, 26), sd20 = T.std(c, 20), hi252 = T.hh(D.h, 252);
@@ -1354,7 +1354,8 @@
       const macd = e12[t] - e26[t]; let sig = 0, k = 0; for (let j = Math.max(26, t - 8); j <= t; j++) { if (e12[j] != null && e26[j] != null) { sig += e12[j] - e26[j]; k++; } } sig = k ? sig / k : 0;
       const row = [lr[t], Math.log(c[t] / c[t - 5]), Math.log(c[t] / c[t - 20]), Math.log(c[t] / c[t - 60]), c[t] / m20[t] - 1, c[t] / m50[t] - 1, c[t] / m200[t] - 1, (rsi[t] - 50) / 50,
         s20[t] * Math.sqrt(252), s60[t] > 0 ? s20[t] / s60[t] : 1, atr[t] / c[t], hasVol ? lv[t] - lvm[t] : 0, hh[t] > ll[t] ? (c[t] - ll[t]) / (hh[t] - ll[t]) : 0.5, (macd - sig) / c[t],
-        c[t] / (hi252[t] || hh[t]) - 1, sd20[t] > 0 ? (c[t] - m20[t]) / (4 * sd20[t]) + 0.5 : 0.5, vote ? vote[t] : 0.5, 0, 0, 0];
+        c[t] / (hi252[t] || hh[t]) - 1, sd20[t] > 0 ? (c[t] - m20[t]) / (4 * sd20[t]) + 0.5 : 0.5, vote ? vote[t] : 0.5, 0, 0, 0, 0, 0];
+      if (news) { let ss = 0, nn = 0; for (let j = t - 4; j <= t; j++) { const e = news[D.d[j]]; if (e) { ss += e[1] * e[0]; nn += e[0]; } } row[20] = nn ? ss / nn : 0; row[21] = Math.log(1 + nn); }
       if (hasVol) { row[17] = lv5[t] - lv60[t]; let sv = 0, va = 0; for (let j = t - 4; j <= t; j++) { sv += Math.sign(lr[j]) * (D.v[j] || 0); va += D.v[j] || 0; } row[18] = va > 0 ? sv / va : 0;
         let ma = 0, mb = 0; for (let j = t - 19; j <= t; j++) { ma += Math.abs(lr[j]); mb += lv[j]; } ma /= 20; mb /= 20; let sab = 0, saa = 0, sbb = 0;
         for (let j = t - 19; j <= t; j++) { const a = Math.abs(lr[j]) - ma, b = lv[j] - mb; sab += a * b; saa += a * a; sbb += b * b; } row[19] = saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0; }
@@ -1409,7 +1410,9 @@
   function fitPlatt(p, y) { const X = p.map((v) => [Math.log(Math.max(1e-6, v) / Math.max(1e-6, 1 - v))]); return fitLogit(X, y, 0.01); }
   const applyPlatt = (w, p) => predLogit(w, [Math.log(Math.max(1e-6, p) / Math.max(1e-6, 1 - p))]);
   function mlModel(D, o = {}) {
-    const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, X = mlFeatures(D, o.vote), c = D.c;
+    const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, c = D.c;
+    // berita ikut sebagai fitur bila riwayat hariannya cukup (≥ 60 hari bursa); selain itu fitur berita = 0 (netral)
+    const newsDays = o.news ? D.d.filter((d) => o.news[d]).length : 0, X = mlFeatures(D, o.vote, newsDays >= 60 ? o.news : null);
     const y = new Array(n).fill(null), yr = new Array(n).fill(null); for (let t = 0; t < n - H; t++) { y[t] = c[t + H] / c[t] - 1 > cost ? 1 : 0; yr[t] = Math.log(c[t + H] / c[t]); }
     const sig = (t) => Math.max(1e-4, X[t][8] * Math.sqrt(H / 252)); // volatilitas 20h (fitur ke-9) diskalakan ke horizon
     const lab = []; for (let t = 0; t < n; t++) if (X[t] && y[t] != null) lab.push(t);
@@ -1443,15 +1446,19 @@
     const imp = ML_FEATS.map((name, j) => ({ name, v: 0.5 * gi[j] / gs + 0.5 * ls[j] / lsum, dir: Math.sign(MF.w[j + 1]) })).sort((a, b) => b.v - a.v);
     const pCal = now ? applyPlatt(platt, now.p) : NaN, bss = 1 - brierCal / brierBase;
     // ---- prediksi harga: titik tengah + rentang conformal (dikalibrasi dari kesalahan out-of-sample) ----
-    const er = oos.filter((r) => r.yr != null), half = Math.floor(er.length / 2), sc = (r) => Math.abs(r.yr - r.f) / r.s, qOf = (arr, q) => { const s2 = arr.slice().sort((a, b) => a - b); return s2[Math.min(s2.length - 1, Math.ceil(q * (s2.length + 1)) - 1)]; };
+    // titik tengah disusutkan ke nol: bobot w = argmin galat di paruh pertama data uji (0 = model tak berguna → "tidak berubah")
+    const er0 = oos.filter((r) => r.yr != null), h0 = Math.floor(er0.length / 2), wOf = (A) => { let a = 0, b = 0; for (const r of A) { a += r.f * r.yr; b += r.f * r.f; } return b > 0 ? Math.max(0, Math.min(1, a / b)) : 0; };
+    const wHalf = wOf(er0.slice(0, h0)), wAll = wOf(er0), sse2 = er0.slice(h0).reduce((a, r) => a + (r.yr - wHalf * r.f) ** 2, 0), sse02 = er0.slice(h0).reduce((a, r) => a + r.yr ** 2, 0);
+    for (const r of oos) { r.fRaw = r.f; r.f = wHalf * r.fRaw; } // skor conformal memakai titik tengah yang sudah disusutkan
+    const er = er0, half = h0, sc = (r) => Math.abs(r.yr - r.f) / r.s, qOf = (arr, q) => { const s2 = arr.slice().sort((a, b) => a - b); return s2[Math.min(s2.length - 1, Math.ceil(q * (s2.length + 1)) - 1)]; };
     const LV = [0.5, 0.8, 0.9], qA = LV.map((q) => qOf(er.slice(0, half).map(sc), q)), cover = LV.map((q, i) => mean(er.slice(half).map((r) => (sc(r) <= qA[i] ? 1 : 0))));
-    const qAll = LV.map((q) => qOf(er.map(sc), q)), sse = er.reduce((a, r) => a + (r.yr - r.f) ** 2, 0), sse0 = er.reduce((a, r) => a + r.yr ** 2, 0);
-    const dirHit = mean(er.filter((r) => Math.abs(r.f) > 1e-9).map((r) => (Math.sign(r.f) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? now.f * sNow : NaN;
+    const qAll = LV.map((q) => qOf(er.map(sc), q)), sse = sse2, sse0 = sse02;
+    const dirHit = mean(er.filter((r) => Math.abs(r.fRaw) > 1e-9).map((r) => (Math.sign(r.fRaw) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? wAll * now.f * sNow : NaN;
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
-      r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1] } : null;
+      r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
     return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, auc, aucLog: aucA, aucGb: aucB, aucP, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
       nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
-      oosP: oos.map((r) => ({ t: r.t, p: applyPlatt(platt, r.p) })), fc, featNames: ML_FEATS, feats: xNow ? ML_FEATS.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
+      oosP: oos.map((r) => ({ t: r.t, d: D.d[r.t], p: applyPlatt(platt, r.p) })), fc, featNames: ML_FEATS, newsDays, newsUsed: newsDays >= 60, feats: xNow ? ML_FEATS.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
   }
 
   // ---------- Rencana aksi: beli / jual / tahan, harga, waktu ----------
@@ -1463,7 +1470,20 @@
     US: new Set(["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
       "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"]) };
   const HOL_UNTIL = "2027-12-31";
-  function isHoliday(dateStr, mkt) { return !!(mkt && HOL[mkt] && HOL[mkt].has(dateStr)); }
+  const iso = (y, m, d) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
+  function nthDow(y, m, dow, k) { const d = new Date(Date.UTC(y, m, 1)); const off = (dow - d.getUTCDay() + 7) % 7; return iso(y, m, 1 + off + 7 * (k - 1)); }
+  function lastDow(y, m, dow) { const d = new Date(Date.UTC(y, m + 1, 0)); return iso(y, m, d.getUTCDate() - ((d.getUTCDay() - dow + 7) % 7)); }
+  function easter(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30,
+    i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451), mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1; return Date.UTC(y, mo - 1, da); }
+  function observed(y, m, d, satToFri = true) { const w = new Date(Date.UTC(y, m, d)).getUTCDay(); return w === 6 ? (satToFri ? iso(y, m, d - 1) : null) : w === 0 ? iso(y, m, d + 1) : iso(y, m, d); }
+  function nyseHolidays(y) { // aturan resmi NYSE (Tahun Baru jatuh Sabtu tidak dipindah)
+    return [observed(y, 0, 1, false), nthDow(y, 0, 1, 3), nthDow(y, 1, 1, 3), new Date(easter(y) - 2 * 864e5).toISOString().slice(0, 10), lastDow(y, 4, 1), y >= 2022 ? observed(y, 5, 19) : null,
+      observed(y, 6, 4), nthDow(y, 8, 1, 1), nthDow(y, 10, 4, 4), observed(y, 11, 25)].filter(Boolean); }
+  const usYears = new Set();
+  function addHolidays(mkt, list) { HOL[mkt] = HOL[mkt] || new Set(); for (const d of list) HOL[mkt].add(d); }
+  function isHoliday(dateStr, mkt) { if (!mkt) return false;
+    if (mkt === "US") { const y = +dateStr.slice(0, 4); if (!usYears.has(y)) { usYears.add(y); addHolidays("US", nyseHolidays(y)); } }
+    return !!(HOL[mkt] && HOL[mkt].has(dateStr)); }
   function addBiz(dateStr, k, crypto, mkt) { const d = new Date(dateStr + "T00:00:00Z"); let left = k;
     while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(), ds = d.toISOString().slice(0, 10); if (crypto || (w !== 0 && w !== 6 && !isHoliday(ds, mkt))) left--; } return d.toISOString().slice(0, 10); }
   /* D: OHLCV mentah {d,o,h,l,c,v,n}. o: { isIdx, crypto, strats: daftar hasil runAllStrategies, score: skor teknikal (−5..5), capital, riskPct, unit, start (tanggal mulai berlaku), seed } */
@@ -1473,7 +1493,7 @@
     const sl = (a, k) => a.slice(Math.max(0, n - k)), hi20 = Math.max(...sl(D.h, 20)), lo20 = Math.min(...sl(D.l, 20)), lo10 = Math.min(...sl(D.l, 10)), hi52 = Math.max(...sl(D.h, 252));
     const S = (o.strats || []).filter((x) => !x.error), robust = S.filter((x) => x.pass);
     const voteOf = (L, wf) => { let w = 0, v = 0; for (const x of L) { const ww = wf(x); w += ww; v += ww * Math.max(0, Math.min(1, x.pos)); } return w > 0 ? v / w : NaN; };
-    const vAll = voteOf(S, () => 1), score = o.score ?? 0;
+    const vAll = o.votes && o.votes.all && o.votes.all[n - 1] != null ? o.votes.all[n - 1] : voteOf(S, () => 1), score = o.score ?? 0;
     // keputusan memakai strategi yang lolos uji pada data SEBELUM titik evaluasi terakhir (out-of-sample) — sama persis dengan cara akurasinya diuji
     const VO = o.votes && o.votes.passOOS, vRob = VO && VO[n - 1] != null ? VO[n - 1] : NaN, useRob = isFinite(vRob);
     let action, basis, conf;
@@ -1482,7 +1502,7 @@
     else { const v = isFinite(vAll) ? vAll : 0.5; action = v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN"; conf = "rendah";
       basis = `tidak ada strategi yang lolos uji keandalan untuk aset ini — dipakai suara ${S.length} strategi (${isFinite(vAll) ? Math.round(vAll * 100) : "–"}% sedang beli; BELI bila ≥ 55%, JUAL bila ≤ 40%)`; }
     const hd = robust.map((x) => x.avgDays).filter((x) => isFinite(x)).sort((a, b) => a - b);
-    const H = Math.round(Math.max(5, Math.min(40, hd.length ? hd[hd.length >> 1] : 20)));
+    const H = o.H || Math.round(Math.max(5, Math.min(40, hd.length ? hd[hd.length >> 1] : 20)));
     // level harga
     const sup = [ma20, lo10, ma50].filter((x) => isFinite(x) && x < px && x > px - 1.5 * atr);
     const entry = rt(sup.length ? Math.max(Math.max(...sup), px - 1 * atr) : px - 0.3 * atr, -1);
@@ -1493,7 +1513,7 @@
     // peluang: bootstrap blok dari return harian historis, mulai di harga masuk, aturan keluar berdasar harga tutup
     const lr = []; for (let i = Math.max(1, n - 756); i < n; i++) lr.push(Math.log(c[i] / c[i - 1]));
     // aturan: jual ½ di T1 lalu stop naik ke harga masuk; sisa di T2, atau keluar bila tutup ≤ stop, atau saat batas waktu H
-    const rng = makeRng(o.seed || 7), NS = 3000, B = 5, out = { t1: 0, t2: 0, stop: 0, time: 0, rSum: 0, dT1: [], rs: [], dur: 0 }, fee = (o.costBps ?? 20) / 1e4 * 2 * entry / (R || 1);
+    const rng = makeRng(o.seed || 7), NS = o.sims || 3000, B = 5, out = { t1: 0, t2: 0, stop: 0, time: 0, rSum: 0, dT1: [], rs: [], dur: 0 }, fee = (o.costBps ?? 20) / 1e4 * 2 * entry / (R || 1);
     if (lr.length > 60 && R > 0) for (let s = 0; s < NS; s++) { let x = Math.log(entry), t = 0, done = false, hitT1 = false, rr = 0;
       while (t < H && !done) { const st = rng.int(lr.length - B); for (let b = 0; b < B && t < H; b++, t++) { x += lr[st + b]; const p = Math.exp(x);
         if (!hitT1 && p <= stop) { out.stop++; rr = (p - entry) / R; done = true; t++; break; }
@@ -1533,6 +1553,26 @@
       vRob, vAll, nAll: S.length };
   }
 
+  // ---------- rekam jejak historis: aturan Rencana aksi yang sama dijalankan di tanggal-tanggal lampau (hanya data sampai tanggal itu) lalu dinilai ----------
+  function planHistory(D, o = {}) {
+    const V = o.votes || {}, n = D.n, step = o.step || 5, out = [], ml = o.mlOos || {}, cost = ((o.costBps ?? 20) * 2) / 1e4;
+    let t0 = 260; while (t0 < n && !(V.passOOS && V.passOOS[t0] != null) && !(V.all && V.all[t0] != null && t0 >= 300)) t0++;
+    const sl = (t) => ({ d: D.d.slice(0, t + 1), o: D.o.slice(0, t + 1), h: D.h.slice(0, t + 1), l: D.l.slice(0, t + 1), c: D.c.slice(0, t + 1), v: D.v.slice(0, t + 1), n: t + 1 });
+    for (let t = t0; t < n - 2; t += step) {
+      const m = ml[D.d[t]], P = actionPlan(sl(t), { ...o, votes: { passOOS: V.passOOS ? V.passOOS.slice(0, t + 1) : null, all: V.all ? V.all.slice(0, t + 1) : null }, strats: [], sims: 300, seed: t + 1,
+        ml: m != null && o.mlMeta ? { ...o.mlMeta, p: m } : null, start: D.d[t] });
+      const iR = t + P.H; if (iR >= n) break; const cR = D.c[iR]; let ok = null, res = "ok";
+      if (P.action === "BELI") { let filled = false, outc = null; for (let i = t + 1; i <= iR; i++) { if (!filled) { if (i <= t + 3 && D.l[i] <= P.entry) filled = true; else continue; }
+          if (D.c[i] <= P.stop) { outc = 0; break; } if (D.h[i] >= P.t1) { outc = 1; break; } }
+        if (!filled) res = "skip"; else ok = outc != null ? outc : cR > P.entry * (1 + cost) ? 1 : 0; }
+      else if (P.action === "JUAL") ok = cR < D.c[t] ? 1 : 0; else ok = cR > D.c[t] * (1 - (P.atr / D.c[t]) * Math.sqrt(P.H)) ? 1 : 0;
+      out.push({ d: D.d[t], a: P.action, px: D.c[t], cp: isFinite(P.confPct) ? P.confPct : null, res, ok, ret: cR / D.c[t] - 1 }); }
+    const R = out.filter((x) => x.res === "ok"), C = R.filter((x) => x.cp != null), avg = (a) => (a.length ? mean(a) : NaN), by = {};
+    for (const a of ["BELI", "JUAL", "TAHAN"]) { const L = R.filter((x) => x.a === a); by[a] = { n: L.length, ok: avg(L.map((x) => x.ok)) }; }
+    const buckets = [[0, 0.5], [0.5, 0.6], [0.6, 0.7], [0.7, 1.01]].map(([lo, hi]) => { const L = C.filter((x) => x.cp >= lo && x.cp < hi); return { lo, hi, n: L.length, pred: avg(L.map((x) => x.cp)), act: avg(L.map((x) => x.ok)) }; });
+    return { list: out, n: R.length, skipped: out.filter((x) => x.res === "skip").length, ok: avg(R.map((x) => x.ok)), cpPred: avg(C.map((x) => x.cp)), cpAct: avg(C.map((x) => x.ok)), by, buckets, from: out.length ? out[0].d : null, step };
+  }
+
   // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
   function goalSim(o) {
     const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5, dep = Math.max(0, o.monthly || 0) * 12 / tpy;
@@ -1553,6 +1593,6 @@
     for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (P(m) >= conf) hi = m; else lo = m; } return hi; }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { STRAT_LIST, actionPlan, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { STRAT_LIST, actionPlan, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

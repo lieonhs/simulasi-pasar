@@ -1,5 +1,5 @@
--- Simulasi Pasar: keanggotaan dengan persetujuan admin.
--- Jalankan sekali di Supabase → SQL Editor (project my_pricess).
+-- RAM Capital: persetujuan admin + riwayat berita untuk machine learning.
+-- Jalankan sekali di Supabase → SQL Editor (project my_pricess). Aman dijalankan ulang.
 create table if not exists public.sp_members (
   user_id uuid primary key references auth.users(id) on delete cascade,
   email text,
@@ -89,3 +89,32 @@ create policy "sp_settings delete own" on public.sp_settings for delete to authe
 insert into public.sp_members(user_id, email, name, status, role, decided_at)
 select id, email, 'El', 'approved', 'admin', now() from auth.users where lower(email) = 'raafialmuchsin6805@gmail.com'
 on conflict (user_id) do update set status = 'approved', role = 'admin';
+
+-- riwayat sentimen berita harian per aset (diisi otomatis oleh server tiap kali berita dibuka; dipakai machine learning)
+create table if not exists public.sp_news_daily (
+  symbol text not null,
+  day date not null,
+  n int not null default 0,
+  pos int not null default 0,
+  neg int not null default 0,
+  sent real not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (symbol, day)
+);
+alter table public.sp_news_daily enable row level security;
+drop policy if exists "sp_news_daily read" on public.sp_news_daily;
+create policy "sp_news_daily read" on public.sp_news_daily for select to authenticated using ((select public.sp_is_approved()));
+create or replace function public.sp_news_merge(p_rows jsonb) returns void
+language sql security definer set search_path = public as $$
+  insert into public.sp_news_daily(symbol, day, n, pos, neg, sent)
+  select r->>'symbol', (r->>'day')::date, (r->>'n')::int, (r->>'pos')::int, (r->>'neg')::int, (r->>'sent')::real
+  from jsonb_array_elements(p_rows) r
+  on conflict (symbol, day) do update set
+    n = greatest(public.sp_news_daily.n, excluded.n),
+    pos = case when excluded.n >= public.sp_news_daily.n then excluded.pos else public.sp_news_daily.pos end,
+    neg = case when excluded.n >= public.sp_news_daily.n then excluded.neg else public.sp_news_daily.neg end,
+    sent = case when excluded.n >= public.sp_news_daily.n then excluded.sent else public.sp_news_daily.sent end,
+    updated_at = now();
+$$;
+revoke all on function public.sp_news_merge(jsonb) from public, anon, authenticated;
+grant execute on function public.sp_news_merge(jsonb) to service_role;
