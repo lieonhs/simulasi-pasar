@@ -348,6 +348,7 @@
   function driftPerStep(r, mode, custom, ppy) {
     if (mode === "hist") return mean(r);
     if (mode === "custom") return Math.log(1 + custom) / ppy;
+    if (mode === "ml") return isFinite(custom) ? custom : 0; // drift log per langkah dari ML/DL (dihitung di app)
     return 0;
   }
 
@@ -481,7 +482,7 @@
       for (const p of paths) for (let t = 0; t < cfg.days; t++) if (p[t] > 0) probUp[t]++;
       for (let t = 0; t < cfg.days; t++) probUp[t] /= paths.length;
       res.models[m] = { label: M.label, probUp, horizonVol: m === "garch" || m === "arch" ? condVolHorizon(ctx, cfg.days, ppy) : std(r) * Math.sqrt(ppy), info: M.info(ctx, ppy), fan: fanFromPaths(paths, (v) => s0 * Math.exp(v)), summary: priceSummary(end, s0), hist: histogram(end),
-        samplePaths: paths.slice(0, 25).map((p) => Array.from(p, (v) => s0 * Math.exp(v))) };
+        samplePaths: paths.slice(0, 200).map((p) => Array.from(p, (v) => s0 * Math.exp(v))) };
     });
     if (cfg.backtest) {
       cfg.models.forEach((m, mi) => {
@@ -538,7 +539,7 @@
         fan: fanFromPaths(paths, (v) => v * 100), yq: quantiles(endY, PCTS), pq: quantiles(endP, PCTS),
         trMedian: quantileSorted(str, 0.5), var95: -quantileSorted(str, 0.05), probLoss: tr.filter((v) => v < 0).length / tr.length,
         hist: histogram(endP), negProb: endY.filter((v) => v < 0).length / endY.length,
-        samplePaths: paths.slice(0, 25).map((q) => Array.from(q, (v) => v * 100)) };
+        samplePaths: paths.slice(0, 200).map((q) => Array.from(q, (v) => v * 100)) };
       if (cfg.backtest) {
         const rb = makeRng((cfg.seed || 7) + ki);
         out.backtest = pitBacktest({ nObs: y.length, h: cfg.days, minTrain: 250, maxOrigins: 60,

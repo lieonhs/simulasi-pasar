@@ -228,6 +228,7 @@
         const models = [...document.querySelectorAll("#models input:checked")].map((x) => x.value);
         if (!models.length) throw new Error("Pilih minimal satu model");
         cfg = { mode: "price", prices: d.values, dates: d.dates, type: d.type, days, sims, models, drift: $("drift").value, customDrift: (parseFloat($("customDrift").value) || 0) / 100, backtest: bt, keepPaths: true, seed: 42 };
+        if (cfg.drift === "ml") { const md = mlDrift(d, days); state.mlDrift = md; if (md.ok) cfg.customDrift = md.mu; else { cfg.drift = "zero"; } }
       }
       const t0 = performance.now();
       const res = await compute("run", cfg, (msg, f) => { status(msg); $("barFill").style.width = Math.round(10 + 85 * f) + "%"; });
@@ -247,6 +248,15 @@
       if (typed && !state.csv) didYouMean(typed);
     } finally { btn.disabled = false; }
   }
+  // Drift dari ML/DL: P(naik dalam H hari) = Φ(μ_H/σ_H) → μ_harian = σ_harian·Φ⁻¹(p)/√H.
+  // Hanya dipakai bila model teruji; total drift dibatasi pada H hari (sesudahnya netral), p dibatasi 30–70%.
+  function mlDrift(d, days) { const M = act.ml, sym = d.symbol;
+    if (!M || M.error || act.mlSym !== sym) return { ok: false, why: "ML/DL untuk aset ini belum selesai dilatih. Proyeksi memakai drift nol dan akan dihitung ulang otomatis setelah ML selesai." };
+    const src = M.fuse && !M.fuse.error && M.fuse.valid && isFinite(M.fuse.p) ? ["fusi ML+DL+konfluensi", M.fuse.p] : M.valid && isFinite(M.p) ? ["machine learning", M.p] : M.dl && M.dl.valid && isFinite(M.dl.p) ? ["deep learning", M.dl.p] : null;
+    if (!src) return { ok: false, why: "ML, deep learning, dan fusi belum teruji untuk aset ini, jadi arahnya tidak dipakai. Proyeksi memakai drift nol (netral)." };
+    const v = d.values.slice(-253), r = []; for (let i = 1; i < v.length; i++) r.push(Math.log(v[i] / v[i - 1])); const sd = MCEngine.std(r), H = M.H || 5, p = Math.min(0.7, Math.max(0.3, src[1]));
+    const muD = (sd * MCEngine.qnorm(p)) / Math.sqrt(H), mu = (muD * Math.min(H, days)) / days;
+    return { ok: true, mu, src: src[0], p, H, why: `Arah dari ${src[0]} (teruji): peluang naik ${pct(p, 0)} dalam ${H} hari → drift ${spct(Math.exp(muD * Math.min(H, days)) - 1, 2)} selama ${Math.min(H, days)} hari pertama, sesudahnya netral.` }; }
   function pickBest(res) {
     let best = null, err = Infinity;
     for (const [k, m] of Object.entries(res.models)) if (m.backtest && m.backtest.calibErr < err) { err = m.backtest.calibErr; best = k; }
@@ -306,9 +316,16 @@
       { label: "P75", data: pad(p75, s0), borderColor: "transparent", backgroundColor: mid, fill: "-1", pointRadius: 0 },
       { label: "Median", data: pad(p50, s0), borderColor: acc, borderWidth: 2, pointRadius: 0 },
     ];
-    if ($("showPaths").checked) m.samplePaths.forEach((p) => ds.push({ label: "path", data: pad(p, s0), borderColor: muted + "aa", borderWidth: 0.9, pointRadius: 0, _path: true }));
+    { const md = state.mlDrift, on = $("drift").value === "ml" && md; $("mlDriftNote").hidden = !on; if (on) $("mlDriftNote").innerHTML = `<br><b>Drift ML:</b> ${esc(md.why)}${md.ok ? " Uji keyakinan model di bawah tetap diuji dengan drift historis, bukan drift ML." : ""}`; }
+    const fm = $("fanMode").value, P = m.samplePaths || [];
+    if (fm !== "band" && P.length) { const n = P.length, alpha = fm === "paths" ? "cc" : "66";
+      const rgb = (k) => { const h = (k * 137.508) % 360, s = 0.75, l = 0.55, f = (x) => { const q = (x + h / 30) % 12, a2 = s * Math.min(l, 1 - l); return Math.round(255 * (l - a2 * Math.max(-1, Math.min(q - 3, 9 - q, 1)))); }; return "#" + [f(0), f(8), f(4)].map((x) => x.toString(16).padStart(2, "0")).join(""); };
+      P.forEach((p, k) => ds.push({ label: "path", data: pad(p, s0), borderColor: rgb(k) + alpha, borderWidth: fm === "paths" ? 0.8 : 0.6, pointRadius: 0, _path: true, order: 10 }));
+      if (fm === "paths") { ds.splice(1, 4); const mean = P[0].map((_, t) => P.reduce((a, q) => a + q[t], 0) / n);
+        ds.push({ label: "Rata-rata path", data: pad(mean, s0), borderColor: ink, borderWidth: 2.2, pointRadius: 0, order: 0 }); } }
+    if (fm !== "band") ds.push({ label: `Harga sekarang ${fmtNum(s0)}`, data: labels.map(() => s0), borderColor: css("--bad"), borderWidth: 1.6, borderDash: [], pointRadius: 0, order: 0, _ref: true });
     drawChart("fan", { type: "line", data: { labels, datasets: ds },
-      options: baseOpts({ plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false, filter: (i) => !i.dataset._path && i.raw != null,
+      options: baseOpts({ plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false, filter: (i) => !i.dataset._path && !i.dataset._ref && i.raw != null,
         callbacks: { label: (c) => `${c.dataset.label}: ${bond ? nf(2).format(c.raw) + "%" : fmtNum(c.raw)}` } } },
         scales: { x: { ticks: { maxTicksLimit: 6, color: muted }, grid: { display: false } }, y: { ticks: { color: muted, callback: (v) => (bond ? nf(2).format(v) + "%" : fmtNum(v)) }, grid: { color: grid } } } }) });
 
@@ -3004,7 +3021,7 @@
         const t0 = Date.now(), onP = (msg, f) => { if (act.mlKey !== mk) return; const s = `${msg} · ${Math.round((f || 0) * 100)}% · ${Math.round((Date.now() - t0) / 1000)} dtk`; const mb = $("mlBody"); if (mb) mb.innerHTML = `<p class="status">${esc(s)}</p><div class="bar"><div style="width:${Math.round((f || 0) * 100)}%"></div></div>`; act.mlProg = s; drawBrain(); };
         const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map, ext } }, onP); M.newsInfo = news; act.mlProg = null; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
         if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; if (M.tb) { M.tb.tgt *= k; M.tb.stp *= k; } } // jangkarkan ke harga terkini
-        act.ml = M; }
+        act.ml = M; act.mlSym = d.symbol; if ($("drift").value === "ml" && state.data && state.data.symbol === d.symbol && !(state.mlDrift && state.mlDrift.ok)) setTimeout(() => $("run") && $("run").click(), 300); }
       catch (e) { if (act.mlKey !== mk) return; act.ml = { error: e.message }; }
       renderML(); }
     else renderForecast();
@@ -3641,10 +3658,10 @@
   // AUTOPILOT: bid & offer otomatis dari ML + deep learning + RAM AI (centang mana yang wajib sepakat)
   // =====================================================================
   const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
-  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, news: true, exp: true, maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
+  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, news: true, exp: true, autoPick: false, pickAt: 0, maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
   function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
-    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
-  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
   const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
@@ -3785,10 +3802,26 @@
         try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: V.act === "BELI" ? "lolos semua syarat" : "" }); apRemember(X, V); } catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; } drawAp(); }
       const ok = AP_QUICK.filter((s) => ap.st[s] && ap.st[s].V && ap.st[s].V.act === "BELI"); apLogAdd("—", `Uji cepat ${AP_QUICK.length} aset: ${ok.length ? "lolos " + ok.join(", ") : "tidak ada yang lolos semua syarat"}`); }
     finally { ap.busy = false; btn.disabled = false; btn.textContent = "Uji cepat 12 aset"; apSave(); drawAp(); } }
+
+  // ---- Pilih aset otomatis: pindai kandidat, beri skor, isi daftar dengan 8 terbaik (posisi autopilot yang terbuka selalu dipertahankan)
+  async function apPickUniverse() { const c = ap.cfg;
+    if (c.target === "idx") { await idxPairsLoad(); return (ix.pairs || []).filter((p) => p.volIdr >= 1e9).sort((a, b) => b.volIdr - a.volIdr).slice(0, 14).map((p) => p.base.toUpperCase() + "-USD"); }
+    const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s);
+    return [...new Set([...AP_QUICK, ...G])].slice(0, 18); }
+  const apRank = (st) => { const X = st && st.X, V = st && st.V; if (!X || !V) return -1e9; if (X.N && X.N.shock) return -1e8;
+    return (V.act === "BELI" ? 100 : V.act === "JUAL" ? -100 : 0) + (isFinite(X.P.confPct) ? X.P.confPct * 20 : 0) + X.aiScore * 2 + (X.mlV && isFinite(X.mlP) ? (X.mlP - 0.5) * 40 : 0) + (X.dlV && isFinite(X.dlP) ? (X.dlP - 0.5) * 40 : 0) + (X.exp && X.exp.valid ? (X.exp.p - 0.5) * 40 : 0); };
+  async function apAutoPick(force = false) { const c = ap.cfg; if (!c.autoPick || ap.picking) return; if (!force && Date.now() - (c.pickAt || 0) < 6 * 3600e3) return;
+    ap.picking = true; c.pickAt = Date.now(); const U = await apPickUniverse(), keep = apPositions();
+    try { for (const [i, s] of U.entries()) { const st = ap.st[s] || (ap.st[s] = {}); if (st.at && Date.now() - st.at < 3 * 3600e3 && st.X) continue; st.note = `memindai ${i + 1}/${U.length}…`; drawAp();
+        try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); } catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; } drawAp(); }
+      const best = U.filter((s) => ap.st[s] && ap.st[s].X).sort((a, b) => apRank(ap.st[b]) - apRank(ap.st[a])).filter((s) => apRank(ap.st[s]) > -50);
+      const L = [...new Set([...keep, ...best])].slice(0, 8); $("apList").value = L.join(", "); apRead(); ap.scan = U;
+      apLogAdd("—", `Pilih otomatis dari ${U.length} kandidat: ${L.join(", ") || "tidak ada kandidat layak"}`); }
+    finally { ap.picking = false; apSave(); drawAp(); } }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes(apPositions()); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
-      if (c.on) await apNewsGuard(); apLabelSweep();
+      if (c.on) await apNewsGuard(); apLabelSweep(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
       for (const s of apSyms()) {
       const st = ap.st[s] || (ap.st[s] = {}); if (!force && st.at && Date.now() - st.at < c.every * 60e3) continue;
@@ -3843,11 +3876,13 @@
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
     drawApLearn();
     $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
-  function bindAp() { apLoad(); setTimeout(() => apLabelSweep(), 20e3);
-    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews", "apUseExp"].forEach((id) => $(id).addEventListener("change", () => {
+  function bindAp() { apLoad(); attachAC($("apList"));
+    $("apList").addEventListener("blur", () => setTimeout(() => { const L = apSyms(); if (L.length) { $("apList").value = L.join(", "); apRead(); apSave(); drawAp(); } }, 250)); setTimeout(() => apLabelSweep(), 20e3);
+    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews", "apUseExp", "apAutoPick"].forEach((id) => $(id).addEventListener("change", () => {
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
-      if (id === "apOn" && ap.cfg.on) { if (!apSyms().length) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
+      if (id === "apAutoPick" && ap.cfg.autoPick) { ap.cfg.pickAt = 0; setTimeout(() => apAutoPick(true), 300); }
+      if (id === "apOn" && ap.cfg.on) { if (!apSyms().length && !ap.cfg.autoPick) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
       if (id === "apOn" && !ap.cfg.on) apLogAdd("—", "Autopilot dimatikan");
       apSave(); drawAp(); }));
     $("apAddCur").onclick = () => { if (!state.data) return; const L = apSyms(); if (!L.includes(state.data.symbol)) { $("apList").value = [...L, state.data.symbol].join(", "); apRead(); apSave(); drawAp(); } };
@@ -4283,7 +4318,7 @@
     $("coupon").addEventListener("input", () => (state.couponUser = true)); $("maturity").addEventListener("input", () => (state.matUser = true));
     ["bcY", "bcC", "bcM", "bcN", "bcTax"].forEach((id) => $(id).addEventListener("input", drawBondCalc));
     $("modelTabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (t) { state.sel = t.dataset.m; renderSelected(); runPlan(); renderCompare(); if (state.cmp) renderOptions(); } });
-    $("showPaths").addEventListener("change", () => state.res && renderSelected());
+    $("fanMode").addEventListener("change", () => state.res && renderSelected());
     $("csv").addEventListener("change", async (e) => {
       const f = e.target.files[0]; if (!f) return;
       try { state.csv = parseCsv(await f.text(), f.name.replace(/\.csv$/i, "")); $("q").value = "CSV: " + f.name; status(`CSV dimuat: ${state.csv.values.length} baris. Klik Jalankan.`); }

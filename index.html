@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029193421">
+<link rel="stylesheet" href="style.css?v=20261029193959">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -372,7 +372,8 @@
         <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
       <label class="lbl" for="apList">Aset yang dipantau (pisahkan koma, maks 8)</label>
-      <textarea id="apList" rows="2" spellcheck="false" placeholder="mis. BTC-USD, ETH-USD, BBCA.JK"></textarea>
+      <div class="search"><textarea id="apList" rows="2" spellcheck="false" autocomplete="off" placeholder="ketik: btc, bbca, nvda… lalu pilih dari saran"></textarea><ul class="sugg" hidden></ul></div>
+      <label class="toggle"><input type="checkbox" id="apAutoPick"> <b>Pilih aset otomatis</b> <span class="note">tiap 6 jam autopilot memindai kandidat dan mengisi daftar dengan 8 aset terbaik</span></label>
       <div class="row"><button class="btn" id="apAddCur">+ Aset yang sedang dianalisis</button><button class="btn" id="apAddGems">+ Kandidat kuat Hidden gems</button><button class="btn" id="apNow">Periksa sekarang</button><button class="btn" id="apQuick">Uji cepat 12 aset</button><button class="btn" id="apNewRun">Mulai run baru</button><button class="btn" id="apKill" style="color:var(--bad)">Matikan & tutup posisi autopilot</button></div>
       <div id="apGate" class="verdict"></div>
       <p class="note keep">Aturan: <b>beli</b> hanya bila Rencana aksi = BELI, keyakinan ≥ ambang, ekspektasi &gt; 0, dan <b>semua kecerdasan yang dicentang</b> mendukung naik (ML/DL harus <i>teruji</i> dan peluang naik ≥ ambang; RAM AI skor ≥ +2). Model dengan keyakinan di bawah 75% tidak pernah dipakai untuk eksekusi. Stop & target dipasang otomatis. <b>Jual</b> posisi autopilot bila semua kecerdasan yang dicentang condong turun atau rencana berubah JUAL. <b>Berita kejutan</b> (diretas, bangkrut, delisting, suspensi, gugatan, sanksi, depeg, dll., atau ≥ 3 berita negatif dalam 24 jam) langsung menjual posisi autopilot tanpa menunggu kecerdasan lain dan memblok beli 24 jam; berita diperiksa tiap 5 menit. <b>Batas rugi harian 5%</b>: bila nilai run turun ≥ 5% dalam sehari, beli baru diblok sampai besok. Tidak menyentuh posisi manualmu. <b>Mode portofolio:</b> dana dibagi ke aset yang lolos sesuai keyakinan × ekspektasi, lalu hanya dipindah bila keuntungan yang diharapkan melebihi biaya jual + beli + spread + margin 0,5%. Jeda 24 jam per aset setelah keluar. <b>Run demo</b>: dana uji maks Rp 1 miliar; bila nilai run turun ke 50% (mis. 1 miliar tinggal 500 juta), autopilot dianggap <b>gagal memprediksi</b>, dimatikan, dan posisinya ditutup. Saham IDX hanya diproses saat jam bursa. Hanya berjalan selama web ini terbuka.</p>
@@ -605,7 +606,7 @@
       <div><label class="lbl" for="sims">Jumlah path</label>
         <select id="sims"><option>2000</option><option>5000</option><option selected>10000</option><option>20000</option></select></div>
       <div class="price-only"><label class="lbl" for="drift">Drift (arah)</label>
-        <select id="drift"><option value="zero" selected>Nol (netral)</option><option value="hist">Rata-rata historis</option><option value="custom">Custom / tahun</option></select></div>
+        <select id="drift"><option value="zero" selected>Nol (netral)</option><option value="hist">Rata-rata historis</option><option value="custom">Custom / tahun</option><option value="ml">ML + deep learning (bila teruji)</option></select></div>
       <div class="price-only" id="customWrap" hidden><label class="lbl" for="customDrift">Return/tahun (%)</label><input id="customDrift" type="number" step="0.5" value="8"></div>
       <div class="bond-only" hidden><label class="lbl" for="coupon">Kupon (%/th)</label><input id="coupon" type="number" step="0.125" value="6.5"></div>
       <div class="bond-only" hidden><label class="lbl" for="maturity">Sisa tenor (th)</label><input id="maturity" type="number" step="0.5" value="10"></div>
@@ -803,7 +804,7 @@
         <div id="modelTabs" class="tabs"></div>
       </div>
       <div class="chart-box tall"><canvas id="fan"></canvas></div>
-      <div class="legend-note">Pita gelap = 50% kemungkinan · pita terang = 90% · garis = median<label class="mini"><input type="checkbox" id="showPaths"> tampilkan 25 path contoh</label></div>
+      <div class="legend-note">Pita gelap = 50% kemungkinan · pita terang = 90% · garis = median<label class="mini">Tampilan <select id="fanMode" class="mini-sel"><option value="band">Pita</option><option value="paths">Jalur (200 path)</option><option value="both">Pita + jalur</option></select></label><span id="mlDriftNote" class="note keep" hidden></span></div>
       <details class="formula"><summary>Rumus · model simulasi</summary><div class="fx">
 <p><b>Log-return</b>: \( r_t = \ln(P_t / P_{t-1}) \). Harga simulasi: \( P_{t+h} = P_t \exp\left(\sum_{k=1}^{h} r_{t+k}\right) \).</p>
 <p><b>GBM</b>: \( r_{t} = \left(\mu - \tfrac{1}{2}\sigma^2\right) + \sigma\,\varepsilon_t,\quad \varepsilon_t \sim N(0,1) \)</p>
@@ -1107,8 +1108,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029193421";</script>
-<script src="engine.js?v=20261029193421"></script>
-<script src="app.js?v=20261029193421"></script>
+<script>window.APP_V = "20261029193959";</script>
+<script src="engine.js?v=20261029193959"></script>
+<script src="app.js?v=20261029193959"></script>
 </body>
 </html>
