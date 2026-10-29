@@ -2368,6 +2368,8 @@
     ["demo paper trading latihan virtual order", "Akun demo", "Uang virtual Rp 100 juta, harga live. Order market terisi langsung; limit dicek tiap 60 detik. Pasang order dari kartu Order di Analisis atau F6. Reset kapan saja."],
     ["indodax kripto uang asli api key eksekusi", "Indodax", "Hanya kripto berpasangan rupiah dan hanya akun pemilik. Buat API key (view + trade, tanpa withdraw), simpan di Supabase Secrets <code>INDODAX_KEY</code>/<code>INDODAX_SECRET</code>. Setiap order wajib konfirmasi ketik ulang."],
     ["3 kecerdasan ml dl ai lokal kesimpulan gabungan", "3 kecerdasan", "Kesimpulan di atas Rencana aksi menggabungkan <b>machine learning</b> (4 model + stacking), <b>deep learning</b> (jaringan konvolusi + attention), dan <b>RAM AI lokal</b> (aturan Buku Panduan). Model yang belum teruji tidak ikut menentukan. AI lokal bisa menahan BELI bila skor aturannya ≤ −3."],
+    ["fusi meta model gabungan dipelajari bobot", "Fusi 3 kecerdasan", "Meta-model logistik yang belajar dari riwayat aset itu berapa bobot ML, deep learning, dan konfluensi. Diuji walk-forward; hanya dipakai Rencana aksi bila teruji. Bobot negatif = sinyal itu menyesatkan di aset tersebut."],
+    ["kelly ukuran posisi optimal berapa lot risiko modal", "Kelly (ukuran posisi)", "Kelly = porsi modal yang dipertaruhkan per transaksi yang memaksimalkan pertumbuhan jangka panjang, dihitung dari distribusi hasil rencana. Aplikasi memakai ¼ Kelly dan membatasi 2% (0,5% bila bukti belum teruji) karena Kelly dari data historis terlalu optimistis."],
     ["deep learning dl cnn saraf attention perhatian", "Deep learning", "Jaringan saraf konvolusi membaca urutan 24 hari (return, lebar candle, volume, posisi tutup, gap, jarak MA20) + semua fitur ML. Batang 'perhatian' = hari yang paling dipakai jaringan. Ikut memutuskan hanya bila teruji walk-forward."],
     ["multi timeframe mingguan harian jam searah konflik", "Membaca multi-timeframe", "Paling bersih bila mingguan, harian, 4 jam, 1 jam semua naik. Mingguan naik + harian turun = koreksi, tunggu harian/4 jam berbalik. Harian naik + mingguan turun = melawan arus, posisi kecil & target dekat."],
     ["volume candle akumulasi distribusi obv cmf", "Membaca volume", "Naik dengan volume di atas rata-rata = sehat. Naik dengan volume menyusut = rawan. Turun dengan volume besar = distribusi. OBV & CMF positif = dana masuk."],
@@ -2905,6 +2907,11 @@
     try { const B = brain(); if (B && B.why && act.plan.action === "BELI") { act.plan.action = "TAHAN"; act.plan.basis += "; " + B.why; } } catch { /* */ }
     drawAction(); renderTcPos();
   }
+  function kellyCap(P) { const tested = P.nRobust > 0 || (P.ml && P.ml.valid) || !!P.fuse || !!P.sel; return tested ? 0.02 : 0.005; }
+  function kellyTile(P) { const K = P.kelly, cap = kellyCap(P);
+    if (P.action !== "BELI") return ["Risiko optimal (¼ Kelly)", "–", "hanya dihitung saat BELI", ""];
+    if (K.f <= 0) return ["Risiko optimal (¼ Kelly)", "0%", "distribusi hasil tidak menguntungkan", ""];
+    return ["Risiko optimal (¼ Kelly)", `${pct(Math.min(K.q, cap), 1)} modal`, `¼ Kelly ${pct(K.q, 1)}${K.q > cap ? ` → dibatasi ${pct(cap, 1)}${cap < 0.01 ? " (bukti belum teruji)" : ""}` : ""} · kamu ${pct(parseFloat($("actRisk").value) || 0.01, 1)}`, "hl"]; }
   function drawAction() {
     const P = act.plan; if (!P) return; const A = act.all, idx = isIdx(), cur = state.data.currency || "", fx = actFx(), unitW = idx ? "lot" : "unit";
     const vcls = P.action === "BELI" ? "buy" : P.action === "JUAL" ? "sell" : "hold", pr = P.pr, acc = P.acc, rp = (v) => big(v * fx, "IDR");
@@ -2922,7 +2929,8 @@
       ["Risk : Reward", `1 : ${nf(1).format(P.rr1)} / 1 : ${nf(1).format(P.rr2)}`, `risiko −${pct(P.riskPctPx, 1)} · target +${pct(P.rewPct1, 1)} / +${pct(P.rewPct2, 1)}`, ""],
       ["Ekspektasi / transaksi", pr ? `${pr.expR >= 0 ? "+" : ""}${nf(2).format(pr.expR)} R` : "–", pr && P.qty > 0 ? `≈ ${pr.expR >= 0 ? "+" : "−"}${rp(Math.abs(pr.expR) * P.R * P.qty * (idx ? 100 : 1))} · menang ${pct(pr.win, 0)}` : "", pr && pr.expR > 0 ? "hl" : ""],
       ["Ukuran posisi", P.qty > 0 ? `${idx ? nf(0).format(P.qty) : nf(4).format(P.qty)} ${unitW}` : "–", P.qty > 0 ? `≈ ${rp(P.cost)} · rugi maks ≈ ${rp(P.riskAmt)}` : "modal terlalu kecil untuk 1 lot", ""],
-      ["Horizon", `${P.H} ${isCrypto() ? "hari" : "hari bursa"}`, `evaluasi paling lambat ${fmtDay(P.review)}`, ""]];
+      ["Horizon", `${P.H} ${isCrypto() ? "hari" : "hari bursa"}`, `evaluasi paling lambat ${fmtDay(P.review)}`, ""],
+      ...(P.kelly ? [kellyTile(P)] : [])];
     const L = (lab, v, c = "") => `<tr class="${c}"><td>${lab}</td><td>${v}</td></tr>`;
     const tp = MCEngine.roundTick(Math.max(P.hi20, P.px + 2 * P.atr), idx, 1);
     const ladderOf = { JUAL: [L("Beli lagi bila harga tutup di atas", fmtNum(P.trigUp)), L("Harga sekarang", fmtNum(P.px), "cur"), L(`<b>Jual (limit)</b> — paling lambat ${fmtDay(P.expire)}`, `<b>${fmtNum(P.entryHi)}</b>`), L("Sisa dijual bila harga <b>tutup</b> di bawah", `<span class="neg">${fmtNum(P.trail)}</span>`)],
@@ -3072,6 +3080,8 @@
       ai_berita: state.ai && state.ai.overall ? { arah: state.ai.overall.arah, peluang_naik: state.ai.overall.peluang_naik, ringkasan: String(state.ai.overall.ringkasan || "").slice(0, 300) } : null,
       machine_learning: mlForAi(),
       deep_learning: act.ml && act.ml.dl && !act.ml.dl.error ? { peluang_naik: act.ml.dl.p, auc: act.ml.dl.auc, p: act.ml.dl.aucP, teruji: act.ml.dl.valid, arsitektur: act.ml.dl.arch } : null,
+      fusi_3_kecerdasan: act.ml && act.ml.fuse && !act.ml.fuse.error ? { peluang_naik: act.ml.fuse.p, auc: act.ml.fuse.auc, teruji: act.ml.fuse.valid, bobot: act.ml.fuse.w } : null,
+      kelly: act.plan && act.plan.kelly ? { penuh: act.plan.kelly.f, seperempat: act.plan.kelly.q } : null,
       ai_lokal: act.brain ? { kesimpulan: act.brain.action, skor_aturan: act.brain.score, alasan: act.brain.reasons.map((r) => r.txt), risiko: act.brain.risk } : null,
       rekam_jejak_historis: act.hist && act.hist.n ? { rencana_dinilai: act.hist.n, benar: rnd(act.hist.ok, 3), keyakinan_dijanjikan: rnd(act.hist.cpPred, 3), keyakinan_terjadi: rnd(act.hist.cpAct, 3),
         per_aksi: Object.fromEntries(Object.entries(act.hist.by).map(([k, v]) => [k, { n: v.n, benar: rnd(v.ok, 3) }])), sejak: act.hist.from } : null,
@@ -3166,7 +3176,7 @@
     const cell = (x) => x.k === "AI" ? `<div class="br-c"><div class="k">AI lokal</div><div class="v">${arrow(x.dir)} ${x.score > 0 ? "+" : ""}${nf(1).format(x.score)}</div><div class="h">aturan</div></div>`
       : `<div class="br-c ${x.valid ? "ok" : "off"}"><div class="k">${x.k === "ML" ? "Machine learning" : "Deep learning"}</div><div class="v">${isFinite(x.p) ? `${arrow(x.dir)} ${pct(x.p, 0)}` : x.err ? "–" : "…"}</div><div class="h">${isFinite(x.auc) ? `AUC ${nf(2).format(x.auc)} · ${x.valid ? "teruji" : "abaikan"}` : x.err || "melatih…"}</div></div>`;
     const vc = B.action === "BELI" ? "buy" : B.action === "JUAL" ? "sell" : "hold";
-    el.innerHTML = `<div class="br"><div class="br-f ${vc}"><div class="k">Kesimpulan 3 kecerdasan</div><div class="v">${B.action}</div><div class="h">${isFinite(B.conf) ? pct(B.conf, 0) : "–"} · ${B.agree}/3 searah</div></div>${B.parts.map(cell).join("")}</div>
+    el.innerHTML = `<div class="br"><div class="br-f ${vc}"><div class="k">Kesimpulan 3 kecerdasan</div><div class="v">${B.action}</div><div class="h">${isFinite(B.conf) ? pct(B.conf, 0) : "–"} · ${B.agree}/3 searah${act.plan && act.plan.fuse ? " · fusi teruji" : ""}</div></div>${B.parts.map(cell).join("")}</div>
       <div class="br-why">${B.reasons.slice(0, 4).map((r) => `<span class="${r.w > 0 ? "pos" : "neg"}">${r.w > 0 ? "+" : "−"} ${esc(r.txt)}</span>`).join("")}${B.risk.slice(0, 3).map((r) => `<span class="warn">! ${esc(r)}</span>`).join("")}${B.why ? `<span class="neg">${esc(B.why)}</span>` : ""}</div>`;
   }
   // tanya-jawab lokal: niat pertanyaan → jawaban dari angka di halaman; selain itu cari di Buku Panduan
@@ -3183,6 +3193,7 @@
     if (has(/valuasi|wajar|murah|mahal|intrinsik|fundamental/)) { const V = act.val; lines.push(V && V.methods && V.methods.length ? `Nilai wajar gabungan ${f(V.med)} (${spct(V.upside, 0)}), ${V.methods.length} metode, kesepakatan ${pct(V.agree, 0)} → ${esc(V.side)}.` : "Valuasi belum tersedia (aset tanpa data fundamental)."); }
     if (has(/berita|news|sentimen/)) { const N = act.news; lines.push(N ? `Berita 7 hari: ${N.nRecent}, bersih ${N.net > 0 ? "+" : ""}${N.net}. ${N.reliable ? `Dampak teruji ${spct(N.effect, 1)}.` : "Dampaknya belum teruji."}` : "Belum ada cukup berita."); }
     if (has(/konfluensi|timeframe|mingguan|a\+|setup|skor/)) lines.push(C && !C.error ? `Konfluensi ${C.sNow > 0 ? "+" : ""}${C.sNow}/${C.nNow} (${C.valid ? "teruji" : "belum teruji"}). Setup A+: ${C.sel && C.sel.active ? "<b class='pos'>aktif</b>" : C.sel && C.sel.best ? "belum terpenuhi" : "tidak teruji di aset ini"}.` : "Konfluensi belum dihitung.");
+    if (has(/kelly|ukuran posisi|berapa lot|berapa banyak|porsi|alokasi/) && P.kelly) lines.push(P.action !== "BELI" ? `Keputusan sekarang ${P.action}, jadi tidak ada ukuran posisi beli yang disarankan.` : P.kelly.f <= 0 ? "Kelly 0%: distribusi hasil rencana ini tidak menguntungkan, jangan ambil posisi." : `Risiko optimal ${pct(Math.min(P.kelly.q, kellyCap(P)), 1)} modal per transaksi (¼ Kelly ${pct(P.kelly.q, 1)}, Kelly penuh ${pct(P.kelly.f, 1)}). Dibatasi ${pct(kellyCap(P), 1)} karena Kelly dari data historis cenderung terlalu optimistis${kellyCap(P) < 0.01 ? " dan buktinya belum teruji" : ""}. Rencana saat ini: ${P.qty > 0 ? (isIdx() ? nf(0).format(P.qty) + " lot" : nf(4).format(P.qty)) : "–"} pada risiko yang kamu pilih.`);
     if (has(/yakin|keyakinan|persen|confidence|percaya/)) lines.push(`Keyakinan ${isFinite(P.confPct) ? `<b>${pct(P.confPct, 0)}</b> dari ${esc(P.confSrc)}` : "belum ada ukuran teruji"}. Angka ini dikalibrasi: naik hanya kalau buktinya lebih kuat (setup A+, ML/DL teruji), bukan diatur manual.`);
     const defn = /^(apa itu|apa arti|arti|jelaskan|definisi|maksud)/.test(s.trim());
     if (!defn && (has(/\b(beli|jual|tahan|harus|lakukan|sebaiknya|kenapa|mengapa|alasan|kesimpulan|masuk|entry)\b/) || (!lines.length && has(/gimana|bagaimana|gmn/)))) { const L0 = lines.splice(0);
@@ -3346,6 +3357,7 @@
           ${k("Peluang dasar", pct(M.tb.base, 0), "seberapa sering setup seperti ini menang secara umum")}${k("AUC out-of-sample", nf(3).format(M.tb.auc), `nilai-p ${nf(3).format(M.tb.aucP)} · ${M.tb.valid ? "teruji" : "belum teruji"}`)}</div>
         <p class="note">Ini metode label "triple barrier" (López de Prado): model belajar langsung apakah sebuah posisi beli akan kena target dulu atau kena stop dulu — sama dengan cara kerja Rencana aksi. Bila teruji dan peluangnya rendah, rencana BELI otomatis diturunkan jadi TAHAN.</p>` : ""}
       ${dlBlock(M, k)}
+      ${M.fuse && !M.fuse.error ? `<div class="subh">Fusi 3 kecerdasan · meta-model yang dipelajari</div><div class="act-tiles">${k("Peluang naik (fusi)", isFinite(M.fuse.p) ? pct(M.fuse.p, 0) : "–", M.fuse.valid ? "teruji → dipakai Rencana aksi" : "belum teruji", M.fuse.valid)}${k("AUC fusi vs ML saja", `${nf(3).format(M.fuse.auc)} / ${nf(3).format(M.fuse.aucML)}`, `p ${nf(3).format(M.fuse.aucP)} · ≈${M.fuse.nEff} sampel`)}${k("Bobot dipelajari", `ML ${nf(2).format(M.fuse.w.ml)} · DL ${nf(2).format(M.fuse.w.dl)}`, `konfluensi ${nf(2).format(M.fuse.w.conf)} (log-odds)`)}</div>` : ""}
       ${M.term && M.term.length ? `<div class="subh">Struktur waktu peluang naik (regresi logistik)</div><div class="table-wrap"><table><thead><tr><th>Horizon</th>${M.term.map((t) => `<th>${t.h} hari</th>`).join("")}</tr></thead><tbody>
         <tr><td>Peluang naik hari ini</td>${M.term.map((t) => `<td class="${t.p > t.base + 0.05 ? "pos" : t.p < t.base - 0.05 ? "neg" : ""}">${pct(t.p, 0)}</td>`).join("")}</tr><tr><td>Rata-rata historis</td>${M.term.map((t) => `<td>${pct(t.base, 0)}</td>`).join("")}</tr></tbody></table></div>
         <p class="note">Belum dikalibrasi & belum diuji walk-forward per horizon — pakai untuk melihat arah (jangka pendek vs menengah), bukan angka pasti.</p>` : ""}

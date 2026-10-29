@@ -1616,7 +1616,20 @@
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
       r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
     let dl = null; if (o.dl !== false) { try { dl = dlModel(D, X, y, lab, H, o); } catch (err) { dl = { error: String(err && err.message || err) }; } }
-    return { dl, H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, pMlp: now ? now.m : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucMlp: aucM, aucP, weights: Wf,
+    // ---- FUSI yang dipelajari: meta-model logistik atas peluang ML, peluang DL, dan skor konfluensi (walk-forward, dibersihkan H hari) ----
+    let fuse = null; try { if (dl && !dl.error && dl.oosP) { const CSf = confSeries(D), dIdx = new Map(D.d.map((d, i) => [d, i])), dlP = new Map(dl.oosP.map((r) => [dIdx.get(r.d), r.p]));
+      const lg = (p) => Math.log(Math.max(1e-4, p) / Math.max(1e-4, 1 - p)), J = [];
+      for (const r of oos) { const q = dlP.get(r.t); if (q == null || r.y == null || CSf.S[r.t] == null) continue; J.push({ t: r.t, x: [lg(applyPlatt(platt, r.p)), lg(q), CSf.S[r.t] / 9], y: r.y }); }
+      if (J.length >= 400) { const fo = []; let wLast = null;
+        for (let k = 250; k < J.length; k += 63) { const tb = J[k].t, tr = J.filter((r) => r.t < tb - H); if (tr.length < 200) continue; const w = fitLogit(tr.map((r) => r.x), tr.map((r) => r.y), 1); wLast = w;
+          for (let i = k; i < Math.min(J.length, k + 63); i++) fo.push({ p: predLogit(w, J[i].x), y: J[i].y }); }
+        if (fo.length >= 150) { const PF = fo.map((r) => r.p), YF = fo.map((r) => r.y), aF = aucOf(PF, YF), bF = mean(YF), bssF = 1 - mean(PF.map((p, i) => (p - YF[i]) ** 2)) / (bF * (1 - bF));
+          const n1 = YF.filter(Boolean).length / H, n0 = (YF.length - YF.filter(Boolean).length) / H, A = isFinite(aF) ? aF : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
+          const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / Math.max(1, n1 * n0))), pv = 1 - ncdf((A - 0.5) / se);
+          const wAll = fitLogit(J.map((r) => r.x), J.map((r) => r.y), 1), sNow = CSf.S[n - 1], pNow = isFinite(dl.p) && now && sNow != null ? predLogit(wAll, [lg(pCal), lg(dl.p), sNow / 9]) : NaN;
+          fuse = { p: pNow, auc: aF, aucP: pv, bss: bssF, base: bF, valid: aF >= 0.53 && pv < 0.05 && bssF > 0, n: fo.length, nEff: Math.round(fo.length / H), w: { ml: wAll[1], dl: wAll[2], conf: wAll[3] }, aucML: aucOf(J.slice(250).map((r) => r.x[0]), J.slice(250).map((r) => r.y)) }; } } } }
+    catch (err) { fuse = { error: String(err && err.message || err) }; }
+    return { dl, fuse, H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, pMlp: now ? now.m : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucMlp: aucM, aucP, weights: Wf,
       models: [["Regresi logistik (L2)", aucA, Wf[0]], ["Gradient boosting (60 pohon)", aucB, Wf[1]], ["Pola mirip (k tetangga terdekat)", aucK, Wf[2]], ["Jaringan saraf (MLP 16-8, Adam)", aucM, Wf[3]]],
       disagree: now ? std([now.a, now.b, now.k, now.m], 0) : NaN, tb, term, ext: ext.map((e) => e.name), nFeat: NAMES.length, impBase: aucAB, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
       nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
@@ -1686,6 +1699,9 @@
       rr -= fee; out.rSum += rr; out.rs.push(rr); out.dur += Math.min(t, H); }
     const pr = lr.length > 60 && R > 0 ? { t1: out.t1 / NS, t2: out.t2 / NS, stop: out.stop / NS, time: out.time / NS, expR: out.rSum / NS, medT1: out.dT1.length ? out.dT1.sort((a, b) => a - b)[out.dT1.length >> 1] : null,
       win: out.rs.filter((x) => x > 0).length / NS, avgDur: out.dur / NS, rDist: out.rs.filter((_, i) => i % 5 === 0) } : null;
+    // Kelly: fraksi modal yang dipertaruhkan per 1R yang memaksimalkan pertumbuhan log dari distribusi hasil (dalam R) di atas
+    let kelly = null; if (pr && out.rs.length > 200) { const G = (f) => { let s = 0; for (const r of out.rs) s += Math.log(Math.max(1e-9, 1 + f * r)); return s / out.rs.length; };
+      let bf = 0, bg = 0; for (let f = 0.0025; f <= 0.3; f += 0.0025) { const g = G(f); if (g > bg) { bg = g; bf = f; } } kelly = { f: bf, q: bf / 4, g: bg, gQ: G(bf / 4), gUser: G(o.riskPct ?? 0.01) }; }
     const voteAction = action;
     if (action === "BELI" && pr && pr.expR <= 0) { action = "TAHAN"; basis += `; sinyal BELI diturunkan jadi TAHAN karena ekspektasi rencana harga ini ${pr.expR.toFixed(2)} R (≤ 0) setelah biaya`; }
     // akurasi historis: seberapa sering keputusan yang sama (dari suara strategi) benar dalam H hari ke depan
@@ -1714,17 +1730,22 @@
     let confPct = NaN, confSrc = "";
     if (ml && ml.valid) { confPct = action === "JUAL" ? 1 - ml.p : action === "BELI" ? ml.p : Math.max(ml.p, 1 - ml.p) * 0 + (acc && isFinite(acc.p) ? acc.p : NaN); confSrc = action === "TAHAN" ? "akurasi historis" : "model ML terkalibrasi"; }
     if (!isFinite(confPct) && acc && isFinite(acc.p) && acc.voteAction === action) { confPct = acc.p; confSrc = "akurasi historis"; }
+    // fusi yang dipelajari (meta-model) — dipakai bila teruji: veto/naikkan dan jadi sumber keyakinan
+    const fu = ml && ml.fuse && !ml.fuse.error && isFinite(ml.fuse.p) && ml.fuse.valid ? ml.fuse : null;
+    if (fu && action === "BELI" && fu.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena fusi 3 kecerdasan (teruji, AUC ${fu.auc.toFixed(2)}) hanya ${(fu.p * 100).toFixed(0)}% naik`; }
+    if (fu && action === "TAHAN" && voteAction !== "JUAL" && fu.p >= 0.6 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena fusi 3 kecerdasan (teruji) ${(fu.p * 100).toFixed(0)}% naik`; }
     // gabungan model peluang yang teruji (ML stack + deep learning), bobot ∝ (AUC − 0,5)²
     const EV = [ml && ml.valid ? [ml.p, ml.auc] : null, dl && dl.valid ? [dl.p, dl.auc] : null].filter(Boolean);
     if (EV.length === 2 && action !== "TAHAN") { const w = EV.map(([, a]) => (a - 0.5) ** 2), pf = (EV[0][0] * w[0] + EV[1][0] * w[1]) / (w[0] + w[1]); confPct = action === "JUAL" ? 1 - pf : pf; confSrc = "gabungan ML + deep learning (keduanya teruji)"; }
     else if (EV.length === 1 && !(ml && ml.valid) && dl && dl.valid && action !== "TAHAN" && !isFinite(confPct)) { confPct = action === "JUAL" ? 1 - dl.p : dl.p; confSrc = "deep learning terkalibrasi"; }
+    if (fu && action !== "TAHAN") { confPct = action === "JUAL" ? 1 - fu.p : fu.p; confSrc = `fusi 3 kecerdasan (meta-model teruji, AUC ${fu.auc.toFixed(2)})`; }
     // setup A+ aktif & teruji: keyakinan = tingkat benar historisnya (diambil batas bawah 95% bila lebih rendah dari bukti lain tidak dipakai)
     if (sel && action === "BELI" && !(isFinite(confPct) && confPct >= sel.up)) { confPct = sel.up; confSrc = `setup A+ teruji (≈${sel.nEff} kejadian, batas bawah 95% ${(sel.low * 100).toFixed(0)}%)`; }
     // ukuran posisi: risiko maks riskPct dari modal bila stop kena
     const unit = o.unit || 1, cap = o.capital || 0, risk = cap * (o.riskPct ?? 0.01);
     let qty = R > 0 ? risk / R / unit : 0; qty = Math.min(qty, cap / (entry * unit)); qty = isIdx ? Math.floor(qty) : +qty.toFixed(6);
     const start = o.start || addBiz(D.d[n - 1], 1, o.crypto, o.market);
-    return { action, conf: sel && action === "BELI" ? "sedang–tinggi" : conf, basis, acc, ml, confPct, confSrc, sel, setupsPerYear, voteAction, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
+    return { kelly, fuse: fu, action, conf: sel && action === "BELI" ? "sedang–tinggi" : conf, basis, acc, ml, confPct, confSrc, sel, setupsPerYear, voteAction, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
       cost: qty * unit * entry, start, expire: addBiz(start, 2, o.crypto, o.market), review: addBiz(start, H, o.crypto, o.market), holUntil: HOL_UNTIL, nRobust: robust.length, robust: robust.map((x) => ({ name: x.name, pos: x.pos, posPrev: x.posPrev, dsr: x.dsr })),
       vRob, vAll, nAll: S.length };
   }

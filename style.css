@@ -658,3 +658,4 @@ body.mode-pro .card p.note:not(.keep), body.mode-pro .card .card-h .note, body.m
 body.mode-pro .kpi .h { font-size: 10px; }
 #actBody .act-top { grid-template-columns: 1fr !important; } #actBody .act-top > .sig-verdict { display: none; }
 #screenView > #radarCard { grid-column: 1 / -1; position: static; margin-bottom: 18px; }
+@media (max-width: 640px) { #rdTable th:nth-child(5), #rdTable td:nth-child(5), #rdTable th:nth-child(7), #rdTable td:nth-child(7), #rdTable th:nth-child(8), #rdTable td:nth-child(8), #rdTable th:nth-child(9), #rdTable td:nth-child(9) { display: none; } .rd-ctl { width: 100%; } }
