@@ -166,26 +166,26 @@
   }
 
   // ---------- worker ----------
-  let worker = null;
-  try { worker = new Worker("worker.js?v=" + (window.APP_V || "")); } catch { worker = null; }
+  // dua worker: satu untuk perhitungan biasa, satu khusus ML/Radar (berat) supaya tidak saling mengantre
   const pending = new Map();
-  if (worker) {
-    worker.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return;
+  function mkWorker() { let w = null; try { w = new Worker("worker.js?v=" + (window.APP_V || "")); } catch { return null; }
+    w.onmessage = (e) => { const p = pending.get(e.data.id); if (!p) return;
       if (e.data.type === "progress") p.onProgress(e.data.msg, e.data.frac);
       else { pending.delete(e.data.id); e.data.type === "done" ? p.resolve(e.data.res) : p.reject(new Error(e.data.msg)); } };
-    worker.onerror = (e) => { pending.forEach((p) => p.reject(new Error(e.message || "Worker error"))); pending.clear(); worker = null; };
-  }
+    w.onerror = (e) => { pending.forEach((p, id) => { if (p.w === w) { p.reject(new Error(e.message || "Worker error")); pending.delete(id); } }); if (worker === w) worker = null; if (mlWorker === w) mlWorker = null; };
+    return w; }
+  let worker = mkWorker(), mlWorker = mkWorker();
+  function inlineRun(type, cfg, onProgress) {
+    if (type === "plan") return MCEngine.evalPlan(cfg); if (type === "stratAll") return MCEngine.runAllStrategies(cfg.D, cfg.o); if (type === "strat") return MCEngine.runStrategy(cfg.id, cfg.D, cfg.o);
+    if (type === "noise") return MCEngine.noiseBand(cfg.bars, cfg.o); if (type === "compare") return inlineCompare(cfg, onProgress); if (type === "ml") return MCEngine.mlModel(cfg.D, { ...cfg.o, progress: onProgress });
+    if (type === "radar") return MCEngine.radarAsset(cfg.D, cfg.o); if (type === "math") return MCEngine.mathLab(cfg.px, cfg.o); if (type === "qport") return MCEngine.quantPortfolio(cfg.series, cfg.opt);
+    if (type === "qbt") return MCEngine.backtest(cfg.series, cfg.opt); if (type === "screen") return MCEngine.screenAsset(cfg.a, cfg.bench, cfg.o); if (type === "probEnd") return MCEngine.probEnd(cfg.model, cfg.K, cfg.r, cfg.T);
+    if (type === "ardl") return MCEngine.ardl(cfg.a, cfg.xs); return cfg.mode === "bond" ? MCEngine.runBond(cfg, onProgress) : MCEngine.runPrice(cfg, onProgress); }
   function compute(type, cfg, onProgress = () => {}) {
-    if (!worker) return new Promise((res, rej) => setTimeout(() => { try {
-      if (type === "plan") res(MCEngine.evalPlan(cfg));
-      else if (type === "stratAll") res(MCEngine.runAllStrategies(cfg.D, cfg.o));
-      else if (type === "strat") res(MCEngine.runStrategy(cfg.id, cfg.D, cfg.o));
-      else if (type === "noise") res(MCEngine.noiseBand(cfg.bars, cfg.o));
-      else if (type === "compare") res(inlineCompare(cfg, onProgress));
-      else res(cfg.mode === "bond" ? MCEngine.runBond(cfg, onProgress) : MCEngine.runPrice(cfg, onProgress));
-    } catch (e) { rej(e); } }, 20));
+    const heavy = type === "ml" || type === "radar", w = heavy ? mlWorker || worker : worker;
+    if (!w) return new Promise((res, rej) => setTimeout(() => { try { res(inlineRun(type, cfg, onProgress)); } catch (e) { rej(e); } }, 20));
     const id = ++state.runId;
-    return new Promise((resolve, reject) => { pending.set(id, { resolve, reject, onProgress }); worker.postMessage({ id, type, cfg }); });
+    return new Promise((resolve, reject) => { pending.set(id, { resolve, reject, onProgress, w }); w.postMessage({ id, type, cfg }); });
   }
   function inlineCompare(cfg, onProgress) {
     const stats = MCEngine.compareStats(cfg.series, cfg.benchIdx);
@@ -2955,7 +2955,9 @@
         const news = await newsHist(d.symbol);
         let DM = D, vote = act.all.votes.all; if (D.n < 2000) { try { const dl = await fetchSymbol(d.symbol, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) { DM = D2; vote = null; } } catch { /* pakai data yang ada */ } }
         const ext = await mlExt(d.symbol);
-        const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map, ext } }); M.newsInfo = news; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
+        if (DM.n > 2600) { const k = DM.n - 2600; DM = { d: DM.d.slice(k), o: DM.o.slice(k), h: DM.h.slice(k), l: DM.l.slice(k), c: DM.c.slice(k), v: DM.v.slice(k), n: 2600 }; if (vote) vote = vote.slice(k); } // ±10 tahun bursa cukup; lebih panjang hanya memperlambat
+        const t0 = Date.now(), onP = (msg, f) => { if (act.mlKey !== mk) return; const s = `${msg} · ${Math.round((f || 0) * 100)}% · ${Math.round((Date.now() - t0) / 1000)} dtk`; const mb = $("mlBody"); if (mb) mb.innerHTML = `<p class="status">${esc(s)}</p><div class="bar"><div style="width:${Math.round((f || 0) * 100)}%"></div></div>`; act.mlProg = s; drawBrain(); };
+        const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map, ext } }, onP); M.newsInfo = news; act.mlProg = null; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
         if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; if (M.tb) { M.tb.tgt *= k; M.tb.stp *= k; } } // jangkarkan ke harga terkini
         act.ml = M; }
       catch (e) { if (act.mlKey !== mk) return; act.ml = { error: e.message }; }
@@ -3253,7 +3255,7 @@
     const el = $("actBrain"); if (!el) return; const B = brain(); if (!B) { el.innerHTML = ""; return; } act.brain = B;
     const arrow = (d) => (d > 0 ? '<b class="pos">▲</b>' : d < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
     const cell = (x) => x.k === "AI" ? `<div class="br-c"><div class="k">AI lokal</div><div class="v">${arrow(x.dir)} ${x.score > 0 ? "+" : ""}${nf(1).format(x.score)}</div><div class="h">aturan</div></div>`
-      : `<div class="br-c ${x.valid ? "ok" : "off"}"><div class="k">${x.k === "ML" ? "Machine learning" : "Deep learning"}</div><div class="v">${isFinite(x.p) ? `${arrow(x.dir)} ${pct(x.p, 0)}` : x.err ? "–" : "…"}</div><div class="h">${isFinite(x.auc) ? `AUC ${nf(2).format(x.auc)} · ${x.valid ? "teruji" : "abaikan"}` : x.err || "melatih…"}</div></div>`;
+      : `<div class="br-c ${x.valid ? "ok" : "off"}"><div class="k">${x.k === "ML" ? "Machine learning" : "Deep learning"}</div><div class="v">${isFinite(x.p) ? `${arrow(x.dir)} ${pct(x.p, 0)}` : x.err ? "–" : "…"}</div><div class="h">${isFinite(x.auc) ? `AUC ${nf(2).format(x.auc)} · ${x.valid ? "teruji" : "abaikan"}` : x.err || esc(act.mlProg || "melatih…")}</div></div>`;
     const vc = B.action === "BELI" ? "buy" : B.action === "JUAL" ? "sell" : "hold";
     const P = act.plan, f = fmtNum, idx = isIdx();
     const line = B.action === "BELI" ? [["Antre beli", f(P.entry)], ["Stop", `<span class="neg">${f(P.stop)}</span>`], ["Target", `<span class="pos">${f(P.t1)} / ${f(P.t2)}</span>`], ["RR", `1:${nf(1).format(P.rr1)}`], ["Jumlah", P.qty > 0 ? (idx ? nf(0).format(P.qty) + " lot" : nf(4).format(P.qty)) : "–"], ["Sampai", fmtDay(P.expire)]]

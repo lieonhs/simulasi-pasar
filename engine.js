@@ -1516,12 +1516,12 @@
     const labD = lab.filter(ok); if (labD.length < 400) return null;
     const Dt = X[labD[0]].length, net = makeDL(Dt), stat = (tr) => { const mu = new Array(Dt).fill(0), sd = new Array(Dt).fill(0); for (const t of tr) X[t].forEach((v, j) => (mu[j] += v / tr.length)); for (const t of tr) X[t].forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / tr.length)); return { mu, sd: sd.map((v) => Math.sqrt(v) || 1) }; };
     const zOf = (M, t) => Float64Array.from(X[t], (v, j) => Math.max(-5, Math.min(5, (v - M.mu[j]) / M.sd[j])));
-    const BAG = Math.max(1, o.dlBag ?? 3), seeds = [11, 23, 37, 53, 71].slice(0, BAG); // ensemble beberapa jaringan (inisialisasi berbeda) → varians lebih kecil
+    const BAG = Math.max(1, o.dlBag ?? 2), seeds = [11, 23, 37, 53, 71].slice(0, BAG); // ensemble beberapa jaringan (inisialisasi berbeda) → varians lebih kecil
     const fit = (tr, P0, ep) => { const tr2 = tr.slice(-1500), M = stat(tr2), XS = tr2.map(seq), ZS = tr2.map((t) => zOf(M, t)), Y = tr2.map((t) => y[t]);
       const Ps = seeds.map((sd, b) => net.train(P0 ? P0[b] : net.init(sd), XS, ZS, Y, { epochs: ep, seed: tr2.length + sd })); return { P: Ps, M }; };
     const fwdB = (F, x, z) => { let s = 0, al = null; for (const P of F.P) { const r = net.fwd(P, x, z); s += r.p; if (!al) al = Float64Array.from(r.al); else for (let i = 0; i < al.length; i++) al[i] += r.al[i]; } for (let i = 0; i < al.length; i++) al[i] /= F.P.length; return { p: s / F.P.length, al }; };
-    const s0 = Math.max(labD[0] + 300, labD[Math.floor(labD.length * 0.4)]), oos = [], step = 252; let prevP = null;
-    for (let a = s0; a < n; a += step) { const tr = labD.filter((t) => t < a - H); if (tr.length < 300) continue; const F = fit(tr, prevP, prevP ? 6 : 14); prevP = F.P;
+    const s0 = Math.max(labD[0] + 300, labD[Math.floor(labD.length * 0.4)]), oos = [], step = 252; let prevP = null; const pg = typeof o.progress === "function" ? o.progress : () => {}, nF = Math.max(1, Math.ceil((n - s0) / step)); let kF = 0;
+    for (let a = s0; a < n; a += step) { pg(`Deep learning ${++kF}/${nF}`, 0.62 + 0.33 * (kF / nF)); const tr = labD.filter((t) => t < a - H); if (tr.length < 300) continue; const F = fit(tr, prevP, prevP ? 6 : 14); prevP = F.P;
       for (let t = a; t < Math.min(n, a + step); t++) if (ok(t)) oos.push({ t, p: fwdB(F, seq(t), zOf(F.M, t)).p, y: y[t] }); }
     const ev = oos.filter((r) => r.y != null); if (ev.length < 150) return null;
     const P = ev.map((r) => r.p), Y = ev.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p));
@@ -1560,7 +1560,8 @@
     const permP = NAMES.map(() => []), baseAB = [];
     // walk-forward: latih pada data s/d (a − H) — jarak H mencegah label tumpang tindih bocor — lalu prediksi 63 hari berikutnya
     const first = lab[0], s0 = Math.max(first + 250, lab[Math.floor(lab.length * 0.4)]), oos = [], step = 63;
-    for (let a = s0; a < n; a += step) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const MM = fitBoth(tr); W = stackW(oos);
+    const prog = typeof o.progress === "function" ? o.progress : () => {}, nFold = Math.max(1, Math.ceil((n - s0) / step)); let kF = 0;
+    for (let a = s0; a < n; a += step) { prog(`ML walk-forward ${++kF}/${nFold}`, 0.05 + 0.5 * (kF / nFold)); const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const MM = fitBoth(tr); W = stackW(oos);
       const rows = []; for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = predBoth(MM, X[t], W); const r = { t, p: q.p, a: q.a, b: q.b, k: q.k, m: q.m, w: W.slice(), y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }; oos.push(r); rows.push(r); }
       // uji kepentingan fitur (permutasi): acak satu kolom di data uji fold ini, lihat seberapa turun kemampuan model (logistik + boosting)
       const lr2 = rows.filter((r) => r.y != null); if (lr2.length > 5) { for (const r of lr2) baseAB.push({ p: predBoth(MM, X[r.t], W, true).p, y: r.y });
@@ -1618,7 +1619,7 @@
     const dirHit = mean(er.filter((r) => Math.abs(r.fRaw) > 1e-9).map((r) => (Math.sign(r.fRaw) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? wAll * now.f * sNow : NaN;
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
       r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
-    let dl = null; if (o.dl !== false) { try { dl = dlModel(D, X, y, lab, H, o); } catch (err) { dl = { error: String(err && err.message || err) }; } }
+    prog("Deep learning…", 0.62); let dl = null; if (o.dl !== false) { try { dl = dlModel(D, X, y, lab, H, o); } catch (err) { dl = { error: String(err && err.message || err) }; } }
     // ---- FUSI yang dipelajari: meta-model logistik atas peluang ML, peluang DL, dan skor konfluensi (walk-forward, dibersihkan H hari) ----
     let fuse = null; try { if (dl && !dl.error && dl.oosP) { const CSf = confSeries(D), dIdx = new Map(D.d.map((d, i) => [d, i])), dlP = new Map(dl.oosP.map((r) => [dIdx.get(r.d), r.p]));
       const lg = (p) => Math.log(Math.max(1e-4, p) / Math.max(1e-4, 1 - p)), J = [];
