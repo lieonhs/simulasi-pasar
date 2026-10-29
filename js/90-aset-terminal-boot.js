@@ -645,7 +645,7 @@
     $("pendOut").onclick = (e) => { e.preventDefault(); logout(); };
     $("pendSend").onclick = async () => { const { data, error } = await sb.rpc("sp_request_access", { p_name: null, p_reason: $("pendReason").value.trim() || "kirim ulang" }); $("pendMsg").textContent = error ? error.message : "Permintaan dikirim ulang."; if (data) showPending(data); };
     $("cmdUser").onclick = () => showProfile();
-    const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { localStorage.removeItem("sp_keep"); Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
+    const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { localStorage.removeItem("sp_keep"); localStorage.removeItem("sp_reat"); Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
     $("logoutBtn").onclick = () => logout(); $("cmdLogout").onclick = () => logout();
     ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, () => (lastAct = Date.now()), { passive: true }));
     setInterval(() => { if (session && $("authGate").hidden && !isOwner() && Date.now() - lastAct > IDLE_MIN * 60000) logout(`Kamu keluar otomatis karena tidak aktif ${IDLE_MIN} menit.`); }, 30000);

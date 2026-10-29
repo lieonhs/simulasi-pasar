@@ -156,7 +156,7 @@
 <section class="wrap" id="screenView" hidden>
   <section class="card radar" id="radarCard">
     <div class="card-h"><h2>Radar <span class="tag">scan semua aset</span></h2>
-      <div class="rd-ctl"><select id="rdUni"><option value="idx" selected>IDX likuid (50)</option><option value="us">AS besar (12)</option><option value="crypto">Kripto besar (8)</option><option value="alt">Altcoin (~30)</option><option value="meme">Meme coin (~18)</option><option value="ai">Kripto AI</option><option value="defi">DeFi</option><option value="l1">Layer 1 / 2</option><option value="game">Gaming</option><option value="all">Semua (70)</option><option value="wl">Watchlist saya</option></select>
+      <div class="rd-ctl"><select id="rdUni"><option value="idx" selected>IDX likuid (50)</option><option value="us">AS besar (12)</option><option value="crypto">Kripto besar (8)</option><option value="alt">Altcoin (~30)</option><option value="meme">Meme coin (~18)</option><option value="ai">Kripto AI</option><option value="defi">DeFi</option><option value="l1">Layer 1</option><option value="l2">Layer 2</option><option value="infra">Infrastruktur & oracle</option><option value="rwa">RWA</option><option value="game">Gaming</option><option value="all">Semua (70)</option><option value="wl">Watchlist saya</option></select>
         <label class="toggle"><input type="checkbox" id="rdFund" checked> Nilai intrinsik</label><label class="toggle"><input type="checkbox" id="rdDeep" checked> Uji mendalam 3 teratas</label>
         <button id="rdRun" class="btn primary">Scan</button></div></div>
     <div id="rdStatus" class="status"></div><div class="bar"><div id="rdBar"></div></div>
@@ -165,7 +165,7 @@
   </section>
   <section class="card gem-card" id="gemCard">
     <div class="card-h"><h2>Hidden gems <span class="tag">mencari berlian di lumpur</span></h2>
-      <div class="rd-ctl"><select id="gmUni"><option value="idxs" selected>IDX menengah & kecil (~90)</option><option value="idxc">Semua koin di Indodax (≤80)</option><option value="alt">Kripto altcoin (~30)</option><option value="meme">Meme coin (~18)</option><option value="ai">Kripto AI (~12)</option><option value="defi">DeFi (~16)</option><option value="l1">Layer 1 / Layer 2 (~20)</option><option value="game">Gaming & metaverse (~12)</option><option value="usm">AS menengah (~30)</option><option value="wl">Watchlist saya</option></select>
+      <div class="rd-ctl"><select id="gmUni"><option value="idxs" selected>IDX menengah & kecil (~90)</option><option value="cmid">Semua kripto · peringkat 30–180 (tempat hidden gems)</option><option value="ctop">Semua kripto · 150 teratas</option><option value="idxc">Semua koin di Indodax (≤150)</option><option value="alt">Kripto altcoin (~30)</option><option value="meme">Meme coin (~18)</option><option value="ai">Kripto AI (~12)</option><option value="defi">DeFi (~16)</option><option value="l1">Layer 1 (~20)</option><option value="l2">Layer 2 (~16)</option><option value="infra">Infrastruktur, oracle, storage (~16)</option><option value="rwa">Real-world asset / RWA (~10)</option><option value="game">Gaming & metaverse (~12)</option><option value="usm">AS menengah (~30)</option><option value="wl">Watchlist saya</option></select>
         <label class="toggle"><input type="checkbox" id="gmIdxOnly" checked> Kripto: hanya yang listing di Indodax</label><label class="toggle"><input type="checkbox" id="gmDeep" checked> Uji ML + deep learning 5 teratas</label><button id="gmRun" class="btn primary">Cari gems</button></div></div>
     <div id="gmStatus" class="status"></div><div class="bar"><div id="gmBar"></div></div>
     <div id="gmSum" class="rd-sum"></div>
@@ -385,6 +385,7 @@
         <div><label class="lbl" for="apVal">Nilai per order Indodax (Rp)</label><input id="apVal" type="number" min="10000" step="10000" value="100000"></div>
         <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="0">Terus-menerus</option><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
+      <label class="toggle"><input type="checkbox" id="apExplore" checked> Eksplorasi demo selama masa belajar <span class="note">(beli ½ ukuran saat lolos keyakinan asli tapi belum lolos keyakinan terkalibrasi, supaya data terkumpul; tidak berlaku untuk uang asli)</span></label>
       <label class="toggle"><input type="checkbox" id="apDayBias"> Day trade: wajib bias harian ML/DL ≥ ambang <span class="note">(lebih ketat, jauh lebih jarang transaksi)</span></label>
       <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
       <label class="toggle"><input type="checkbox" id="apHealth" checked> <b>Mode sehat perangkat</b> <span class="note">kurangi beban saat pakai baterai, baterai lemah, RAM kecil, atau perangkat mulai berat</span></label>
@@ -1169,8 +1170,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/40-trading-strategi.js?v=9585f5eb3a"></script>
 <script src="js/50-bantuan-terminal.js?v=09656aed94"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=2a8b5eaf27"></script>
-<script src="js/70-radar-gems.js?v=278b16129f"></script>
-<script src="js/80-autopilot.js?v=f71ae03186"></script>
-<script src="js/90-aset-terminal-boot.js?v=1702c68baf"></script>
+<script src="js/70-radar-gems.js?v=a96db8fa0f"></script>
+<script src="js/80-autopilot.js?v=9c4895aa05"></script>
+<script src="js/90-aset-terminal-boot.js?v=e4d4ecf34b"></script>
 </body>
 </html>

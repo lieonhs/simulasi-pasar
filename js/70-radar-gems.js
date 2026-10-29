@@ -114,8 +114,14 @@
     l1: ["ETH", "SOL", "ADA", "AVAX", "DOT", "ATOM", "NEAR", "APT", "SUI", "SEI", "ARB", "OP", "POL", "STX", "TIA", "INJ", "TON", "HBAR", "ALGO", "TRX"].map((s) => s + "-USDT"),
     game: ["AXS", "SAND", "MANA", "GALA", "IMX", "ENJ", "APE", "ILV", "YGG", "PIXEL", "MAGIC", "FLOW"].map((s) => s + "-USDT"),
     alt: ["LINK", "AVAX", "DOT", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ", "FIL", "ALGO", "HBAR", "VET", "AAVE", "UNI", "MKR", "LDO", "RNDR", "GRT", "SAND", "MANA", "AXS", "IMX", "XLM", "ETC", "LTC", "BCH", "TRX", "SUI", "SEI"].map((s) => s + "-USD"),
+    l2: ["ARB", "OP", "POL", "IMX", "STRK", "ZK", "MANTA", "METIS", "LRC", "SKL", "CELO", "SCR", "MOVE", "AEVO", "DYM", "ALT"].map((s) => s + "-USDT"),
+    infra: ["LINK", "PYTH", "API3", "BAND", "GRT", "AR", "FIL", "STORJ", "TRB", "QNT", "W", "ZRO", "AXL", "JASMY", "IOTA", "KAS"].map((s) => s + "-USDT"),
+    rwa: ["ONDO", "OM", "POLYX", "PENDLE", "TRU", "CFG", "RSR", "SYRUP", "PLUME", "LQTY"].map((s) => s + "-USDT"),
     usm: ["PLTR", "CRWD", "SNOW", "DDOG", "NET", "ZS", "MDB", "SHOP", "SQ", "ROKU", "ETSY", "PINS", "SNAP", "U", "RBLX", "AFRM", "SOFI", "HOOD", "COIN", "DKNG", "ENPH", "FSLR", "RIVN", "LCID", "CELH", "DUOL", "TTD", "OKTA", "TWLO", "PATH"] };
   const gm = { rows: [], busy: false };
+  // semua koin kripto berpasangan USDT di Binance, diurut volume 24 jam (tanpa stablecoin & token leverage). Rentang peringkat 30–180 = tempat koin yang belum terlalu ramai.
+  async function allCrypto([from, to]) { try { const L = await (await fetch("https://data-api.binance.vision/api/v3/ticker/24hr")).json(), STABLE = /^(USDC|FDUSD|TUSD|BUSD|DAI|USDP|USDD|PYUSD|EUR|EURI|AEUR|USDE|XUSD|BFUSD|RLUSD|USD1)USDT$/;
+      return L.filter((x) => /USDT$/.test(x.symbol) && !STABLE.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol) && +x.quoteVolume > 2e5 && +x.count > 1000).sort((x, y) => +y.quoteVolume - +x.quoteVolume).slice(from, to).map((x) => x.symbol.replace(/USDT$/, "") + "-USDT"); } catch { return [...new Set([...GM_UNI.alt, ...GM_UNI.l1, ...GM_UNI.l2, ...GM_UNI.ai, ...GM_UNI.defi, ...GM_UNI.meme, ...GM_UNI.game, ...GM_UNI.infra, ...GM_UNI.rwa])]; } }
   function gmScore(r) {
     const G = r.gem, V = r.val, F = r.F, ML = r.ml, C = r.conf, D = r.deep; let s = 0, max = 0; const pro = [], con = [];
     if (V && V.methods && V.methods.length >= 2) { max += 25; if (V.agree >= 0.6 && V.upside > 0) { const k = Math.min(20, V.upside * 50); s += k; if (V.upside > 0.2) pro.push(`murah ${spct(V.upside, 0)} vs nilai wajar`); } if (F && F.priceToBook > 0 && F.priceToBook < 1 && F.roe > 0.08) { s += 5; pro.push(`P/BV ${nf(2).format(F.priceToBook)}`); } if (V.upside < -0.25 && V.agree >= 0.6) con.push(`mahal ${spct(V.upside, 0)}`); }
@@ -143,9 +149,10 @@
     if (gm.busy) return; gm.busy = true; $("gmRun").disabled = true; $("gmNote").hidden = false;
     const u = $("gmUni").value; let uni = GM_UNI[u];
     if (u === "wl") uni = $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean);
-    if (u === "idxc") { await idxPairsLoad(); uni = (ix.pairs || []).filter((p) => p.base !== "usdt" && p.base !== "usdc" && !p.suspended && p.volIdr > 5e7).slice(0, 80).map((p) => p.base.toUpperCase() + "-USDT"); }
+    if (u === "idxc") { await idxPairsLoad(); uni = (ix.pairs || []).filter((p) => p.base !== "usdt" && p.base !== "usdc" && !p.suspended && p.volIdr > 5e7).slice(0, 150).map((p) => p.base.toUpperCase() + "-USDT"); }
+    if (u === "ctop" || u === "cmid") { $("gmStatus").textContent = "Mengambil daftar semua koin…"; uni = await allCrypto(u === "cmid" ? [30, 180] : [0, 150]); }
     if ($("gmIdxOnly").checked && u !== "idxs" && u !== "usm" && u !== "wl") { await idxPairsLoad(); uni = (uni || []).filter((s) => !/-USDT?$/.test(s) || idxPairFor(s)); }
-    const syms = [...new Set(uni || [])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0; if (!N) { $("gmStatus").textContent = "Tidak ada koin di daftar ini yang listing di Indodax."; gm.busy = false; $("gmRun").disabled = false; return; }
+    const syms = [...new Set(uni || [])].slice(0, 150), N = syms.length, deep = $("gmDeep").checked; let done = 0; if (!N) { $("gmStatus").textContent = "Tidak ada koin di daftar ini yang listing di Indodax."; gm.busy = false; $("gmRun").disabled = false; return; }
     const tick = (m) => { done++; $("gmBar").style.width = Math.round((100 * done) / (N + (deep ? 5 : 0))) + "%"; $("gmStatus").textContent = m; };
     gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); try { await idxPairsLoad(); } catch { /* */ } if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
     try {
