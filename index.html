@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029191646">
+<link rel="stylesheet" href="style.css?v=20261029193001">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -270,6 +270,13 @@
 </section>
 
 <section class="wrap" id="pfView" hidden>
+  <section class="card" id="amCard">
+    <div class="card-h"><h2>Manajemen aset</h2><div class="row am-acts"><div class="seg small" id="amSrc"><button class="seg-btn active" data-a="real">Uang asli</button><button class="seg-btn" data-a="demo">Akun demo</button></div><button class="btn" id="amRef">Muat ulang</button><button class="btn" id="amTax">Laporan transaksi (CSV)</button></div></div>
+    <div class="kpis" id="amKpi"></div>
+    <div class="am-grid"><div><div class="lbl">Nilai total dari waktu ke waktu</div><div class="chart-box am-ch"><canvas id="amHist"></canvas></div></div><div><div class="lbl">Pergerakan hari ini per aset (Rp)</div><div class="chart-box am-ch"><canvas id="amMove"></canvas></div></div></div>
+    <div class="table-wrap"><table id="amTable"></table></div>
+    <p class="note" id="amNote"></p>
+  </section>
   <section class="card">
     <h2>Portofolio saya</h2>
     <label class="lbl" for="pfSym">Ticker</label>
@@ -1099,8 +1106,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029191646";</script>
-<script src="engine.js?v=20261029191646"></script>
-<script src="app.js?v=20261029191646"></script>
+<script>window.APP_V = "20261029193001";</script>
+<script src="engine.js?v=20261029193001"></script>
+<script src="app.js?v=20261029193001"></script>
 </body>
 </html>

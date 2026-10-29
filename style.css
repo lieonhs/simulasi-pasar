@@ -334,7 +334,7 @@ table.heat td { text-align: center; font-size: 12px; } table.heat td:first-child
 #mkIdx td:first-child, #mkFx td:first-child, #mkCmd td:first-child, #mkBond td:first-child { min-width: 90px; }
 @media (min-width: 1100px) {
   #pfView { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 0 18px; align-items: start; }
-  #pfView > .card:first-child { position: sticky; top: var(--tb, 170px); }
+  #pfView > .card:nth-child(2) { position: sticky; top: var(--tb, 170px); } #pfView > #amCard { position: static; }
   #pfOut { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; align-items: start; }
   #pfOut > .kpis, #pfOut > .card:nth-child(2) { grid-column: 1 / -1; }
   #out > #finCard { grid-column: 1 / -1; }
@@ -733,3 +733,8 @@ body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }
 .ap-main { font-size: 15px; margin: 6px 0 10px; } .ap-chk { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
 .ap-BELI { border-color: var(--good); color: var(--good); font-weight: 700; } .ap-JUAL { border-color: var(--bad); color: var(--bad); font-weight: 700; } .ap-TUNGGU { color: var(--muted); }
 #apPane .row { flex-wrap: wrap; gap: 6px; }
+/* manajemen aset */
+#amCard { grid-column: 1 / -1; } .am-acts { gap: 6px; flex-wrap: wrap; align-items: center; }
+.am-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; margin: 10px 0 12px; } .am-ch { height: 220px; }
+@media (max-width: 760px) { .am-grid { grid-template-columns: minmax(0, 1fr); } .am-ch { height: 190px; } }
+.am-w { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--grid); margin-right: 6px; vertical-align: middle; overflow: hidden; } .am-w i { display: block; height: 100%; background: var(--accent); }

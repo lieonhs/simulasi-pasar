@@ -1219,7 +1219,7 @@
     if (v === "market") { stopLive(); if (!mk.at || Date.now() - mk.at > 120000) runMarket(); return; }
     if (v === "trade") { stopLive(); mountTicket("trade"); setTradeTab(document.querySelector("#trTabs .seg-btn.active").dataset.t); renderPaper(); refreshPaper(); return; }
     if (v === "detail" && pp.a) setTimeout(syncTradeCard, 0);
-    if (v === "pf") { stopLive(); renderPfList(); if (!pf.res && pf.list.length && !$("pfRun").disabled) runPortfolio(); return; }
+    if (v === "pf") { stopLive(); renderPfList(); amRender(); if (!pf.res && pf.list.length && !$("pfRun").disabled) runPortfolio(); return; }
     if (v === "quant") { if (!$("qlQ").value.trim()) $("qlQ").value = $("wlQ").value; if (!ql.res && !$("qlRun").disabled) runQuant(); stopLive(); return; }
     if (v === "screen") { stopLive(); if (wl.rows.length) wlLiveOnce(); else if (!$("wlRun").disabled) runWatchlist(); } else if (state.res) startLive();
     if (v === "detail" && state.lw) setTimeout(renderCandle, 30);
@@ -2069,9 +2069,47 @@
 
   // ---------- Indodax ----------
   const ix = { pairs: null, side: "buy", pair: null, log: [], cfg: null };
+  // ---- Pengaman kepatuhan: anti-manipulasi & batas laju API. Jual tidak pernah diblok.
+  const ixq = { last: 0, cancels: [] }, IX_MINVOL = 1e9, IX_MAXSHARE = 0.01, IX_MAXCANCEL = 20;
+  async function idxGuard(params) {
+    const side = String(params.side || "").toUpperCase(), base = String(params.symbol || "").replace(/idr$/i, "").toLowerCase(); await idxPairsLoad(); const p = coinOf(base);
+    const px = +params.price || (p && p.last) || 0, val = +params.quoteOrderQty || (+params.quantity || 0) * px;
+    let open = []; try { const L = await idxCall("openOrders", { symbol: base + "idr" }); open = (Array.isArray(L) ? L : []).filter((o) => String(o.symbol).toLowerCase() === base + "idr"); } catch { /* */ }
+    if (side === "BUY") {
+      if (!p) throw new Error("Diblok: koin tidak ditemukan di daftar Indodax.");
+      if (!(p.volIdr >= IX_MINVOL)) throw new Error(`Diblok (anti-manipulasi): volume 24 jam ${p.base.toUpperCase()} hanya ${big(p.volIdr, "IDR")}, di bawah Rp 1 M. Koin sepi mudah tergerak oleh order kita sendiri.`);
+      if (val > IX_MAXSHARE * p.volIdr) throw new Error(`Diblok (anti-manipulasi): order ${big(val, "IDR")} melebihi 1% volume 24 jam (${big(p.volIdr * IX_MAXSHARE, "IDR")}).`);
+      if (params.price && Math.abs(px / p.last - 1) > 0.15) throw new Error("Diblok: harga limit lebih dari 15% dari harga terakhir.");
+      const cut = Date.now() - 864e5; ixq.cancels = ixq.cancels.filter((t) => t > cut); if (ixq.cancels.length >= IX_MAXCANCEL) throw new Error(`Diblok: sudah ${ixq.cancels.length} pembatalan dalam 24 jam. Pola pasang-batal berulang bisa dianggap spoofing.`);
+      const mySell = open.filter((o) => /SELL/i.test(o.side)).map((o) => +o.price).filter((x) => x > 0);
+      if (mySell.length && (params.type === "MARKET" ? Math.min(...mySell) <= p.last * 1.01 : px >= Math.min(...mySell))) throw new Error("Diblok (anti self-trade): order beli ini bisa bertemu order jual milikmu sendiri. Batalkan order jualnya dulu.");
+    } else if (side === "SELL") { // jual tidak diblok: order beli milik sendiri yang bisa bertemu dibatalkan dulu
+      for (const o of open.filter((o) => /BUY/i.test(o.side) && (params.type === "MARKET" ? +o.price >= ((p && p.last) || 0) * 0.99 : +o.price >= px))) { try { await idxCall("cancelOrder", { symbol: base + "idr", orderId: String(o.orderId) }); } catch { /* */ } }
+    } }
   async function idxCall(method, params = {}, confirm) { // Trade API v2 lewat fungsi indodax-menu
+    const wait = ixq.last + 350 - Date.now(); if (wait > 0) await new Promise((r) => setTimeout(r, wait)); ixq.last = Date.now(); // batas laju: ≤ ±3 panggilan/detik
+    if (method === "createOrder") await idxGuard(params);
     const r = await apiFetch(`${API_IDX}?action=private`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
-    const j = await r.json().catch(() => ({})); if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `Gagal (${r.status})`); return j; }
+    const j = await r.json().catch(() => ({})); if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `Gagal (${r.status})`);
+    if (method === "cancelOrder") ixq.cancels.push(Date.now()); if (method === "myTrades") ledgerMerge(params.symbol, Array.isArray(j) ? j : j.data || []); return j; }
+  // ---- Buku transaksi Indodax (untuk SPT & modal rata-rata). API hanya memberi 7 hari, jadi riwayat dikumpulkan tiap kali tersinkron.
+  const led = { rows: null, sync: {} };
+  function ledgerRows() { if (!led.rows) led.rows = ((settings && settings.idxLedger) || []).slice(); return led.rows; }
+  function ledgerMerge(symbol, L) { if (!L || !L.length) return; const R0 = ledgerRows(), have = new Set(R0.map((r) => r.id)); let add = 0;
+    for (const t of L) { const id = String(t.id ?? t.tradeId ?? `${t.time}-${t.qty}-${t.price}`); if (have.has(id)) continue; have.add(id);
+      R0.push({ id, t: +t.time || Date.now(), pair: String(t.symbol || symbol || "").toLowerCase(), side: t.isBuyer ? "beli" : "jual", qty: +t.qty || 0, px: +t.price || 0, val: +t.quoteQty || (+t.qty || 0) * (+t.price || 0), fee: +t.commission || 0, feeA: String(t.commissionAsset || "").toUpperCase() }); add++; }
+    if (add) { R0.sort((x, y) => x.t - y.t); if (R0.length > 4000) R0.splice(0, R0.length - 4000); saveSettings({ idxLedger: R0 }); } }
+  async function ledgerSync(bases) { for (const b of bases) { const k = b + "idr"; if (led.sync[k] && Date.now() - led.sync[k] < 6 * 3600e3) continue; led.sync[k] = Date.now(); try { await idxCall("myTrades", { symbol: k }); } catch { /* */ } } }
+  function ledgerCost(base) { // modal rata-rata bergerak dari buku transaksi; null bila riwayat belum lengkap
+    let q = 0, c = 0, real = 0; for (const r of ledgerRows().filter((r) => r.pair === base + "idr")) { const feeIdr = r.feeA === "IDR" ? r.fee : r.fee * r.px;
+      if (r.side === "beli") { q += r.qty; c += r.val + feeIdr; } else if (q > 0) { const part = Math.min(1, r.qty / q), cp = c * part; real += r.val - feeIdr - cp; c -= cp; q -= Math.min(q, r.qty); } }
+    return { q, c, real }; }
+  function ledgerCsv() { const R0 = ledgerRows(); if (!R0.length) { toast("Buku transaksi masih kosong. Buka Indodax › Riwayat atau Manajemen aset untuk sinkron."); return; }
+    const yr = new Date().getFullYear(), years = [...new Set(R0.map((r) => new Date(r.t).getFullYear()))].sort();
+    const head = "tanggal,pair,sisi,jumlah,harga_rp,nilai_rp,fee,fee_aset\n", line = (r) => [new Date(r.t + 7 * 3600e3).toISOString().slice(0, 19).replace("T", " "), r.pair.toUpperCase(), r.side, r.qty, r.px, Math.round(r.val), r.fee, r.feeA].join(",");
+    const sum = {}; for (const r of R0) { const k = r.pair, s = sum[k] || (sum[k] = { b: 0, j: 0, f: 0 }); if (r.side === "beli") s.b += r.val; else s.j += r.val; s.f += r.feeA === "IDR" ? r.fee : r.fee * r.px; }
+    const csv = head + R0.map(line).join("\n") + "\n\nringkasan,pair,total_beli_rp,total_jual_rp,total_fee_rp\n" + Object.entries(sum).map(([k, s]) => ["", k.toUpperCase(), Math.round(s.b), Math.round(s.j), Math.round(s.f)].join(",")).join("\n") + `\n\ncatatan,"Dikumpulkan dari API Indodax (7 hari per sinkron) sejak ${new Date(R0[0].t).toLocaleDateString("id-ID")}. Pajak final kripto dipotong otomatis oleh Indodax; cocokkan dengan laporan resmi Indodax sebelum mengisi SPT."\n`;
+    const el = document.createElement("a"); el.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); el.download = `transaksi_indodax_${years[0] || yr}-${years[years.length - 1] || yr}.csv`; el.click(); setTimeout(() => URL.revokeObjectURL(el.href), 2000); }
   const idxRead = (method, params = {}) => idxCall(method, params);
   async function idxInit() {
     if (!isOwner()) { $("xStatus").textContent = "Fitur Indodax hanya untuk akun pemilik."; return; }
@@ -2255,7 +2293,7 @@
       if (!$("xPrice").value) $("xPrice").value = ix.pair.last || ""; idxPreview(); });
     $("xPair").addEventListener("blur", () => setTimeout(() => ($("xSugg").hidden = true), 150));
     ["xType", "xPrice", "xAmt"].forEach((id) => $(id).addEventListener("input", idxPreview));
-    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu(); bindAuto(); bindAp();
+    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu(); bindAuto(); bindAp(); bindAm();
     $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
       openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
     pp.timer = setInterval(() => { if (!document.hidden && (pp.a.orders.length || hasBrk())) refreshPaper(); }, 60000);
@@ -3760,8 +3798,61 @@
     $("apNow").onclick = () => apCycle(true);
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
-    if (location.hostname === "localhost") window.__ap = { apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    if (location.hostname === "localhost") window.__ap = { idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(() => apCycle(false), 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+
+  // =====================================================================
+  // MANAJEMEN ASET: semua yang kamu pegang dalam satu layar (uang asli dan demo dipisah)
+  // =====================================================================
+  const am = { src: "real", busy: false, bal: null, balAt: 0 };
+  async function amRows() {
+    const out = [];
+    if (am.src === "demo") { const S = Object.keys(pp.a.pos); await ppQuotes(S);
+      for (const s of S) { const p = pp.a.pos[s], q = pp.q[s], fx = fxOf(s); if (!q) continue; const v = p.units * q.price * fx, d = q.prevClose ? p.units * (q.price - q.prevClose) * fx : NaN;
+        out.push({ s, src: p.ap ? "Demo · autopilot" : "Demo", qty: p.units, unit: kindOf(s) === "idx" ? "lbr" : "", px: q.price, v, day: d, dayP: q.prevClose ? q.price / q.prevClose - 1 : NaN, cost: p.cost }); }
+      return { rows: out, cash: pp.a.cash }; }
+    const S = pf.list.map((p) => p.s); if (S.length) await ppQuotes(S);
+    for (const p of pf.list) { const q = pp.q[p.s]; if (!q) continue; const fx = fxOf(p.s), units = /\.JK$/.test(p.s) ? p.qty * 100 : p.qty, v = units * q.price * fx;
+      out.push({ s: p.s, src: "Portofolio", qty: units, unit: /\.JK$/.test(p.s) ? "lbr" : "", px: q.price, v, day: q.prevClose ? units * (q.price - q.prevClose) * fx : NaN, dayP: q.prevClose ? q.price / q.prevClose - 1 : NaN, cost: units * p.avg * fx }); }
+    let cash = +$("pfCash").value || 0;
+    if (isOwner()) { try { await idxPairsLoad(); if (!am.bal || Date.now() - am.balAt > 60e3) { am.bal = await idxRead("account"); am.balAt = Date.now(); }
+        const coins = []; for (const x of am.bal.balances || []) { const c = String(x.asset || "").toLowerCase(), n = (+x.free || 0) + (+x.locked || 0); if (!(n > 0)) continue; if (c === "idr") { cash += n; continue; } const P = coinOf(c); if (!P) continue; coins.push(c);
+          const v = n * P.last, ch = P.chg24, L = ledgerCost(c), known = L.q >= n * 0.99;
+          out.push({ s: c.toUpperCase() + "-USD", lab: c.toUpperCase(), src: "Indodax", qty: n, unit: c.toUpperCase(), px: P.last, v, day: isFinite(ch) && ch != null ? v - v / (1 + ch) : NaN, dayP: ch, cost: known ? (L.c * n) / L.q : NaN, dayLbl: "24 jam" }); }
+        ledgerSync(coins).then(() => {}); } catch (e) { am.idxErr = e.message; } }
+    return { rows: out, cash };
+  }
+  async function amRender() { if (am.busy || $("pfView").hidden) return; am.busy = true; $("amNote").textContent = "Memuat harga…";
+    try { const { rows, cash } = await amRows(); rows.sort((x, y) => y.v - x.v); const inv = rows.reduce((t, r) => t + r.v, 0), tot = inv + cash;
+      const dayT = rows.reduce((t, r) => t + (isFinite(r.day) ? r.day : 0), 0), kc = rows.filter((r) => isFinite(r.cost)), plT = kc.reduce((t, r) => t + r.v - r.cost, 0), costT = kc.reduce((t, r) => t + r.cost, 0);
+      const up = rows.filter((r) => r.day > 0).length, dn = rows.filter((r) => r.day < 0).length, R = (v) => big(v, "IDR"), sg = (v) => `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${R(Math.abs(v))}</span>`;
+      $("amKpi").innerHTML = [["Total nilai", R(tot), `${rows.length} aset + kas`], ["Pergerakan hari ini", sg(dayT), inv ? `<span class="${cls(dayT)}">${spct(dayT / (inv - dayT || 1), 2)}</span> dari aset` : ""],
+        ["Untung/rugi belum terealisasi", kc.length ? sg(plT) : "–", kc.length ? `<span class="${cls(plT)}">${spct(plT / (costT || 1), 1)}</span> dari modal ${R(costT)}` : "modal belum diketahui"], ["Kas", R(cash), tot ? pct(cash / tot, 0) + " dari total" : ""],
+        ["Naik / turun hari ini", `<b class="pos">${up}</b> / <b class="neg">${dn}</b>`, rows.length - up - dn ? `${rows.length - up - dn} datar/tanpa data` : ""]].map(([k, v, s]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${s}</div></div>`).join("");
+      $("amTable").innerHTML = rows.length ? `<thead><tr><th>Aset</th><th>Sumber</th><th>Jumlah</th><th>Harga</th><th>Hari ini</th><th>Rp hari ini</th><th>Nilai</th><th>Modal</th><th>Untung/rugi</th><th>Porsi</th></tr></thead><tbody>` + rows.map((r) => { const g = r.v - r.cost;
+        return `<tr><td><span class="pf-sym" data-am="${esc(r.s)}">${esc(r.lab || r.s)}</span></td><td class="note">${esc(r.src)}</td><td>${nf(r.qty < 1 ? 6 : r.qty < 100 ? 2 : 0).format(r.qty)} ${esc(r.unit)}</td><td>${fmtNum(r.px)}</td>
+          <td class="${cls(r.dayP)}">${isFinite(r.dayP) && r.dayP != null ? spct(r.dayP, 2) : "–"}${r.dayLbl ? ' <span class="note">24j</span>' : ""}</td><td>${isFinite(r.day) ? sg(r.day) : "–"}</td><td><b>${R(r.v)}</b></td><td>${isFinite(r.cost) ? R(r.cost) : '<span class="note" title="Riwayat beli belum lengkap (API Indodax hanya 7 hari)">–</span>'}</td>
+          <td>${isFinite(r.cost) ? `${sg(g)} <span class="${cls(g)}">${spct(g / r.cost, 1)}</span>` : "–"}</td><td><div class="am-w"><i style="width:${tot ? ((r.v / tot) * 100).toFixed(1) : 0}%"></i></div>${tot ? pct(r.v / tot, 0) : ""}</td></tr>`; }).join("")
+        + `<tr><td class="note">Kas</td><td></td><td></td><td></td><td></td><td></td><td><b>${R(cash)}</b></td><td></td><td></td><td>${tot ? pct(cash / tot, 0) : ""}</td></tr></tbody>`
+        : `<tbody><tr><td class="note">${am.src === "demo" ? "Belum ada posisi demo." : "Belum ada aset. Tambahkan posisi di kartu Portofolio saya di bawah" + (isOwner() ? ", atau sambungkan Indodax di F6." : ".")}</td></tr></tbody>`;
+      // riwayat nilai harian
+      let H; if (am.src === "demo") H = (pp.a.eq || []).map((x) => ({ d: x.d, v: x.v }));
+      else { const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), L = ((settings && settings.amHist) || []).slice(); if (tot > 0) { if (L.length && L[L.length - 1].d === today) L[L.length - 1].v = tot; else L.push({ d: today, v: tot }); if (L.length > 730) L.splice(0, L.length - 730); saveSettings({ amHist: L }); } H = L; }
+      const acc = css("--accent");
+      drawChart("amHist", { type: "line", data: { labels: H.map((x) => x.d), datasets: [{ data: H.map((x) => x.v / 1e6), borderColor: acc, backgroundColor: css("--accent-soft"), fill: true, borderWidth: 1.8, pointRadius: H.length < 30 ? 3 : 0 }] },
+        options: baseOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => "Rp " + nf(2).format(c.raw) + " jt" } } }, scales: { x: { ticks: { maxTicksLimit: 6 }, grid: { display: false } }, y: { ticks: { callback: (v) => v + " jt" }, grid: { color: css("--grid") } } } }) });
+      const M = rows.filter((r) => isFinite(r.day)).sort((x, y) => y.day - x.day).slice(0, 12), good = css("--good"), bad = css("--bad");
+      drawChart("amMove", { type: "bar", data: { labels: M.map((r) => r.lab || r.s), datasets: [{ data: M.map((r) => r.day), backgroundColor: M.map((r) => (r.day >= 0 ? good : bad)), borderRadius: 3 }] },
+        options: baseOpts({ indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => (c.raw >= 0 ? "+" : "−") + big(Math.abs(c.raw), "IDR") } } }, scales: { x: { ticks: { callback: (v) => big(v) }, grid: { color: css("--grid") } }, y: { grid: { display: false } } } }) });
+      $("amNote").innerHTML = (am.src === "demo" ? "Akun demo memakai uang virtual dan dipisah dari uang asli." : `Uang asli = Portofolio saya${isOwner() ? " + saldo Indodax" : ""} + kas. Riwayat nilai mulai tercatat sejak kamu membuka layar ini.`) +
+        (am.src === "real" && isOwner() ? " Modal kripto Indodax dihitung dari buku transaksi; API hanya memberi 7 hari terakhir, jadi koin yang dibeli sebelum buku mulai tercatat tampil “–”." : "") + (am.idxErr ? ` <span class="neg">Indodax: ${esc(am.idxErr)}</span>` : "") + ` · diperbarui ${new Date().toLocaleTimeString("id-ID")}`; am.idxErr = null; }
+    catch (e) { $("amNote").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+    finally { am.busy = false; } }
+  function bindAm() {
+    $("amSrc").addEventListener("click", (e) => { const b = e.target.closest("[data-a]"); if (!b) return; am.src = b.dataset.a; document.querySelectorAll("#amSrc .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); amRender(); });
+    $("amRef").onclick = () => { am.balAt = 0; amRender(); }; $("amTax").onclick = () => ledgerCsv();
+    $("amTable").addEventListener("click", (e) => { const s = e.target.closest("[data-am]"); if (s) openDetail(s.dataset.am); });
+    setInterval(() => { if (!$("pfView").hidden && !document.hidden) amRender(); }, 60e3); }
   function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
     $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
   async function ensureHolidays() { // tahun di luar kalender bawaan (2027): ambil libur nasional otomatis (cuti bersama bursa belum termasuk)
