@@ -271,6 +271,16 @@
     let pv = 0, df = 1; for (let t = 1; t <= N; t++) { df /= q; pv += c * df; } return pv + face * df;
   }
 
+  // risiko obligasi: durasi, konveksitas, DV01, skenario perubahan yield, titik impas
+  function bondRisk(y, c, m, hDays = 252) {
+    const P = bondPrice(y, c, m), b = 1e-4, Pu = bondPrice(y + b, c, m), Pd = bondPrice(y - b, c, m);
+    const modD = (Pd - Pu) / (2 * b * P), conv = (Pu + Pd - 2 * P) / (b * b * P), macD = modD * (1 + y / 2), dv01 = (Pd - Pu) / 2;
+    const scen = [-200, -100, -50, 50, 100, 200].map((bp) => { const yy = y + bp / 1e4, p1 = bondPrice(yy, c, m) / P - 1, mh = Math.max(0.01, m - hDays / 252), p12 = bondPrice(Math.max(0, yy), c, mh);
+      return { bp, now: p1, approx: -modD * bp / 1e4 + 0.5 * conv * (bp / 1e4) ** 2, tr: (p12 + c * 100 * hDays / 252) / P - 1 }; });
+    const carry = c * 100 * hDays / 252 / P, rolled = bondPrice(y, c, Math.max(0.01, m - hDays / 252)) / P - 1;
+    return { P, modD, macD, conv, dv01, scen, carry, roll: rolled, beBp: modD > 0 ? ((carry + rolled) / modD) * 1e4 : NaN, curYield: (c * 100) / P };
+  }
+
   // ---------- ringkasan ----------
   const PCTS = [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95];
   function fanFromPaths(paths, transform) {
@@ -515,7 +525,7 @@
     const y = cfg.yields, dt = 1 / 252, rng = makeRng(cfg.seed || 42), y0 = y[y.length - 1];
     const p0 = bondPrice(y0, cfg.coupon, cfg.maturity);
     const dy = y.slice(1).map((v, i) => v - y[i]);
-    const res = { mode: "bond", y0, p0, nObs: y.length, stats: { volBpAnn: std(dy) * Math.sqrt(252) * 1e4, min: Math.min(...y), max: Math.max(...y) }, models: {} };
+    const res = { mode: "bond", y0, p0, nObs: y.length, risk: bondRisk(y0, cfg.coupon, cfg.maturity, Math.max(cfg.days, 1)), risk1y: bondRisk(y0, cfg.coupon, cfg.maturity, 252), stats: { volBpAnn: std(dy) * Math.sqrt(252) * 1e4, min: Math.min(...y), max: Math.max(...y) }, models: {} };
     ["vasicek", "cir"].forEach((kind, ki) => {
       progress(`Simulasi ${kind}…`, ki / 2);
       const p = fitRate(y, dt, kind), paths = simRate(p, y0, cfg.days, cfg.sims, dt, kind, rng);
@@ -1345,7 +1355,8 @@
     "Rasio vol 20/60", "ATR / harga", "Volume vs rata-rata 20h", "Posisi di rentang 20h", "MACD hist / harga", "Jarak dari puncak 1 th", "%B Bollinger", "Suara 50 strategi",
     "Volume 5h vs 60h", "Tekanan beli-jual 5h (volume bertanda)", "Korelasi harga–volume 20h", "Sentimen berita 5h", "Jumlah berita 5h"];
   const ML_CAL = ["Akhir/awal bulan", "Musim (sin bulan)", "Musim (cos bulan)"];
-  function mlNames(ext) { return [...ML_FEATS, ...ML_CAL, ...(ext || []).flatMap((e) => [`${e.name}: return 5h`, `${e.name}: return 20h`, `Kekuatan relatif vs ${e.name} 20h`])]; }
+  const ML_CONF = ["Konfluensi: skor total", "Konfluensi: tren mingguan", "Konfluensi: aliran dana (CMF)", "Konfluensi: posisi 52 minggu", "Konfluensi: rezim volatilitas"];
+  function mlNames(ext) { return [...ML_FEATS, ...ML_CAL, ...ML_CONF, ...(ext || []).flatMap((e) => [`${e.name}: return 5h`, `${e.name}: return 20h`, `Kekuatan relatif vs ${e.name} 20h`])]; }
   function alignExt(D, map) { const a = new Array(D.n).fill(null); let last = null; for (let t = 0; t < D.n; t++) { const v = map[D.d[t]]; if (v > 0) last = v; a[t] = last; } return a; }
   function mlFeatures(D, vote, news, ext) {
     const EX = (ext || []).map((e) => alignExt(D, e.map));
@@ -1353,7 +1364,7 @@
     const m20 = T.sma(c, 20), m50 = T.sma(c, 50), m200 = T.sma(c, 200), rsi = T.rsi(c, 14), s20 = T.std(lr, 20), s60 = T.std(lr, 60), atr = T.atr(D.h, D.l, c, 14);
     const hh = T.hh(D.h, 20), ll = T.ll(D.l, 20), e12 = T.ema(c, 12), e26 = T.ema(c, 26), sd20 = T.std(c, 20), hi252 = T.hh(D.h, 252);
     const lv = D.v.map((v) => Math.log(1 + (v || 0))), lvm = T.sma(lv, 20), hasVol = D.v.some((v) => v > 0), lv5 = T.sma(lv, 5), lv60 = T.sma(lv, 60);
-    const X = new Array(n).fill(null);
+    const X = new Array(n).fill(null), CS = confSeries(D);
     for (let t = 210; t < n; t++) {
       const macd = e12[t] - e26[t]; let sig = 0, k = 0; for (let j = Math.max(26, t - 8); j <= t; j++) { if (e12[j] != null && e26[j] != null) { sig += e12[j] - e26[j]; k++; } } sig = k ? sig / k : 0;
       const row = [lr[t], Math.log(c[t] / c[t - 5]), Math.log(c[t] / c[t - 20]), Math.log(c[t] / c[t - 60]), c[t] / m20[t] - 1, c[t] / m50[t] - 1, c[t] / m200[t] - 1, (rsi[t] - 50) / 50,
@@ -1365,6 +1376,7 @@
         for (let j = t - 19; j <= t; j++) { const a = Math.abs(lr[j]) - ma, b = lv[j] - mb; sab += a * b; saa += a * a; sbb += b * b; } row[19] = saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0; }
       const dt = new Date(D.d[t] + "T00:00:00Z"), dom = dt.getUTCDate(), mo = dt.getUTCMonth();
       row.push(dom >= 26 || dom <= 4 ? 1 : 0, Math.sin((2 * Math.PI * mo) / 12), Math.cos((2 * Math.PI * mo) / 12));
+      const z0 = (a) => (a[t] == null ? 0 : a[t]); row.push(CS.S[t] == null ? 0 : CS.S[t] / 9, z0(CS.F.week), z0(CS.F.cmf), z0(CS.F.pos52), z0(CS.F.vol));
       for (const a of EX) { const r5 = a[t] && a[t - 5] ? Math.log(a[t] / a[t - 5]) : 0, r20 = a[t] && a[t - 20] ? Math.log(a[t] / a[t - 20]) : 0; row.push(r5, r20, Math.log(c[t] / c[t - 20]) - r20); }
       if (row.every((x) => isFinite(x))) X[t] = row; }
     return X;
@@ -1440,6 +1452,85 @@
     const n0 = y.length - n1; return n1 && n0 ? (r - (n1 * (n1 + 1)) / 2) / (n1 * n0) : NaN; }
   function fitPlatt(p, y) { const X = p.map((v) => [Math.log(Math.max(1e-6, v) / Math.max(1e-6, 1 - v))]); return fitLogit(X, y, 0.01); }
   const applyPlatt = (w, p) => predLogit(w, [Math.log(Math.max(1e-6, p) / Math.max(1e-6, 1 - p))]);
+  // =====================================================================
+  // DEEP LEARNING: jaringan saraf konvolusi temporal + perhatian (attention) + cabang fitur tabular
+  // urutan 24 hari × 6 kanal → Conv(3) → Conv(3, dilasi 2) → attention pooling + langkah terakhir → gabung fitur → Dense(16, tanh) → peluang
+  // =====================================================================
+  const DL_CH = ["Return harian / volatilitas", "Lebar candle", "Volume relatif", "Posisi tutup di candle", "Gap pembukaan", "Jarak ke MA20"];
+  function dlSeq(D) {
+    const c = D.c, n = D.n, lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0)), s60 = T.std(lr, 60), m20 = T.sma(c, 20);
+    const lv = D.v.map((v) => Math.log(1 + (v || 0))), lvm = T.sma(lv, 20), hasV = D.v.some((v) => v > 0), cl = (x) => (isFinite(x) ? Math.max(-5, Math.min(5, x)) : 0);
+    const S = new Array(n).fill(null);
+    for (let i = 61; i < n; i++) { const v = Math.max(1e-4, s60[i] || 0.01), h = D.h[i], l = D.l[i];
+      S[i] = [cl(lr[i] / v), cl((h - l) / c[i] / (1.5 * v) - 1), hasV && lvm[i] != null ? cl(lv[i] - lvm[i]) : 0, h > l ? cl((c[i] - l) / (h - l) - 0.5) : 0, cl(Math.log(D.o[i] / c[i - 1]) / v), m20[i] ? cl((c[i] / m20[i] - 1) / (v * Math.sqrt(20))) : 0]; }
+    return S;
+  }
+  function makeDL(Dt, o = {}) {
+    const L = o.L || 24, C = 6, K = 3, F1 = 6, F2 = 6, Hd = 12, L1 = L - 2, L2 = L1 - 4, U = 2 * F2 + Dt;
+    const off = {}; let N = 0; for (const [k, s] of [["W1", F1 * C * K], ["b1", F1], ["W2", F2 * F1 * K], ["b2", F2], ["va", F2], ["Wd", Hd * U], ["bd", Hd], ["wo", Hd], ["bo", 1]]) { off[k] = N; N += s; }
+    const lk = (a) => (a > 0 ? a : 0.05 * a), dlk = (a) => (a > 0 ? 1 : 0.05);
+    function fwd(P, x, z, keep) { // x: L×C (flat), z: Dt
+      const a1 = new Float64Array(L1 * F1), h1 = new Float64Array(L1 * F1), a2 = new Float64Array(L2 * F2), h2 = new Float64Array(L2 * F2);
+      for (let t = 0; t < L1; t++) for (let f = 0; f < F1; f++) { let s = P[off.b1 + f]; const wb = off.W1 + f * C * K; for (let c = 0; c < C; c++) for (let k = 0; k < K; k++) s += P[wb + c * K + k] * x[(t + k) * C + c]; a1[t * F1 + f] = s; h1[t * F1 + f] = lk(s); }
+      for (let t = 0; t < L2; t++) for (let g = 0; g < F2; g++) { let s = P[off.b2 + g]; const wb = off.W2 + g * F1 * K; for (let f = 0; f < F1; f++) for (let k = 0; k < K; k++) s += P[wb + f * K + k] * h1[(t + 2 * k) * F1 + f]; a2[t * F2 + g] = s; h2[t * F2 + g] = lk(s); }
+      const sc = new Float64Array(L2); let mx = -Infinity; for (let t = 0; t < L2; t++) { let s = 0; for (let g = 0; g < F2; g++) s += P[off.va + g] * h2[t * F2 + g]; sc[t] = s; if (s > mx) mx = s; }
+      const al = new Float64Array(L2); let se = 0; for (let t = 0; t < L2; t++) { al[t] = Math.exp(sc[t] - mx); se += al[t]; } for (let t = 0; t < L2; t++) al[t] /= se;
+      const u = new Float64Array(U); for (let g = 0; g < F2; g++) { let s = 0; for (let t = 0; t < L2; t++) s += al[t] * h2[t * F2 + g]; u[g] = s; u[F2 + g] = h2[(L2 - 1) * F2 + g]; } for (let j = 0; j < Dt; j++) u[2 * F2 + j] = z[j];
+      const d = new Float64Array(Hd); let zo = P[off.bo]; for (let j = 0; j < Hd; j++) { let s = P[off.bd + j]; const wb = off.Wd + j * U; for (let i = 0; i < U; i++) s += P[wb + i] * u[i]; d[j] = Math.tanh(s); zo += P[off.wo + j] * d[j]; }
+      const p = sigm(zo); return keep ? { p, a1, h1, a2, h2, al, u, d, x } : { p, al }; }
+    function back(P, G, F, e) { // e = p − y
+      const { a1, h1, a2, h2, al, u, d, x } = F, du = new Float64Array(U);
+      G[off.bo] += e; for (let j = 0; j < Hd; j++) { G[off.wo + j] += e * d[j]; const dd = e * P[off.wo + j] * (1 - d[j] * d[j]); G[off.bd + j] += dd; const wb = off.Wd + j * U; for (let i = 0; i < U; i++) { G[wb + i] += dd * u[i]; if (i < 2 * F2) du[i] += dd * P[wb + i]; } }
+      const dh2 = new Float64Array(L2 * F2), da = new Float64Array(L2);
+      for (let t = 0; t < L2; t++) { let s = 0; for (let g = 0; g < F2; g++) { dh2[t * F2 + g] += al[t] * du[g]; s += du[g] * h2[t * F2 + g]; } da[t] = s; }
+      for (let g = 0; g < F2; g++) dh2[(L2 - 1) * F2 + g] += du[F2 + g];
+      let sa = 0; for (let t = 0; t < L2; t++) sa += al[t] * da[t];
+      for (let t = 0; t < L2; t++) { const ds = al[t] * (da[t] - sa); for (let g = 0; g < F2; g++) { G[off.va + g] += ds * h2[t * F2 + g]; dh2[t * F2 + g] += ds * P[off.va + g]; } }
+      const dh1 = new Float64Array(L1 * F1);
+      for (let t = 0; t < L2; t++) for (let g = 0; g < F2; g++) { const q = dh2[t * F2 + g] * dlk(a2[t * F2 + g]); if (!q) continue; G[off.b2 + g] += q; const wb = off.W2 + g * F1 * K;
+        for (let f = 0; f < F1; f++) for (let k = 0; k < K; k++) { const ix = (t + 2 * k) * F1 + f; G[wb + f * K + k] += q * h1[ix]; dh1[ix] += q * P[wb + f * K + k]; } }
+      for (let t = 0; t < L1; t++) for (let f = 0; f < F1; f++) { const q = dh1[t * F1 + f] * dlk(a1[t * F1 + f]); if (!q) continue; G[off.b1 + f] += q; const wb = off.W1 + f * C * K;
+        for (let c = 0; c < C; c++) for (let k = 0; k < K; k++) G[wb + c * K + k] += q * x[(t + k) * C + c]; } }
+    function init(seed) { const r = makeRng(seed), P = new Float64Array(N);
+      const fill = (k, n, fan) => { for (let i = 0; i < n; i++) P[off[k] + i] = r.normal() * Math.sqrt(2 / fan); };
+      fill("W1", F1 * C * K, C * K); fill("W2", F2 * F1 * K, F1 * K); fill("va", F2, F2); fill("Wd", Hd * U, U); fill("wo", Hd, Hd); return P; }
+    function train(P, XS, ZS, Y, opt = {}) { // Adam, L2, berhenti dini pada 15% data terakhir (urutan waktu dijaga)
+      const n = Y.length, nVal = Math.max(40, Math.floor(n * 0.15)), nTr = n - nVal, rng = makeRng(opt.seed || 5), lr = opt.lr || 0.004, l2 = opt.l2 ?? 2e-3, B = 32;
+      const m = new Float64Array(N), v = new Float64Array(N), G = new Float64Array(N), idx = Array.from({ length: nTr }, (_, i) => i);
+      const vloss = (Q) => { let s = 0; for (let i = nTr; i < n; i++) { const p = Math.min(1 - 1e-6, Math.max(1e-6, fwd(Q, XS[i], ZS[i]).p)); s -= Y[i] * Math.log(p) + (1 - Y[i]) * Math.log(1 - p); } return s / nVal; };
+      let best = { L: vloss(P), P: P.slice() }, bad = 0, step = 0;
+      for (let ep = 0; ep < (opt.epochs || 14) && bad < 3; ep++) {
+        for (let i = nTr - 1; i > 0; i--) { const k = rng.int(i + 1); const tmp = idx[i]; idx[i] = idx[k]; idx[k] = tmp; }
+        for (let s0 = 0; s0 < nTr; s0 += B) { G.fill(0); const bs = Math.min(B, nTr - s0);
+          for (let q = s0; q < s0 + bs; q++) { const i = idx[q], F = fwd(P, XS[i], ZS[i], true); back(P, G, F, F.p - Y[i]); }
+          step++; const c1 = 1 - 0.9 ** step, c2 = 1 - 0.999 ** step;
+          for (let i = 0; i < N; i++) { const g = G[i] / bs + l2 * P[i]; m[i] = 0.9 * m[i] + 0.1 * g; v[i] = 0.999 * v[i] + 0.001 * g * g; P[i] -= (lr * (m[i] / c1)) / (Math.sqrt(v[i] / c2) + 1e-8); } }
+        const Lv = vloss(P); if (Lv < best.L - 1e-4) { best = { L: Lv, P: P.slice() }; bad = 0; } else bad++; }
+      return best.P; }
+    return { L, N, init, train, fwd, grad: back, off, dims: { L, C, K, F1, F2, Hd, U } };
+  }
+  // walk-forward DL: dilatih ulang tiap 252 hari (bobot dilanjutkan dari periode sebelumnya), prediksi hanya untuk hari yang belum pernah dilihat
+  function dlModel(D, X, y, lab, H, o = {}) {
+    const S = dlSeq(D), n = D.n, L = 24, ok = (t) => X[t] && t - L + 1 >= 61 && S[t - L + 1];
+    const seq = (t) => { const x = new Float64Array(L * 6); for (let i = 0; i < L; i++) { const r = S[t - L + 1 + i]; for (let c = 0; c < 6; c++) x[i * 6 + c] = r[c]; } return x; };
+    const labD = lab.filter(ok); if (labD.length < 400) return null;
+    const Dt = X[labD[0]].length, net = makeDL(Dt), stat = (tr) => { const mu = new Array(Dt).fill(0), sd = new Array(Dt).fill(0); for (const t of tr) X[t].forEach((v, j) => (mu[j] += v / tr.length)); for (const t of tr) X[t].forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / tr.length)); return { mu, sd: sd.map((v) => Math.sqrt(v) || 1) }; };
+    const zOf = (M, t) => Float64Array.from(X[t], (v, j) => Math.max(-5, Math.min(5, (v - M.mu[j]) / M.sd[j])));
+    const fit = (tr, P0, ep) => { const tr2 = tr.slice(-1500), M = stat(tr2); const P = net.train(P0 || net.init(11), tr2.map(seq), tr2.map((t) => zOf(M, t)), tr2.map((t) => y[t]), { epochs: ep, seed: tr2.length }); return { P, M }; };
+    const s0 = Math.max(labD[0] + 300, labD[Math.floor(labD.length * 0.4)]), oos = [], step = 252; let prevP = null;
+    for (let a = s0; a < n; a += step) { const tr = labD.filter((t) => t < a - H); if (tr.length < 300) continue; const F = fit(tr, prevP, prevP ? 6 : 14); prevP = F.P;
+      for (let t = a; t < Math.min(n, a + step); t++) if (ok(t)) oos.push({ t, p: net.fwd(F.P, seq(t), zOf(F.M, t)).p, y: y[t] }); }
+    const ev = oos.filter((r) => r.y != null); if (ev.length < 150) return null;
+    const P = ev.map((r) => r.p), Y = ev.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p));
+    const bss = 1 - mean(cal.map((p, i) => (p - Y[i]) ** 2)) / (base * (1 - base));
+    const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
+    const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / Math.max(1, n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
+    const tNow = n - 1; let pNow = NaN, att = null;
+    if (ok(tNow)) { const F = fit(labD, prevP, 6), r = net.fwd(F.P, seq(tNow), zOf(F.M, tNow)); pNow = applyPlatt(platt, r.p);
+      const L2 = r.al.length; att = Array.from(r.al, (w, i) => ({ d: D.d[tNow - L2 + 1 + i], w })); } // perhatian pada 18 hari terakhir (lapisan konvolusi memakan 6 hari awal)
+    return { p: pNow, auc, aucP, base, bss, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nOos: ev.length, nEff: Math.round(ev.length / H), att, oosP: oos.map((r) => ({ d: D.d[r.t], p: applyPlatt(platt, r.p) })),
+      arch: "Conv1D 6→6 (k3) → Conv1D 6→6 (k3, dilasi 2) → attention + langkah terakhir ⊕ " + Dt + " fitur → Dense 12 tanh → sigmoid", nParam: net.N, channels: DL_CH };
+  }
   function mlModel(D, o = {}) {
     const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, c = D.c;
     // berita ikut sebagai fitur bila riwayat hariannya cukup (≥ 60 hari bursa); selain itu fitur berita = 0 (netral)
@@ -1524,7 +1615,8 @@
     const dirHit = mean(er.filter((r) => Math.abs(r.fRaw) > 1e-9).map((r) => (Math.sign(r.fRaw) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? wAll * now.f * sNow : NaN;
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
       r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
-    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, pMlp: now ? now.m : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucMlp: aucM, aucP, weights: Wf,
+    let dl = null; if (o.dl !== false) { try { dl = dlModel(D, X, y, lab, H, o); } catch (err) { dl = { error: String(err && err.message || err) }; } }
+    return { dl, H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, pMlp: now ? now.m : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucMlp: aucM, aucP, weights: Wf,
       models: [["Regresi logistik (L2)", aucA, Wf[0]], ["Gradient boosting (60 pohon)", aucB, Wf[1]], ["Pola mirip (k tetangga terdekat)", aucK, Wf[2]], ["Jaringan saraf (MLP 16-8, Adam)", aucM, Wf[3]]],
       disagree: now ? std([now.a, now.b, now.k, now.m], 0) : NaN, tb, term, ext: ext.map((e) => e.name), nFeat: NAMES.length, impBase: aucAB, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
       nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
@@ -1611,6 +1703,10 @@
     if (ml && ml.tb && ml.tb.valid && action === "BELI" && ml.tb.p < Math.min(0.3, ml.tb.base - 0.05)) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model triple-barrier (teruji, AUC ${ml.tb.auc.toFixed(2)}) hanya memberi peluang ${(ml.tb.p * 100).toFixed(0)}% kena target sebelum stop`; }
     if (ml && ml.valid && action === "BELI" && ml.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) hanya memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
     if (ml && ml.valid && action === "TAHAN" && voteAction !== "JUAL" && ml.p >= 0.62 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
+    // deep learning (CNN + attention) — hanya bila lolos uji walk-forward sendiri
+    const dl = ml && ml.dl && !ml.dl.error && isFinite(ml.dl.p) ? ml.dl : null;
+    if (dl && dl.valid && action === "BELI" && dl.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena deep learning (teruji, AUC ${dl.auc.toFixed(2)}) hanya memberi peluang ${(dl.p * 100).toFixed(0)}% naik`; }
+    if (dl && dl.valid && ml.valid && action === "TAHAN" && voteAction !== "JUAL" && dl.p >= 0.6 && ml.p >= 0.6 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena ML (${(ml.p * 100).toFixed(0)}%) dan deep learning (${(dl.p * 100).toFixed(0)}%) yang sama-sama teruji sepakat naik`; }
     // setup selektif A+ yang teruji di aset ini: boleh menaikkan TAHAN → BELI (bila suara strategi bukan JUAL & ekspektasi positif)
     const sel = o.sel && o.sel.active && o.sel.best ? o.sel.best : null;
     if (sel && action === "TAHAN" && voteAction !== "JUAL" && !(pr && pr.expR <= 0) && !(ml && ml.valid && ml.p < 0.45)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena setup A+ terpenuhi (konfluensi ≥ +${sel.thr}, tren harian & mingguan naik), yang historis benar ${(sel.up * 100).toFixed(0)}% dari ≈${sel.nEff} kejadian`; }
@@ -1618,6 +1714,10 @@
     let confPct = NaN, confSrc = "";
     if (ml && ml.valid) { confPct = action === "JUAL" ? 1 - ml.p : action === "BELI" ? ml.p : Math.max(ml.p, 1 - ml.p) * 0 + (acc && isFinite(acc.p) ? acc.p : NaN); confSrc = action === "TAHAN" ? "akurasi historis" : "model ML terkalibrasi"; }
     if (!isFinite(confPct) && acc && isFinite(acc.p) && acc.voteAction === action) { confPct = acc.p; confSrc = "akurasi historis"; }
+    // gabungan model peluang yang teruji (ML stack + deep learning), bobot ∝ (AUC − 0,5)²
+    const EV = [ml && ml.valid ? [ml.p, ml.auc] : null, dl && dl.valid ? [dl.p, dl.auc] : null].filter(Boolean);
+    if (EV.length === 2 && action !== "TAHAN") { const w = EV.map(([, a]) => (a - 0.5) ** 2), pf = (EV[0][0] * w[0] + EV[1][0] * w[1]) / (w[0] + w[1]); confPct = action === "JUAL" ? 1 - pf : pf; confSrc = "gabungan ML + deep learning (keduanya teruji)"; }
+    else if (EV.length === 1 && !(ml && ml.valid) && dl && dl.valid && action !== "TAHAN" && !isFinite(confPct)) { confPct = action === "JUAL" ? 1 - dl.p : dl.p; confSrc = "deep learning terkalibrasi"; }
     // setup A+ aktif & teruji: keyakinan = tingkat benar historisnya (diambil batas bawah 95% bila lebih rendah dari bukti lain tidak dipakai)
     if (sel && action === "BELI" && !(isFinite(confPct) && confPct >= sel.up)) { confPct = sel.up; confSrc = `setup A+ teruji (≈${sel.nEff} kejadian, batas bawah 95% ${(sel.low * 100).toFixed(0)}%)`; }
     // ukuran posisi: risiko maks riskPct dari modal bila stop kena
@@ -1726,6 +1826,43 @@
     const we = T.ema(wc, 20), wr = T.rsi(wc, 14), j = wc.length - 1, wdir = we[j] != null && we[j - 4] != null ? (wc[j] > we[j] && we[j] > we[j - 4] ? 1 : wc[j] < we[j] && we[j] < we[j - 4] ? -1 : 0) : 0;
     return { day: { dir, rsi: r[k], px: c[k], ema: e[k] }, week: { dir: wdir, rsi: wr[j], px: wc[j], ema: we[j] } }; }
 
+  // ---------- binomial (CRR, dunia nyata) dengan dua batas: peluang kena target sebelum stop dalam N hari ----------
+  function binomialBarrier(S, U, Dn, sigma, mu, days, ppy = 252) {
+    const N = Math.max(5, Math.min(250, Math.round(days))), dt = 1 / ppy, u = Math.exp(sigma * Math.sqrt(dt)), d = 1 / u, p = Math.max(0.01, Math.min(0.99, (Math.exp(mu * dt) - d) / (u - d)));
+    const ju = Math.ceil(Math.log(U / S) / Math.log(u)), jd = Math.floor(Math.log(Dn / S) / Math.log(u)); // posisi batas dalam langkah naik bersih
+    let prob = new Map([[0, 1]]), hitU = 0, hitD = 0;
+    for (let k = 0; k < N; k++) { const nx = new Map(); for (const [j, w] of prob) { for (const [dj, q] of [[1, p], [-1, 1 - p]]) { const j2 = j + dj, m = w * q; if (j2 >= ju) hitU += m; else if (j2 <= jd) hitD += m; else nx.set(j2, (nx.get(j2) || 0) + m); } } prob = nx; }
+    let none = 0, ev = 0; for (const [j, w] of prob) { none += w; ev += w * (S * u ** j / S - 1); }
+    return { pUp: hitU, pDn: hitD, pNone: none, evNone: none > 0 ? ev / none : 0, p, steps: N };
+  }
+  // ---------- ML cepat untuk Radar: regresi logistik walk-forward (tiap 126 hari), dikalibrasi ----------
+  function mlFast(D, H = 10, o = {}) {
+    const n = D.n, c = D.c, cost = ((o.costBps ?? 20) * 2) / 1e4, X = mlFeatures(D, null, null, []), y = new Array(n).fill(null);
+    for (let t = 0; t < n - H; t++) y[t] = c[t + H] / c[t] - 1 > cost ? 1 : 0;
+    const lab = []; for (let t = 0; t < n; t++) if (X[t] && y[t] != null) lab.push(t); if (lab.length < 300) return null;
+    const fit = (tr) => { const Xt = tr.map((t) => X[t]), d = Xt[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0); for (const r of Xt) r.forEach((v, j) => (mu[j] += v / Xt.length)); for (const r of Xt) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xt.length));
+      for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1; return { mu, sd, w: fitLogit(Xt.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), tr.map((t) => y[t]), 3) }; };
+    const pr = (M, x) => predLogit(M.w, x.map((v, j) => (v - M.mu[j]) / M.sd[j]));
+    const s0 = Math.max(lab[0] + 250, lab[Math.floor(lab.length * 0.4)]), oos = [];
+    for (let a = s0; a < n; a += 126) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const M = fit(tr); for (let t = a; t < Math.min(n, a + 126); t++) if (X[t] && y[t] != null) oos.push({ p: pr(M, X[t]), y: y[t] }); }
+    if (oos.length < 100) return null; const P = oos.map((r) => r.p), Y = oos.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), pl = fitPlatt(P, Y);
+    const bss = 1 - mean(P.map((p, i) => (applyPlatt(pl, p) - Y[i]) ** 2)) / (base * (1 - base));
+    const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
+    const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / Math.max(1, n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
+    const xNow = X[n - 1], p = xNow ? applyPlatt(pl, pr(fit(lab), xNow)) : NaN;
+    return { p, auc, aucP, base, bss, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, n: oos.length };
+  }
+  // ---------- Radar: satu aset → konfluensi/A+, binomial, ML cepat, risiko ----------
+  function radarAsset(D, o = {}) {
+    const n = D.n, c = D.c, px = c[n - 1], ppy = o.ppy || 252, H = o.H || 10, atr = T.atr(D.h, D.l, c, 14)[n - 1], lr = logReturns(c.slice(-253)), sig = std(lr) * Math.sqrt(ppy);
+    const C = n >= 300 ? confluence(D, { H, ppy }) : null;
+    const mu1 = Math.log(c[n - 1] / c[Math.max(0, n - 253)]), mu = Math.max(-0.3, Math.min(0.3, 0.5 * mu1)); // drift disusutkan separuh, dibatasi ±30%/th
+    const B = atr > 0 && sig > 0 ? binomialBarrier(px, px + 3 * atr, px - 2 * atr, sig, mu, 20, ppy) : null, B0 = atr > 0 && sig > 0 ? binomialBarrier(px, px + 3 * atr, px - 2 * atr, sig, 0, 20, ppy) : null;
+    let F = null; try { F = o.ml === false ? null : mlFast(D, H, o); } catch { F = null; }
+    const ret = (k) => (n > k ? c[n - 1] / c[n - 1 - k] - 1 : NaN);
+    return { px, atr, vol: sig, ret1m: ret(21), ret3m: ret(63), conf: C ? { s: C.sNow, n: C.nNow, valid: C.valid, ic: C.ic, aplus: C.sel.active, best: C.sel.best, base: C.base, trend: C.facs.find((f) => f.k === "trend").now, week: C.facs.find((f) => f.k === "week").now } : null,
+      bin: B ? { pUp: B.pUp, pDn: B.pDn, pNone: B.pNone, ev: B.pUp * 3 - B.pDn * 2, edge: B0 ? B.pUp - B0.pUp : 0, mu, tgt: px + 3 * atr, stp: px - 2 * atr } : null, ml: F, d: D.d[n - 1] };
+  }
   // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
   function goalSim(o) {
     const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5, dep = Math.max(0, o.monthly || 0) * 12 / tpy;
@@ -1746,6 +1883,6 @@
     for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (P(m) >= conf) hi = m; else lo = m; } return hi; }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

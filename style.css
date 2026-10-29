@@ -634,3 +634,27 @@ body.mode-simple .pro-only-v, body.mode-quick .pro-only-v { display: none !impor
 .brk { font-size: 12px; font-family: var(--mono); white-space: nowrap; }
 .cf-sel { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; line-height: 1.5; }
 .cf-sel.on { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+/* 3 kecerdasan */
+.br { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.br-f, .br-c { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.br-f .k, .br-c .k { font-size: 11px; color: var(--muted); } .br-f .v { font-size: 26px; font-weight: 800; letter-spacing: .02em; } .br-c .v { font-size: 18px; font-weight: 700; font-family: var(--mono); } .br-f .h, .br-c .h { font-size: 11px; color: var(--muted); }
+.br-f.buy { border-color: var(--good); } .br-f.buy .v { color: var(--good); } .br-f.sell { border-color: var(--bad); } .br-f.sell .v { color: var(--bad); }
+.br-c.off { opacity: .6; } .br-c.ok { border-color: var(--accent); }
+.br-why { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; font-size: 12px; } .br-why span { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; } .br-why .warn { color: var(--warn, #d9a400); }
+.dl-att { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 8px; } .dl-att i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
+.dl-att-l { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.ask-gem { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+@media (max-width: 640px) { .br { grid-template-columns: 1fr 1fr; } .br-f { grid-column: 1 / -1; } }
+/* radar */
+.rd-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .rd-ctl select { width: auto; }
+.rd-sum { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.rd-pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 12px; border: 1px solid var(--line); white-space: nowrap; }
+.rd-Perhatikan { border-color: var(--good); color: var(--good); font-weight: 700; } .rd-Ujidulu { border-color: var(--accent); color: var(--accent); } .rd-Lemah { border-color: var(--bad); color: var(--bad); } .rd-Abaikan { color: var(--muted); }
+.rd-row { cursor: pointer; } .rd-row:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#rdTable td.num { text-align: right; font-family: var(--mono); white-space: nowrap; } .rd-why { font-size: 12px; color: var(--muted); }
+/* mode Pro: teks sesedikit mungkin — angka, tabel, grafik saja */
+body.mode-pro details.howto, body.mode-pro details.formula, body.mode-pro #caveatCard, body.mode-pro #introCard, body.mode-pro details.guide,
+body.mode-pro .card p.note:not(.keep), body.mode-pro .card .card-h .note, body.mode-pro .act-ai-h .note, body.mode-pro .cf-h .note, body.mode-pro #trHeadNote { display: none !important; }
+body.mode-pro .kpi .h { font-size: 10px; }
+#actBody .act-top { grid-template-columns: 1fr !important; } #actBody .act-top > .sig-verdict { display: none; }
+#screenView > #radarCard { grid-column: 1 / -1; position: static; margin-bottom: 18px; }
