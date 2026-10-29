@@ -3706,9 +3706,12 @@
     if (P.pr) { if (P.pr.expR > 0.15) sc += 1; else if (P.pr.expR <= 0) sc -= 2; }
     const thr = Math.max(AP_MIN, ap.cfg.thr), dir = (m) => (!m || !isFinite(m.p) || !m.valid ? 0 : m.p >= thr ? 1 : m.p <= 1 - thr ? -1 : 0), DLm = M && M.dl && !M.dl.error ? M.dl : null;
     const N = ap.cfg.news ? await apNews(sym, d) : null; if (N && N.shock) { sc -= 3; why.push("berita kejutan"); }
+    const aic = [P.nRobust ? (P.voteAction === "BELI" ? 1 : P.voteAction === "JUAL" ? -1 : 0) : 0, C && C.sel && C.sel.active ? 1 : 0, C ? (C.valid ? (C.sNow >= 3 ? 1 : C.sNow <= -3 ? -1 : 0) : C.sNow >= 4 ? 0.33 : C.sNow <= -4 ? -0.33 : 0) : 0,
+      T.week.dir > 0 && T.day.dir > 0 ? 1 : T.week.dir < 0 && T.day.dir < 0 ? -1 : 0, P.pr ? (P.pr.expR > 0.15 ? 1 : P.pr.expR <= 0 ? -1 : 0) : 0, N && N.shock ? 1 : 0];
+    const AIL = aiTrain(), aiP = AIL.valid ? AIL.p(aic) : NaN, aiDir = AIL.valid ? (aiP >= 0.6 ? 1 : aiP <= 0.4 ? -1 : 0) : sc >= 2 ? 1 : sc <= -2 ? -1 : 0;
     const atr = (() => { const o = d.ohlc || [], n = o.length; if (n < 20) return NaN; let s = 0; for (let i = n - 14; i < n; i++) s += Math.max(o[i][2] - o[i][3], Math.abs(o[i][2] - o[i - 1][4]), Math.abs(o[i][3] - o[i - 1][4])); return s / 14; })();
     const X0 = { T, cs: C ? C.sNow : 0, val, mcP, bnP, sgScore, atr, px: d.values[d.values.length - 1] };
-    return { sym, d, P, M, C, N, ...X0, ml: dir(M), dl: dir(DLm), ai: sc >= 2 ? 1 : sc <= -2 ? -1 : 0, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
+    return { sym, d, P, M, C, N, ...X0, ml: dir(M), dl: dir(DLm), ai: aiDir, aic, aiP, aiLearned: AIL.valid, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
   }
   function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
     if (X.N && X.N.shock) return { act: "JUAL", why: `berita kejutan "${X.N.shock.word}"` };
@@ -3781,13 +3784,27 @@
   const r3 = (v) => (isFinite(v) ? Math.round(v * 1000) / 1000 : null);
   function apFeat(X) { const P = X.P || {}; return [X.mlP, X.dlP, X.mlV ? 1 : 0, X.dlV ? 1 : 0, X.aiScore, P.confPct, P.pr ? P.pr.expR : NaN, X.cs, X.N ? X.N.neg : 0, X.T ? X.T.week.dir : 0, X.T ? X.T.day.dir : 0].map(r3); }
   function apRemember(X, V) { const M = apMem(), d = X.d, n = d.dates.length, day = d.dates[n - 1], f = apFeat(X);
-    const i = M.findIndex((m) => m.s === X.sym && m.d === day), rec = { s: X.sym, d: day, px: r3(d.values[n - 1]), f, v: V.act, y: null, r: null };
+    const i = M.findIndex((m) => m.s === X.sym && m.d === day), rec = { s: X.sym, d: day, px: r3(d.values[n - 1]), f, c: X.aic ? X.aic.map(r3) : undefined, v: V.act, y: null, r: null };
     if (i >= 0) { if (M[i].y == null) M[i] = rec; } else M.push(rec);
     // beri label rekaman lama simbol ini memakai harga aktual AP_H bar setelahnya
     const ix = new Map(d.dates.map((x, k) => [x, k])), cost = apCostRT(X.sym); let lab = 0;
     for (const m of M) if (m.s === X.sym && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } }
     if (M.length > AP_MEMCAP) M.splice(0, M.length - AP_MEMCAP);
-    if (lab) ap.expModel = null; saveSettings({ apMem: M }); }
+    if (lab) { ap.expModel = null; ap.aiModel = null; } saveSettings({ apMem: M }); }
+
+  // ---- RAM AI yang belajar: bobot 6 aturannya dipelajari dari hasil keputusan autopilot (regresi logistik, ditarik ke bobot awal).
+  //      Dipakai hanya bila lolos uji pada 30% catatan terbaru (AUC ≥ 0,55); kalau belum, memakai bobot tetap.
+  const AI_F = ["Strategi teruji", "Setup A+", "Konfluensi", "Tren minggu+hari", "Ekspektasi rencana", "Berita kejutan"], AI_W0 = [2, 3, 1.5, 1, 1.5, -3].map((w) => w / 3);
+  function aiTrain() { if (ap.aiModel) return ap.aiModel; const L = apMem().filter((m) => m.y != null && Array.isArray(m.c)).sort((x, y) => (x.d < y.d ? -1 : 1)), n = L.length, k = AI_F.length, out = { n, valid: false, w: AI_W0.slice(), b: 0 };
+    const fit = (rows, ys) => { const w = AI_W0.slice(); let b = 0; const lam = 0.5;
+      for (let it = 0; it < 500; it++) { const g = Array(k).fill(0); let gb = 0; for (let i = 0; i < rows.length; i++) { const z = b + rows[i].reduce((s, v, j) => s + v * w[j], 0), e = 1 / (1 + Math.exp(-z)) - ys[i]; for (let j = 0; j < k; j++) g[j] += e * rows[i][j]; gb += e; }
+        for (let j = 0; j < k; j++) w[j] -= 0.3 * (g[j] / rows.length + lam * (w[j] - AI_W0[j])); b -= 0.3 * (gb / rows.length); } return { w, b }; };
+    const auc = (ps, ys) => { let pos = 0, neg = 0, s = 0; ps.map((p, i) => [p, ys[i]]).sort((a1, b1) => a1[0] - b1[0]).forEach(([, y], i) => { if (y) { pos++; s += i + 1; } else neg++; }); return pos && neg ? (s - (pos * (pos + 1)) / 2) / (pos * neg) : NaN; };
+    const P = (m, r) => 1 / (1 + Math.exp(-(m.b + r.reduce((s, v, j) => s + v * m.w[j], 0))));
+    if (n >= 40) { const cut = Math.floor(n * 0.7), tr = L.slice(0, cut), te = L.slice(cut), m1 = fit(tr.map((m) => m.c), tr.map((m) => m.y));
+      out.auc = auc(te.map((m) => P(m1, m.c)), te.map((m) => m.y)); out.aucFixed = auc(te.map((m) => P({ w: AI_W0, b: 0 }, m.c)), te.map((m) => m.y)); out.nTest = te.length;
+      const m2 = fit(L.map((m) => m.c), L.map((m) => m.y)); out.w = m2.w; out.b = m2.b; out.valid = te.length >= 12 && out.auc >= 0.55 && !(out.aucFixed > out.auc); }
+    out.p = (r) => P(out, r); ap.aiModel = out; return out; }
   function apExpTrain() { if (ap.expModel) return ap.expModel;
     const L = apMem().filter((m) => m.y != null).sort((x, y) => (x.d < y.d ? -1 : 1)), n = L.length, k = EXP_F.length, out = { n, valid: false };
     const fill = [0.5, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0, 0], row = (m) => m.f.map((v, j) => (v == null || !isFinite(v) ? fill[j] : v));
@@ -3813,13 +3830,16 @@
       <div class="kpi"><div class="k">Transaksi autopilot demo</div><div class="v">${tr.length}</div><div class="h">${tr.length ? `${pct(w / tr.length, 0)} untung · ${big(tr.reduce((t, o) => t + o.pl, 0), "IDR")}` : "belum ada yang selesai"}</div></div>
       <div class="kpi"><div class="k">Peluang dasar untung ${AP_H} bar</div><div class="v">${isFinite(E.base) ? pct(E.base, 0) : "–"}</div><div class="h">setelah biaya</div></div></div>
       ${E.n ? `<div class="table-wrap"><table><thead><tr><th>Keputusan</th><th>Jumlah</th><th>Untung ${AP_H} bar</th><th>Rata-rata return</th></tr></thead><tbody><tr><td><b class="pos">BELI</b></td>${b("BELI")}</tr><tr><td>TUNGGU</td>${b("TUNGGU")}</tr><tr><td><b class="neg">JUAL</b></td>${b("JUAL")}</tr></tbody></table></div>` : ""}
+      ${(() => { const A = aiTrain(); return `<div class="subh">RAM AI · ${A.valid ? '<span class="pos">bobot dipelajari dari hasilmu</span>' : A.n >= 40 ? "bobot tetap (bobot dipelajari belum lebih baik)" : `bobot tetap · belajar setelah ${A.n}/40 catatan berlabel`}</div>
+        <div class="table-wrap"><table><thead><tr><th>Aturan</th><th>Bobot awal</th><th>Bobot sekarang</th></tr></thead><tbody>${AI_F.map((nm, j) => `<tr><td>${esc(nm)}</td><td>${nf(2).format(AI_W0[j])}</td><td class="${A.w[j] > AI_W0[j] + 0.05 ? "pos" : A.w[j] < AI_W0[j] - 0.05 ? "neg" : ""}"><b>${nf(2).format(A.w[j])}</b></td></tr>`).join("")}</tbody></table></div>
+        ${isFinite(A.auc) ? `<p class="note keep">Uji ${A.nTest} catatan terbaru: AUC bobot dipelajari ${nf(2).format(A.auc)} vs bobot tetap ${nf(2).format(A.aucFixed)}.</p>` : ""}`; })()}
       ${E.w ? `<p class="note keep">Faktor yang paling menentukan menurut pengalamanmu: ${E.w.slice(0, 4).map(([nm, v]) => `${esc(nm)} <b class="${v > 0 ? "pos" : "neg"}">${v > 0 ? "▲" : "▼"}</b>`).join(" · ")}</p>` : ""}
       <p class="note">Setiap pemeriksaan (autopilot hidup atau mati, termasuk Uji cepat) disimpan ke akunmu bersama nilai ML, DL, AI, keyakinan, konfluensi, tren, dan berita. ${AP_H} bar kemudian hasil aslinya dicatat. Model pengalaman dilatih ulang dari semua catatan itu dan diuji pada ${pct(0.3, 0)} catatan terbaru. Setelah teruji (AUC ≥ 0,55), autopilot menahan beli bila pola serupa di masa lalu peluang untungnya &lt; 55%.</p>`; }
   async function apLabelSweep() { if (ap.sweepAt && Date.now() - ap.sweepAt < 6 * 3600e3) return; ap.sweepAt = Date.now();
     const M = apMem(), old = Date.now() - 6 * 864e5, S = [...new Set(M.filter((m) => m.y == null && Date.parse(m.d) < old).map((m) => m.s))].slice(0, 15); let lab = 0;
     for (const s of S) { try { const d = await fetchSymbol(s, "6mo"), ix = new Map(d.dates.map((x, k) => [x, k])), n = d.dates.length, cost = apCostRT(s);
         for (const m of M) if (m.s === s && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } } } catch { /* */ } }
-    if (lab) { ap.expModel = null; saveSettings({ apMem: M }); } }
+    if (lab) { ap.expModel = null; ap.aiModel = null; saveSettings({ apMem: M }); } }
   const AP_QUICK = ["BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AAPL", "NVDA", "MSFT"];
   async function apQuick() { if (ap.busy) { toast("Autopilot sedang memeriksa, tunggu sebentar."); return; } ap.busy = true; ap.scan = AP_QUICK.slice(); const btn = $("apQuick"); btn.disabled = true;
     try { for (const [i, s] of AP_QUICK.entries()) { btn.textContent = `Menguji ${i + 1}/${AP_QUICK.length}…`; const st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
@@ -4129,7 +4149,7 @@
     $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Target dulu<br><span class="note">MC · binomial</span></th><th>Nilai wajar</th><th title="jumlah berita 24 jam · negatif">Berita</th><th title="model pengalaman demo">Peng.</th><th>Posisi swing</th><th>Posisi harian</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
       const hasPos = pp.a.pos[s] && pp.a.pos[s].ap, hasPend = pp.a.orders.some((o) => o.ap && o.s === s && o.status === "terbuka");
       return `<tr><td><b>${esc(s)}</b></td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
-        <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.mcP ? `<span class="${X.mcP.ev > 0 ? "pos" : "neg"}">${pct(X.mcP.p, 0)}</span> · <span class="${X.bnP && X.bnP.ev > 0 ? "pos" : "neg"}">${X.bnP ? pct(X.bnP.p, 0) : "–"}</span>` : '<span class="note">–</span>'}</td><td>${X && X.val ? (X.val.bad ? '<span class="note">? data</span>' : `<span class="${X.val.up > 0 ? "pos" : "neg"}">${spct(X.val.up, 0)}</span>`) : '<span class="note">–</span>'}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note" title="${X.N.n} berita 24 jam · ${X.N.neg} negatif">${X.N.n}·${X.N.neg}−</span>`) : "–"}</td><td>${X && X.exp && X.exp.p != null && isFinite(X.exp.p) ? `${pct(X.exp.p, 0)}${X.exp.valid ? "" : ' <span class="note">belum teruji</span>'}` : '<span class="note">–</span>'}</td>
+        <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${X.aiLearned && isFinite(X.aiP) ? `<span title="AI belajar: peluang untung">${pct(X.aiP, 0)}</span>` : nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.mcP ? `<span class="${X.mcP.ev > 0 ? "pos" : "neg"}">${pct(X.mcP.p, 0)}</span> · <span class="${X.bnP && X.bnP.ev > 0 ? "pos" : "neg"}">${X.bnP ? pct(X.bnP.p, 0) : "–"}</span>` : '<span class="note">–</span>'}</td><td>${X && X.val ? (X.val.bad ? '<span class="note">? data</span>' : `<span class="${X.val.up > 0 ? "pos" : "neg"}">${spct(X.val.up, 0)}</span>`) : '<span class="note">–</span>'}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note" title="${X.N.n} berita 24 jam · ${X.N.neg} negatif">${X.N.n}·${X.N.neg}−</span>`) : "–"}</td><td>${X && X.exp && X.exp.p != null && isFinite(X.exp.p) ? `${pct(X.exp.p, 0)}${X.exp.valid ? "" : ' <span class="note">belum teruji</span>'}` : '<span class="note">–</span>'}</td>
         <td>${posCell(s, "swing")}</td><td>${c.style !== "swing" ? posCell(s, "day") : '<span class="note">–</span>'}</td>
         <td class="note ap-st">${c.style === "adapt" ? `<b>${esc(apEngLabel(s).replace(" (belum terbukti di demo)", "").replace(" (keduanya rugi di demo)", " ✗"))}</b> · ` : ""}${(c.style === "both" || c.style === "adapt" || c.style === "day") && st.dnote ? `<span title="${esc(st.dnote)}">H: ${esc(apShort1(st.dnote))}</span>${c.style !== "day" ? " · " : ""}` : ""}${c.style !== "day" ? `<span title="${esc(st.note || (V ? V.why : ""))}">${c.style === "swing" ? "" : "S: "}${esc(apShort1(st.note || (V ? V.why : "")))}</span>` : ""}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
     $("apLog").innerHTML = ap.log.length ? "<tbody>" + ap.log.slice(0, 120).map((l) => `<tr><td class="note">${wib(l.t)}</td><td><b>${esc(l.s)}</b></td><td class="${l.k === "buy" ? "pos" : l.k === "sell" ? "neg" : l.k === "err" ? "neg" : ""}">${esc(l.m)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada aktivitas.</td></tr></tbody>';
@@ -4194,7 +4214,7 @@
     $("apWake").addEventListener("change", () => apWakeSync());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
-    if (location.hostname === "localhost") window.__ap = { futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    if (location.hostname === "localhost") window.__ap = { aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
