@@ -3922,6 +3922,7 @@
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
     drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX();
+    { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
       else if (!S2.length && !c.autoPick) { el.className = "ap-state idle"; el.innerHTML = "● NYALA tapi <b>menganggur</b>: belum ada aset yang dipantau. Klik aset di bawah, atau centang <b>Pilih aset otomatis</b>."; }
@@ -3960,6 +3961,10 @@
     $("apAddWl").onclick = () => { const W = apWatch(); if (!W.length) { toast("Watchlist masih kosong (F1)."); return; } const L = apList(), add = W.filter((s) => !L.includes(s)); if (L.length >= 8) { toast("Daftar sudah 8 aset. Hapus dulu, atau pakai Pilih aset otomatis untuk memilih yang terbaik dari watchlist."); return; } apSetList([...L, ...add]); if (L.length + add.length > 8) toast(`Watchlist punya ${W.length} aset; yang masuk 8 pertama. Centang Pilih aset otomatis agar dipilih yang terbaik.`); };
     $("apAddRd").onclick = () => apAddRadarCrypto();
     $("apAddGems").onclick = () => { const G = gm.rows.filter((r) => r.st === "Kandidat kuat").map((r) => r.s); if (!G.length) { toast("Belum ada Kandidat kuat di Hidden gems."); return; } $("apList").value = [...new Set([...apList(), ...G])].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); };
+    $("apSimAll").onclick = () => { const c = ap.cfg, on = c.on && c.scope === "all" && c.target === "demo";
+      if (on) { c.on = false; $("apOn").checked = false; apLogAdd("—", "Simulasi semua aset dihentikan"); apSave(); drawAp(); return; }
+      c.target = "demo"; c.scope = "all"; c.on = true; if (c.every < 30) c.every = 30; $("apTarget").value = "demo"; $("apScope").value = "all"; $("apOn").checked = true; $("apEvery").value = String(c.every);
+      apLogAdd("—", `Simulasi semua aset DIMULAI (${apAll().length} aset, demo, periksa tiap ${c.every} menit)`); apSave(); drawAp(); setTimeout(() => apCycle(true), 300); };
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
