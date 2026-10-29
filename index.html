@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029131809">
+<link rel="stylesheet" href="style.css?v=20261029132508">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -605,7 +605,7 @@
     <div class="card price-only act-card" id="actCard" hidden>
       <div class="card-h"><h2>Rencana aksi <span class="tag" id="actTag">beli · jual · tahan</span></h2><span class="note" id="actAsOf"></span></div>
       <div id="actBrain"></div>
-      <div class="tabs act-tabs" id="actTabs"><button class="tab active" data-at="plan">Rencana</button><button class="tab" data-at="evid">Bukti</button><button class="tab" data-at="conf">Konfluensi</button><button class="tab" data-at="track">Rekam jejak</button><button class="tab" data-at="goal">Target uang</button><button class="tab" data-at="ask">Tanya AI</button></div>
+      <div class="tabs act-tabs" id="actTabs"><button class="tab active" data-at="plan">Rencana</button><button class="tab" data-at="evid">Bukti</button><button class="tab" data-at="live" id="actTabLive" hidden>Live Indodax</button><button class="tab" data-at="conf">Konfluensi</button><button class="tab" data-at="track">Rekam jejak</button><button class="tab" data-at="goal">Target uang</button><button class="tab" data-at="ask">Tanya AI</button></div>
       <div class="act-pane" data-ap="plan">
         <div class="act-inputs act-inputs2">
         <div><label class="lbl" for="actCap">Modal kamu (Rp)</label><input id="actCap" type="number" min="0" step="1000000" value="10000000"></div>
@@ -614,6 +614,7 @@
         <div id="actBody"><p class="note">Menyiapkan rencana…</p></div>
       </div>
       <div class="act-pane" data-ap="evid" hidden><div id="actEvid"></div></div>
+      <div class="act-pane" data-ap="live" hidden><div id="actLive"></div></div>
       <div class="act-pane" data-ap="conf" hidden><div id="actConf" class="act-conf"></div></div>
       <div class="act-pane" data-ap="track" hidden><div class="trk" id="actTrack"></div></div>
       <div class="act-pane" data-ap="goal" hidden>
@@ -1059,8 +1060,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029131809";</script>
-<script src="engine.js?v=20261029131809"></script>
-<script src="app.js?v=20261029131809"></script>
+<script>window.APP_V = "20261029132508";</script>
+<script src="engine.js?v=20261029132508"></script>
+<script src="app.js?v=20261029132508"></script>
 </body>
 </html>

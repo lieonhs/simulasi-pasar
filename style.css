@@ -683,3 +683,4 @@ body.mode-pro .kpi .h { font-size: 10px; }
 .x-lv { cursor: pointer; } .x-lv:hover td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .x-bar { position: relative; text-align: right; min-width: 80px; } .x-bar i { position: absolute; right: 0; top: 2px; bottom: 2px; opacity: .18; border-radius: 2px; } .x-bar i.pos { background: var(--good); } .x-bar i.neg { background: var(--bad); }
 @media (max-width: 640px) { .x-book { grid-template-columns: 1fr; } }
+.x-mini { width: 100%; font-family: var(--mono); font-size: 12px; } .x-mini td { padding: 2px 6px; } .x-mini td:not(:first-child) { text-align: right; }

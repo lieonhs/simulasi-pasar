@@ -2941,6 +2941,7 @@
     const d = state.data; if (!d || !state.res || state.res.mode !== "price" || !d.ohlc || d.ohlc.length < 130) { $("actCard").hidden = true; return; }
     $("actCard").hidden = false;
     const D = buildD(d), key = `${d.symbol}|${D.d[D.n - 1]}|${D.n}|${stratOpts().costBps}`;
+    if (lv.sym !== d.symbol || (!lv.timer && isCrypto())) { lv.sym = d.symbol; liveStart(); }
     if (act.key !== key) { act.key = key; act.all = null; act.plan = null; act.ml = null; act.mlKey = null; $("actBody").innerHTML = '<p class="status">Menguji 50 strategi di aset ini untuk menyusun rencana…</p>';
       try { const A = await compute("stratAll", { D, o: { ...stratOpts(), short: false } }); if (act.key !== key) return; act.all = A; }
       catch (e) { $("actBody").innerHTML = `<p class="status err">${esc(e.message)}</p>`; return; } }
@@ -3039,7 +3040,7 @@
     const dm = $("actDemo"); if (dm) dm.onclick = actToDemo;
     const ds = $("actSell"); if (ds) ds.onclick = () => { const sym = state.data.symbol, p = pp.a.pos[sym]; if (!p) return; openTrade(sym, "sell");
       setTimeout(() => { $("dType").value = "market"; $("dQty").value = isIdx() ? Math.floor(p.units / 100) : p.units; ppPreview(); }, 350); };
-    drawGoal(); drawTrack(); drawConf(); drawBrain();
+    drawGoal(); drawTrack(); drawConf(); drawBrain(); drawLive();
     if (act.ai && act.aiKey === aiKeyOf()) drawBrief(); else if (act.busy) { /* biarkan status "sedang membaca" */ } else if (act.aiErr) drawAiErr(); else { $("actAi").innerHTML = ""; }
   }
   function actToDemo() { const P = act.plan; if (!P) return; openTrade(state.data.symbol, "buy");
@@ -3154,6 +3155,7 @@
       deep_learning: act.ml && act.ml.dl && !act.ml.dl.error ? { peluang_naik: act.ml.dl.p, auc: act.ml.dl.auc, p: act.ml.dl.aucP, teruji: act.ml.dl.valid, arsitektur: act.ml.dl.arch } : null,
       fusi_3_kecerdasan: act.ml && act.ml.fuse && !act.ml.fuse.error ? { peluang_naik: act.ml.fuse.p, auc: act.ml.fuse.auc, teruji: act.ml.fuse.valid, bobot: act.ml.fuse.w } : null,
       kelly: act.plan && act.plan.kelly ? { penuh: act.plan.kelly.f, seperempat: act.plan.kelly.q } : null,
+      indodax_live: lv.data && !lv.data.err && state.data && lv.sym === state.data.symbol ? { harga_idr: lv.data.p.last, spread: lv.data.spread, tekanan_antrean_beli: lv.data.imb, aliran_transaksi_beli: lv.data.flow, premium_vs_global: lv.data.prem } : null,
       ai_lokal: act.brain ? { kesimpulan: act.brain.action, skor_aturan: act.brain.score, alasan: act.brain.reasons.map((r) => r.txt), risiko: act.brain.risk } : null,
       rekam_jejak_historis: act.hist && act.hist.n ? { rencana_dinilai: act.hist.n, benar: rnd(act.hist.ok, 3), keyakinan_dijanjikan: rnd(act.hist.cpPred, 3), keyakinan_terjadi: rnd(act.hist.cpAct, 3),
         per_aksi: Object.fromEntries(Object.entries(act.hist.by).map(([k, v]) => [k, { n: v.n, benar: rnd(v.ok, 3) }])), sejak: act.hist.from } : null,
@@ -3231,6 +3233,9 @@
     const V = act.val; if (V && V.methods && V.methods.length >= 3 && V.agree >= 0.6) { if (V.upside > 0.2) add(1, `Murah ${spct(V.upside, 0)} vs nilai wajar`); else if (V.upside < -0.2) add(-1, `Mahal ${spct(V.upside, 0)} vs nilai wajar`); }
     const N = act.news; if (N && N.reliable) add(N.effect > 0 ? 1 : -1, `Dampak berita teruji ${spct(N.effect, 1)}`);
     if (state.math && state.math.hmm && state.math.hmm.probHighNow > 0.6) risk.push("Rezim bergejolak → kecilkan posisi");
+    const Lq = lv.data && !lv.data.err && state.data && lv.sym === state.data.symbol ? lv.data : null;
+    if (Lq) { if (Lq.imb > 0.65 && Lq.flow > 0.55) add(0.5, `Indodax: antrean ${pct(Lq.imb, 0)} & transaksi ${pct(Lq.flow, 0)} beli`); else if (Lq.imb < 0.35 && Lq.flow < 0.45) add(-0.5, `Indodax: antrean ${pct(1 - Lq.imb, 0)} & transaksi ${pct(1 - Lq.flow, 0)} jual`);
+      if (isFinite(Lq.prem) && Math.abs(Lq.prem) > 0.02) risk.push(`Harga Indodax ${spct(Lq.prem, 1)} vs global`); if (Lq.spread > 0.005) risk.push(`Spread Indodax ${pct(Lq.spread, 2)}`); if (Lq.wa && P.action === "BELI" && Lq.wa.px < P.t1 * (Lq.ratio || 0)) risk.push(`Tembok jual Rp ${fmtNum(Lq.wa.px)} sebelum target 1`); }
     if (M && M.disagree > 0.12) risk.push("4 model ML berbeda pendapat");
     if (P.acc && isFinite(P.acc.p) && P.acc.p - P.acc.base < 0.03) risk.push("Akurasi historis ≈ peluang dasar");
     const score = R.reduce((s, r) => s + r.w, 0), aiDir = score >= 2 ? 1 : score <= -2 ? -1 : 0;
@@ -3272,6 +3277,7 @@
     if (has(/berita|news|sentimen/)) { const N = act.news; lines.push(N ? `Berita 7 hari: ${N.nRecent}, bersih ${N.net > 0 ? "+" : ""}${N.net}. ${N.reliable ? `Dampak teruji ${spct(N.effect, 1)}.` : "Dampaknya belum teruji."}` : "Belum ada cukup berita."); }
     if (has(/konfluensi|timeframe|mingguan|a\+|setup|skor/)) lines.push(C && !C.error ? `Konfluensi ${C.sNow > 0 ? "+" : ""}${C.sNow}/${C.nNow} (${C.valid ? "teruji" : "belum teruji"}). Setup A+: ${C.sel && C.sel.active ? "<b class='pos'>aktif</b>" : C.sel && C.sel.best ? "belum terpenuhi" : "tidak teruji di aset ini"}.` : "Konfluensi belum dihitung.");
     if (has(/kelly|ukuran posisi|berapa lot|berapa banyak|porsi|alokasi/) && P.kelly) lines.push(P.action !== "BELI" ? `Keputusan sekarang ${P.action}, jadi tidak ada ukuran posisi beli yang disarankan.` : P.kelly.f <= 0 ? "Kelly 0%: distribusi hasil rencana ini tidak menguntungkan, jangan ambil posisi." : `Risiko optimal ${pct(Math.min(P.kelly.q, kellyCap(P)), 1)} modal per transaksi (¼ Kelly ${pct(P.kelly.q, 1)}, Kelly penuh ${pct(P.kelly.f, 1)}). Dibatasi ${pct(kellyCap(P), 1)} karena Kelly dari data historis cenderung terlalu optimistis${kellyCap(P) < 0.01 ? " dan buktinya belum teruji" : ""}. Rencana saat ini: ${P.qty > 0 ? (isIdx() ? nf(0).format(P.qty) + " lot" : nf(4).format(P.qty)) : "–"} pada risiko yang kamu pilih.`);
+    if (has(/order ?book|indodax|antrean|antrian|\bbid\b|\bask\b|spread|premium|transaksi real|real ?time/)) { const Lq = lv.data && !lv.data.err ? lv.data : null; lines.push(Lq ? `Indodax ${esc(Lq.p.base.toUpperCase())}/IDR: Rp ${fmtNum(Lq.p.last)}, spread ${pct(Lq.spread, 2)}, antrean 10 level ${pct(Lq.imb, 0)} beli, 30 transaksi terakhir ${pct(Lq.flow, 0)} beli, premium vs global ${isFinite(Lq.prem) ? spct(Lq.prem, 2) : "–"}.${Lq.ratio ? ` Antre beli versi Indodax ±Rp ${fmtNum(P.entry * Lq.ratio)}.` : ""}` : isCrypto() ? "Data Indodax belum termuat untuk koin ini." : "Order book riil hanya tersedia untuk kripto di Indodax; antrean saham IDX hanya ada di aplikasi sekuritasmu."); }
     if (has(/yakin|keyakinan|persen|confidence|percaya/)) lines.push(`Keyakinan ${isFinite(P.confPct) ? `<b>${pct(P.confPct, 0)}</b> dari ${esc(P.confSrc)}` : "belum ada ukuran teruji"}. Angka ini dikalibrasi: naik hanya kalau buktinya lebih kuat (setup A+, ML/DL teruji), bukan diatur manual.`);
     const defn = /^(apa itu|apa arti|arti|jelaskan|definisi|maksud)/.test(s.trim());
     if (!defn && (has(/\b(beli|jual|tahan|harus|lakukan|sebaiknya|kenapa|mengapa|alasan|kesimpulan|masuk|entry)\b/) || (!lines.length && has(/gimana|bagaimana|gmn/)))) { const L0 = lines.splice(0);
@@ -3340,6 +3346,46 @@
     $("rdRun").onclick = runRadar;
     $("rdTable").addEventListener("click", (e) => { const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
     try { const j = JSON.parse(localStorage.getItem("sp_radar_v1") || "null"); if (j && j.rows && Date.now() - j.at < 3 * 864e5) { rd.rows = j.rows; $("rdUni").value = j.uni || "idx"; drawRadar(); $("rdStatus").textContent = `Hasil scan terakhir ${new Date(j.at).toLocaleString("id-ID")} · klik Scan untuk memperbarui`; } } catch { /* */ }
+  }
+
+  // =====================================================================
+  // LIVE INDODAX di Analisis: order book & transaksi riil koin ini → metrik mikrostruktur, harga rencana dalam rupiah, faktor RAM AI
+  // =====================================================================
+  const lv = { sym: null, data: null, timer: null, busy: false };
+  async function liveLoad() {
+    const d = state.data; if (!d || !isCrypto() || lv.busy) return; lv.busy = true;
+    try { await idxPairsLoad(); const p = idxPairFor(d.symbol); $("actTabLive").hidden = !p; if (!p) { lv.data = null; return; }
+      const j = await (await apiFetch(`${API_IDX}?action=book&pair=${encodeURIComponent(p.pair)}`)).json(); if (j.error) throw new Error(j.error);
+      if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
+      const bid = j.bids[0] && j.bids[0][0], ask = j.asks[0] && j.asks[0][0], mid = bid && ask ? (bid + ask) / 2 : p.last, sum = (L, k) => L.slice(0, k).reduce((s, x) => s + x[0] * x[1], 0);
+      const b10 = sum(j.bids, 10), a10 = sum(j.asks, 10), near = (L) => L.filter((x) => Math.abs(x[0] / mid - 1) <= 0.02);
+      const wall = (L) => { const N = near(L); if (!N.length) return null; const avg = N.reduce((s, x) => s + x[0] * x[1], 0) / N.length, m = N.reduce((a, x) => (x[0] * x[1] > a[0] * a[1] ? x : a)); return m[0] * m[1] > 3 * avg ? { px: m[0], v: m[0] * m[1] } : null; };
+      let bv = 0, sv = 0; for (const t of j.trades) { const v = t.px * t.amt; if (t.side === "buy") bv += v; else sv += v; }
+      const usd = state.res && state.res.s0 > 0 ? state.res.s0 : null, fx = pp.fx || null, prem = usd && fx && p.last ? p.last / (usd * fx) - 1 : NaN;
+      lv.sym = d.symbol; lv.data = { p, j, bid, ask, mid, spread: bid && ask ? (ask - bid) / ask : NaN, imb: b10 + a10 > 0 ? b10 / (b10 + a10) : NaN, b10, a10, flow: bv + sv > 0 ? bv / (bv + sv) : NaN, bv, sv,
+        wb: wall(j.bids), wa: wall(j.asks), prem, ratio: usd && p.last ? p.last / usd : null, at: Date.now() };
+    } catch (e) { lv.data = { err: e.message }; } finally { lv.busy = false; }
+    drawLive(); drawBrain();
+  }
+  function liveStart() { clearInterval(lv.timer); lv.data = null; $("actTabLive").hidden = true; if (!isCrypto()) return; liveLoad();
+    lv.timer = setInterval(() => { if (document.hidden || $("detailView").hidden || !state.data || state.data.symbol !== lv.sym) return; liveLoad(); }, 15000); }
+  function drawLive() {
+    const el = $("actLive"); if (!el) return; const L = lv.data, P = act.plan; if (!L) { el.innerHTML = ""; return; }
+    if (L.err) { el.innerHTML = `<p class="status err">Indodax: ${esc(L.err)}</p>`; return; }
+    const r = L.ratio, idr = (v) => (r ? "Rp " + fmtNum(v * r) : "–"), k = (a, b, c, cl = "") => `<div class="kpi ${cl}"><div class="k">${a}</div><div class="v">${b}</div><div class="h">${c}</div></div>`;
+    const side = (A, c) => A.slice(0, 8).map(([px, q]) => `<tr><td class="${c}">${fmtNum(px)}</td><td>${nf(q < 1 ? 6 : 2).format(q)}</td><td>${big(px * q)}</td></tr>`).join("");
+    el.innerHTML = `<div class="act-tiles">${k("Harga Indodax", "Rp " + fmtNum(L.p.last), `bid ${fmtNum(L.bid)} · ask ${fmtNum(L.ask)} · spread ${pct(L.spread, 2)}`)}
+        ${k("Tekanan antrean (10 level)", pct(L.imb, 0) + " beli", `beli ${big(L.b10)} vs jual ${big(L.a10)}`, L.imb > 0.65 ? "hl" : "")}
+        ${k("Aliran transaksi (30 terakhir)", pct(L.flow, 0) + " beli", `beli ${big(L.bv)} · jual ${big(L.sv)}`, L.flow > 0.65 ? "hl" : "")}
+        ${k("Premium vs global", isFinite(L.prem) ? spct(L.prem, 2) : "–", isFinite(L.prem) ? (Math.abs(L.prem) > 0.02 ? "selisih besar, hati-hati" : "wajar") : "kurs belum dimuat")}
+        ${k("Tembok antrean ±2%", L.wb || L.wa ? `${L.wb ? `<span class="pos">B ${fmtNum(L.wb.px)}</span>` : ""} ${L.wa ? `<span class="neg">J ${fmtNum(L.wa.px)}</span>` : ""}` : "–", "level > 3× rata-rata: cenderung menahan harga")}
+        ${k("24 jam", spct(L.p.chg24, 1), `vol Rp ${big(L.p.volIdr)}`)}</div>
+      ${P && r ? `<div class="subh">Rencana aksi dalam harga Indodax (Rp)</div><div class="br-line">${[["Antre beli", idr(P.entry)], ["Stop", `<span class="neg">${idr(P.stop)}</span>`], ["Target 1", `<span class="pos">${idr(P.t1)}</span>`], ["Target 2", `<span class="pos">${idr(P.t2)}</span>`], ["Beli bila tutup >", idr(P.trigUp)], ["Pemegang jual bila <", idr(P.trail)]].map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join("")}
+        <div class="br-act">${isOwner() ? `<button class="btn primary" id="liveTicket">Isi tiket Indodax</button>` : ""}<button class="btn" data-cmd="DEMO">Order book penuh (F6)</button></div></div>` : ""}
+      <div class="x-book"><div><div class="subh">Beli (bid)</div><table class="x-mini"><tbody>${side(L.j.bids, "pos")}</tbody></table></div><div><div class="subh">Jual (ask)</div><table class="x-mini"><tbody>${side(L.j.asks, "neg")}</tbody></table></div></div>
+      <p class="note">Data riil Indodax, diperbarui tiap 15 detik. Angka-angka ini hanya kondisi saat ini (belum ada riwayat untuk diuji), jadi dipakai RAM AI sebagai faktor kecil dan peringatan, bukan penentu. Harga rencana dikonversi memakai rasio harga Indodax ÷ harga global.</p>`;
+    const b = $("liveTicket"); if (b) b.onclick = () => { const p = L.p; setView("trade"); setTradeTab("idx"); setTimeout(() => { ix.pair = p; idxPick(p.base, "buy", { price: String(Math.round(P.entry * r)) });
+      if (P.qty > 0) $("xAmt").value = (+P.qty).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); idxPreview(); }, 400); };
   }
   function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
     $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
