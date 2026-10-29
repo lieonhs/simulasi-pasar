@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com https://cdn.jsdelivr.net; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<script src="boot.js?v=20261029233852"></script>
 <title>RAM Capital · Quant &amp; Market Analytics</title>
 <meta name="description" content="Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran, sinyal beli/jual, shipping & freight.">
 <meta name="theme-color" content="#070b10">
@@ -23,7 +26,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029233213">
+<link rel="stylesheet" href="style.css?v=20261029233852">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -47,6 +50,7 @@
 </svg><div class="splash-name">RAM CAPITAL</div><div class="splash-tag">Quant &amp; Market Analytics</div><div class="splash-bar"><i></i></div></div>
 <div id="authGate" class="auth-gate" hidden>
   <form id="authForm" class="auth-card" autocomplete="on">
+    <div class="auth-url" id="authUrl">🔒 Alamat resmi: <b>lieonhs.github.io/simulasi-pasar</b>. Jangan masukkan password di alamat lain.</div>
     <div class="brand brand-logo"><svg class="brand-mark" width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">  <defs>
     <linearGradient id="bga" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14202e"/><stop offset="1" stop-color="#070b10"/></linearGradient>
     <linearGradient id="fana" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5cb4f0" stop-opacity=".55"/><stop offset="1" stop-color="#5cb4f0" stop-opacity=".12"/></linearGradient>
@@ -361,6 +365,8 @@
       <div id="apState" class="ap-state"></div>
       <button class="run" id="apSimAll">▶ Simulasi semua aset (demo)</button>
       <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
+      <label class="toggle"><input type="checkbox" id="apHealth" checked> <b>Mode sehat perangkat</b> <span class="note">kurangi beban saat pakai baterai, baterai lemah, RAM kecil, atau perangkat mulai berat</span></label>
+      <div id="apDev" class="note keep"></div>
       <div class="lbl">Kecerdasan yang harus sepakat</div>
       <div class="ap-chk"><label class="toggle"><input type="checkbox" id="apUseML" checked> Machine learning</label><label class="toggle"><input type="checkbox" id="apUseDL" checked> Deep learning</label><label class="toggle"><input type="checkbox" id="apUseAI" checked> RAM AI (aturan)</label><label class="toggle"><input type="checkbox" id="apUseNews" checked> Berita (jual darurat bila ada kejutan)</label><label class="toggle"><input type="checkbox" id="apUseExp" checked> Pengalaman demo (belajar dari hasil sendiri)</label></div>
       <div class="grid">
@@ -1144,9 +1150,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
-<script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029233213";</script>
-<script src="engine.js?v=20261029233213"></script>
-<script src="app.js?v=20261029233213"></script>
+<script src="engine.js?v=20261029233852"></script>
+<script src="app.js?v=20261029233852"></script>
 </body>
 </html>

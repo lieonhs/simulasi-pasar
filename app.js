@@ -2107,7 +2107,7 @@
     } }
   async function idxCall(method, params = {}, confirm) { // Trade API v2 lewat fungsi indodax-menu
     const wait = ixq.last + 350 - Date.now(); if (wait > 0) await new Promise((r) => setTimeout(r, wait)); ixq.last = Date.now(); // batas laju: ≤ ±3 panggilan/detik
-    if (method === "createOrder") await idxGuard(params);
+    if (method === "createOrder") { if (String(params.side).toUpperCase() === "BUY" && !reOk()) { if (ap.cfg && ap.cfg.on && document.hidden) throw new Error("perlu verifikasi password ulang (buka web untuk melanjutkan beli uang asli)"); if (!(await reauth())) throw new Error("dibatalkan: verifikasi password diperlukan untuk beli uang asli"); } await idxGuard(params); }
     const r = await apiFetch(`${API_IDX}?action=private`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
     const j = await r.json().catch(() => ({})); if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `Gagal (${r.status})`);
     if (method === "cancelOrder") ixq.cancels.push(Date.now()); if (method === "myTrades") ledgerMerge(params.symbol, Array.isArray(j) ? j : j.data || []); return j; }
@@ -3661,10 +3661,10 @@
   // AUTOPILOT: bid & offer otomatis dari ML + deep learning + RAM AI (centang mana yang wajib sepakat)
   // =====================================================================
   const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
-  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, brains: 0, style: "swing", dayBias: false, fut: false, lev: 2, tgOn: false, tgAmt: 5e7, tgAgg: 0.03, tgSafe: 0.005, tgBrake: 0.25, scope: "list", news: true, exp: true, autoPick: false, pickAt: 0, pickSrc: "all", maxW: 0.35, maxPos: 5, maxDay: 50, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
+  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, health: true, brains: 0, style: "swing", dayBias: false, fut: false, lev: 2, tgOn: false, tgAmt: 5e7, tgAgg: 0.03, tgSafe: 0.005, tgBrake: 0.25, scope: "list", news: true, exp: true, autoPick: false, pickAt: 0, pickSrc: "all", maxW: 0.35, maxPos: 5, maxDay: 50, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
   function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
-    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apBrains").value = String(c.brains || 0); apSetBrains(c.brains); $("apStyle").value = c.style || "swing"; $("apDayBias").checked = !!c.dayBias; $("apFut1").checked = !!c.fut; $("apLev").value = String(c.lev || 2); $("tgOn").checked = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
-  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = Math.min(50, +$("apMaxDay").value || 50); c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.brains = +$("apBrains").value || 0; apSetBrains(c.brains); c.style = $("apStyle").value; c.dayBias = $("apDayBias").checked; if (c.style !== "swing") c.mode = "asset"; c.fut = $("apFut1").checked; c.lev = Math.min(5, +$("apLev").value || 2); c.tgOn = $("tgOn").checked; c.tgAmt = Math.max(1e6, +$("tgAmt").value || 5e7); c.tgAgg = Math.min(0.05, +$("tgAgg").value); c.tgSafe = +$("tgSafe").value; c.tgBrake = +$("tgBrake").value; if (c.tgOn) c.mode = "asset"; c.scope = $("apScope").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.pickSrc = $("apPickSrc").value; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apHealth").checked = c.health !== false; $("apBrains").value = String(c.brains || 0); apSetBrains(c.brains); $("apStyle").value = c.style || "swing"; $("apDayBias").checked = !!c.dayBias; $("apFut1").checked = !!c.fut; $("apLev").value = String(c.lev || 2); $("tgOn").checked = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = Math.min(50, +$("apMaxDay").value || 50); c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.health = $("apHealth").checked; c.brains = +$("apBrains").value || 0; apSetBrains(c.brains); c.style = $("apStyle").value; c.dayBias = $("apDayBias").checked; if (c.style !== "swing") c.mode = "asset"; c.fut = $("apFut1").checked; c.lev = Math.min(5, +$("apLev").value || 2); c.tgOn = $("tgOn").checked; c.tgAmt = Math.max(1e6, +$("tgAmt").value || 5e7); c.tgAgg = Math.min(0.05, +$("tgAgg").value); c.tgSafe = +$("tgSafe").value; c.tgBrake = +$("tgBrake").value; if (c.tgOn) c.mode = "asset"; c.scope = $("apScope").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.pickSrc = $("apPickSrc").value; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
   const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
@@ -4140,21 +4140,46 @@
       const x = realDay(s); if (!r && x) r = { side: "LONG", pl: x.last ? x.last / x.entry - 1 : NaN, idx: true }; }
     if (!r) return '<span class="note">–</span>'; if (r.wait) return '<span class="pill ap-wait">order</span>';
     return `<b class="${r.side === "LONG" ? "pos" : "neg"}">${r.side}</b>${r.idx ? '<span class="note">·IDX</span>' : ""} ${isFinite(r.pl) ? `<span class="${cls(r.pl)}">${spct(r.pl, 1)}</span>` : ""}`; }
+
+  // =====================================================================
+  // KESEHATAN PERANGKAT: baterai, RAM, beban (jeda event loop). Autopilot mengalah supaya perangkat tidak panas/rusak.
+  // =====================================================================
+  const dev = { bat: null, lag: 0, lagS: [], mem: navigator.deviceMemory || null, cores: navigator.hardwareConcurrency || null, paused: false };
+  (async () => { try { if (navigator.getBattery) { const b = await navigator.getBattery(); dev.bat = b; ["levelchange", "chargingchange"].forEach((ev) => b.addEventListener(ev, () => { if (ap.cfg && !$("apPane").hidden) drawAp(); })); } } catch { /* */ } })();
+  (() => { let last = performance.now(); setInterval(() => { const now = performance.now(), lag = Math.max(0, now - last - 1000); last = now; dev.lagS.push(lag); if (dev.lagS.length > 30) dev.lagS.shift(); dev.lag = dev.lagS.reduce((s, x) => s + x, 0) / dev.lagS.length; }, 1000); })();
+  function devPolicy() { const c = ap.cfg || {}, b = dev.bat, onBat = b && !b.charging, lvl = b ? b.level : 1; let brains = AP_PAR, minEvery = 0, rest = 150, pause = false; const why = [];
+    if (!c.health) return { brains, minEvery, rest: 0, pause, why: ["mode sehat dimatikan"] };
+    if (onBat && lvl < 0.2) { pause = true; why.push(`baterai ${Math.round(lvl * 100)}% tanpa cas: analisis berat dijeda (stop & berita tetap jalan)`); }
+    else if (onBat) { brains = 1; minEvery = 15; rest = 600; why.push("pakai baterai: 1 otak, periksa ≥ 15 menit"); }
+    if (dev.mem && dev.mem <= 4) { brains = Math.min(brains, 2); why.push(`RAM ${dev.mem} GB: maks 2 otak`); }
+    if (dev.lag > 400) { brains = Math.max(1, brains - 1); rest = Math.max(rest, 1500); why.push(`perangkat mulai berat (jeda ${Math.round(dev.lag)} ms): otak dikurangi & diberi jeda`); }
+    if (document.hidden && onBat) { pause = true; why.push("tab di latar & pakai baterai: dijeda"); }
+    return { brains, minEvery, rest, pause, why }; }
+  function devText() { const b = dev.bat, P = devPolicy(); return `${b ? `🔋 ${Math.round(b.level * 100)}%${b.charging ? " (dicas)" : ""}` : "🔋 –"} · ${dev.cores || "?"} inti${dev.mem ? ` · RAM ${dev.mem} GB` : ""} · beban ${dev.lag > 400 ? '<b class="neg">berat</b>' : dev.lag > 150 ? "sedang" : "ringan"}${P.why.length ? " · " + P.why.map(esc).join(" · ") : ""}`; }
+  // VERIFIKASI ULANG PASSWORD sebelum order BELI uang asli (berlaku 12 jam, hanya di tab ini). Jual tidak pernah diblok.
+  let reAt = 0; const reOk = () => Date.now() - reAt < 12 * 3600e3;
+  function reauth(why) { return new Promise((resolve) => { if (reOk()) return resolve(true);
+    const d = document.createElement("div"); d.className = "re-modal"; d.innerHTML = `<div class="re-card"><b>Verifikasi password</b><p class="note keep">${esc(why || "Order beli uang asli butuh verifikasi ulang (berlaku 12 jam di tab ini).")}</p><input type="password" id="reP" autocomplete="current-password" placeholder="password akun"><div class="row"><button class="run" id="reGo">Verifikasi</button><button class="btn" id="reNo">Batal</button></div><div class="note keep" id="reMsg"></div></div>`;
+    document.body.appendChild(d); const done = (v) => { d.remove(); resolve(v); }; $("reP").focus();
+    const go = async () => { $("reMsg").textContent = "Memeriksa…"; try { const { error } = await sb.auth.signInWithPassword({ email: session.user.email, password: $("reP").value }); if (error) { $("reMsg").textContent = "Password salah."; return; } reAt = Date.now(); done(true); } catch (e) { $("reMsg").textContent = e.message; } };
+    $("reGo").onclick = go; $("reP").onkeydown = (e) => { if (e.key === "Enter") go(); if (e.key === "Escape") done(false); }; $("reNo").onclick = () => done(false); }); }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits(); ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
       if (c.on) await apNewsGuard(); apLabelSweep(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
-      { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; return c.style !== "day" && (force || !st.at || Date.now() - st.at >= c.every * 60e3) && !(/\.JK$/.test(s) && !idxOpen() && !force); });
-        let k = 0; const t0 = Date.now(); await Promise.all(Array.from({ length: Math.min(AP_PAR, due.length) }, async (_, slot) => { while (k < due.length) { const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
-          try { st.pre = await apDecide(s, slot); } catch (e) { st.preErr = e; } } }));
+      const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
+      const evMin = Math.max(c.every, DP.minEvery);
+      { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; return c.style !== "day" && (force || !st.at || Date.now() - st.at >= evMin * 60e3) && !(/\.JK$/.test(s) && !idxOpen() && !force); });
+        let k = 0; const t0 = Date.now(); await Promise.all(Array.from({ length: Math.min(DP.brains, due.length) }, async (_, slot) => { while (k < due.length) { const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
+          try { st.pre = await apDecide(s, slot); } catch (e) { st.preErr = e; } if (DP.rest) await new Promise((r) => setTimeout(r, DP.rest)); } }));
         if (due.length) ap.lastPar = { n: due.length, sec: (Date.now() - t0) / 1000 }; }
       for (const s of apSyms()) {
       const st = ap.st[s] || (ap.st[s] = {});
       if (c.style !== "swing" && c.on && (force || !st.dAt || Date.now() - st.dAt >= 5 * 60e3)) { if (c.style === "day" && (!st.X || Date.now() - (st.at || 0) > 3600e3)) { try { const X = await apDecide(s); Object.assign(st, { at: Date.now(), X, V: apVerdict(X) }); apRemember(X, st.V); } catch (e) { st.at = Date.now(); } }
         st.dAt = Date.now(); try { await dayStep(s, st); } catch (e) { st.dnote = "intraday gagal: " + e.message; } drawAp(); }
       if (c.style === "day" && c.on) continue;
-      if (!force && st.at && Date.now() - st.at < c.every * 60e3) continue;
+      if (!force && st.at && Date.now() - st.at < evMin * 60e3) continue;
       if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
       st.note = "menganalisis…"; drawAp();
       try { if (st.preErr) { const e = st.preErr; st.preErr = null; throw e; } const X = st.pre || await apDecide(s); st.pre = null; const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
@@ -4173,7 +4198,7 @@
       catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
       drawAp(); }
       if (c.on && c.mode === "porto") await apPorto(); if (c.target === "demo") await apFailCheck(); }
-    finally { ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), 5000); } } }
+    finally { ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), devPolicy().minEvery ? 60e3 : 5000); } } }
   // ---- Mode portofolio: bobot target dari keyakinan × ekspektasi, pindah hanya bila untung bersih > biaya
   const apCostRT = (s) => { const [fb, fs] = FEE[kindOf(s)]; return fb + fs + (/-USDT?$/.test(s) ? 0.002 : 0.001); }; // fee beli+jual + spread kira-kira
   const apEdge = (X) => { const P = X && X.P; if (!P || !P.pr || !(P.entry > 0)) return 0; return Math.max(0, P.pr.expR) * Math.abs(P.entry - P.stop) / P.entry; }; // ekspektasi % per trade
@@ -4211,7 +4236,7 @@
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
-    drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
+    $("apDev").innerHTML = devText(); drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
     { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
@@ -4237,9 +4262,10 @@
     $("apChips").addEventListener("click", (e) => { const d = e.target.closest("[data-apdel]"); if (d) apSetList(apList().filter((s) => s !== d.dataset.apdel)); });
     $("apPick").addEventListener("click", (e) => { const b = e.target.closest("[data-apadd]"); if (!b) return; const s = b.dataset.apadd, L = apList();
       if (L.includes(s)) apSetList(L.filter((x) => x !== s)); else if (L.length >= 8) toast("Maksimal 8 aset. Hapus satu dulu."); else apSetList([...L, s]); }); setTimeout(() => apLabelSweep(), 20e3);
-    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apScope", "apMode", "apBudget", "apBrains", "apStyle", "apDayBias", "apFut1", "apLev", "tgOn", "tgAmt", "tgAgg", "tgSafe", "tgBrake", "apMaxW", "apUseNews", "apUseExp", "apAutoPick", "apPickSrc"].forEach((id) => $(id).addEventListener("change", () => {
+    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apScope", "apMode", "apBudget", "apHealth", "apBrains", "apStyle", "apDayBias", "apFut1", "apLev", "tgOn", "tgAmt", "tgAgg", "tgSafe", "tgBrake", "apMaxW", "apUseNews", "apUseExp", "apAutoPick", "apPickSrc"].forEach((id) => $(id).addEventListener("change", () => {
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
+      if (id === "apTarget" && ap.cfg.target === "idx") reauth("Mengaktifkan autopilot uang asli butuh verifikasi password (berlaku 12 jam).").then((ok) => { if (!ok) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; apSave(); drawAp(); } });
       if (id === "apScope" && ap.cfg.scope === "all") { if (ap.cfg.target !== "demo") { toast("Simulasi semua aset hanya untuk akun demo."); ap.cfg.scope = "list"; $("apScope").value = "list"; } else { toast(`Simulasi penuh: ${apAll().length} aset dipantau. Satu putaran bisa ±${Math.ceil(apAll().length * 15 / 60)} menit.`); if (ap.cfg.on) setTimeout(() => apCycle(true), 300); } }
       if (id === "apTarget" && ap.cfg.target === "idx" && ap.cfg.scope === "all") { ap.cfg.scope = "list"; $("apScope").value = "list"; }
       if (/^tg/.test(id)) ap.tgOdds = null;
@@ -4817,6 +4843,7 @@
     if (Array.isArray(settings.alerts)) { al.list = settings.alerts; try { localStorage.setItem(AL_KEY, JSON.stringify(al.list)); } catch { /* */ } updateAlBadge(); }
   }
   let authMode = "login";
+  (() => { const ok = ["lieonhs.github.io", "localhost", "127.0.0.1"].includes(location.hostname) && (location.hostname !== "lieonhs.github.io" || location.pathname.startsWith("/simulasi-pasar")); if (!ok) setTimeout(() => { const el = $("authUrl"); if (el) { el.classList.add("bad"); el.innerHTML = `⚠ PERINGATAN: ini bukan alamat resmi (${esc(location.host)}). Alamat resmi hanya <b>lieonhs.github.io/simulasi-pasar</b>. Jangan masukkan password.`; } }, 0); })();
   function setAuthMode(m) { authMode = m; const L = { login: ["Masuk untuk melanjutkan", "Masuk"], signup: ["Buat akun baru", "Daftar"], reset: ["Kirim tautan atur ulang password ke email", "Kirim tautan"] }[m];
     $("authSub").textContent = L[0]; $("authBtn").textContent = L[1];
     $("authPass").hidden = $("authPassLbl").hidden = m === "reset";
