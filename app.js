@@ -3641,10 +3641,10 @@
   // AUTOPILOT: bid & offer otomatis dari ML + deep learning + RAM AI (centang mana yang wajib sepakat)
   // =====================================================================
   const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
-  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, news: true, maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
+  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, news: true, exp: true, maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
   function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
-    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apUseNews").checked = c.news !== false; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
-  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.news = $("apUseNews").checked; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
   const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
@@ -3671,12 +3671,15 @@
     if (P.pr) { if (P.pr.expR > 0.15) sc += 1; else if (P.pr.expR <= 0) sc -= 2; }
     const thr = Math.max(AP_MIN, ap.cfg.thr), dir = (m) => (!m || !isFinite(m.p) || !m.valid ? 0 : m.p >= thr ? 1 : m.p <= 1 - thr ? -1 : 0), DLm = M && M.dl && !M.dl.error ? M.dl : null;
     const N = ap.cfg.news ? await apNews(sym, d) : null; if (N && N.shock) { sc -= 3; why.push("berita kejutan"); }
-    return { sym, d, P, M, C, N, ml: dir(M), dl: dir(DLm), ai: sc >= 2 ? 1 : sc <= -2 ? -1 : 0, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
+    const X0 = { T, cs: C ? C.sNow : 0 };
+    return { sym, d, P, M, C, N, ...X0, ml: dir(M), dl: dir(DLm), ai: sc >= 2 ? 1 : sc <= -2 ? -1 : 0, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
   }
   function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
     if (X.N && X.N.shock) return { act: "JUAL", why: `berita kejutan "${X.N.shock.word}"` };
     if (!use.length) return { act: "–", why: "tidak ada kecerdasan dicentang" };
     const allUp = use.every((u) => u[2] > 0), allDn = use.every((u) => u[2] < 0), P = X.P;
+    const E = c.exp ? apExpPredict(X) : null; X.exp = E;
+    if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0 && E && E.valid && E.p < 0.55) return { act: "TUNGGU", why: `semua sepakat, tapi pengalaman demo hanya ${pct(E.p, 0)} untung pada pola seperti ini` };
     if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0) return { act: "BELI", why: `${use.map((u) => u[0]).join("+")} sepakat naik · keyakinan ${pct(P.confPct, 0)}` };
     if (allDn || P.action === "JUAL") return { act: "JUAL", why: allDn ? `${use.map((u) => u[0]).join("+")} sepakat turun` : "rencana berubah JUAL" };
     const miss = use.filter((u) => u[2] <= 0).map((u) => `${u[0]} ${u[2] < 0 ? "turun" : u[0] === "AI" ? "netral" : "belum teruji/< ambang"}`); if (P.action !== "BELI") miss.push(`rencana ${P.action}`); if (!(P.confPct >= c.thr)) miss.push(`keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}`);
@@ -3729,16 +3732,69 @@
     for (const s of apPositions()) { const N = await apNews(s, (ap.st[s] && ap.st[s].X && ap.st[s].X.d) || null); if (!N.shock) continue;
       const st = ap.st[s] || (ap.st[s] = {}); if (st.shockAt && Date.now() - st.shockAt < 3600e3) continue; st.shockAt = Date.now();
       try { const m = await apSell({ sym: s }); c.cool[s] = Date.now(); st.note = "dijual: berita kejutan"; apLogAdd(s, `JUAL DARURAT · berita kejutan "${N.shock.word}": ${N.shock.title} · ${m || "–"}`, "sell"); toast(`Autopilot: berita kejutan ${s}, posisi dijual.`); } catch (e) { apLogAdd(s, "gagal jual darurat: " + e.message, "err"); } } }
+
+  // ---- Memori autopilot: setiap keputusan disimpan bersama fiturnya, lalu diberi label hasil 5 bar kemudian.
+  //      Model "pengalaman demo" (regresi logistik) belajar ulang dari memori ini setiap ada label baru.
+  const AP_H = 5, AP_MEMCAP = 1500, EXP_F = ["ML p", "DL p", "ML teruji", "DL teruji", "skor AI", "keyakinan", "ekspektasi R", "konfluensi", "berita negatif", "tren minggu", "tren hari"];
+  const apMem = () => (ap.mem || (ap.mem = ((settings && settings.apMem) || []).slice()));
+  const r3 = (v) => (isFinite(v) ? Math.round(v * 1000) / 1000 : null);
+  function apFeat(X) { const P = X.P || {}; return [X.mlP, X.dlP, X.mlV ? 1 : 0, X.dlV ? 1 : 0, X.aiScore, P.confPct, P.pr ? P.pr.expR : NaN, X.cs, X.N ? X.N.neg : 0, X.T ? X.T.week.dir : 0, X.T ? X.T.day.dir : 0].map(r3); }
+  function apRemember(X, V) { const M = apMem(), d = X.d, n = d.dates.length, day = d.dates[n - 1], f = apFeat(X);
+    const i = M.findIndex((m) => m.s === X.sym && m.d === day), rec = { s: X.sym, d: day, px: r3(d.values[n - 1]), f, v: V.act, y: null, r: null };
+    if (i >= 0) { if (M[i].y == null) M[i] = rec; } else M.push(rec);
+    // beri label rekaman lama simbol ini memakai harga aktual AP_H bar setelahnya
+    const ix = new Map(d.dates.map((x, k) => [x, k])), cost = apCostRT(X.sym); let lab = 0;
+    for (const m of M) if (m.s === X.sym && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } }
+    if (M.length > AP_MEMCAP) M.splice(0, M.length - AP_MEMCAP);
+    if (lab) ap.expModel = null; saveSettings({ apMem: M }); }
+  function apExpTrain() { if (ap.expModel) return ap.expModel;
+    const L = apMem().filter((m) => m.y != null).sort((x, y) => (x.d < y.d ? -1 : 1)), n = L.length, k = EXP_F.length, out = { n, valid: false };
+    const fill = [0.5, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0, 0], row = (m) => m.f.map((v, j) => (v == null || !isFinite(v) ? fill[j] : v));
+    const fit = (rows, ys) => { const mu = Array(k).fill(0), sd = Array(k).fill(1); for (let j = 0; j < k; j++) { const c = rows.map((r) => r[j]); mu[j] = c.reduce((a, b) => a + b, 0) / c.length; sd[j] = Math.sqrt(c.reduce((a, b) => a + (b - mu[j]) ** 2, 0) / c.length) || 1; }
+      const Z = rows.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), w = Array(k + 1).fill(0), lam = 0.3;
+      for (let it = 0; it < 400; it++) { const g = Array(k + 1).fill(0); for (let i = 0; i < Z.length; i++) { const z = w[k] + Z[i].reduce((a, v, j) => a + v * w[j], 0), e = 1 / (1 + Math.exp(-z)) - ys[i]; for (let j = 0; j < k; j++) g[j] += e * Z[i][j]; g[k] += e; }
+        for (let j = 0; j <= k; j++) w[j] -= 0.5 * (g[j] / Z.length + (j < k ? lam * w[j] : 0)); }
+      return { mu, sd, w, p: (r) => 1 / (1 + Math.exp(-(w[k] + r.reduce((a, v, j) => a + ((v - mu[j]) / sd[j]) * w[j], 0)))) }; };
+    const auc = (ps, ys) => { let pos = 0, neg = 0, s = 0; const o = ps.map((p, i) => [p, ys[i]]).sort((a, b) => a[0] - b[0]); o.forEach(([, y], i) => { if (y) { pos++; s += i + 1; } else neg++; }); return pos && neg ? (s - (pos * (pos + 1)) / 2) / (pos * neg) : NaN; };
+    out.base = n ? L.reduce((a, m) => a + m.y, 0) / n : NaN;
+    const by = (v) => { const S = L.filter((m) => m.v === v); return { n: S.length, win: S.length ? S.reduce((a, m) => a + m.y, 0) / S.length : NaN, r: S.length ? S.reduce((a, m) => a + m.r, 0) / S.length : NaN }; };
+    out.byV = { BELI: by("BELI"), TUNGGU: by("TUNGGU"), JUAL: by("JUAL") };
+    if (n >= 40) { const cut = Math.floor(n * 0.7), tr = L.slice(0, cut), te = L.slice(cut), m1 = fit(tr.map(row), tr.map((m) => m.y));
+      out.auc = auc(te.map((m) => m1.p(row(m))), te.map((m) => m.y)); out.nTest = te.length; out.valid = te.length >= 12 && out.auc >= 0.55;
+      const m2 = fit(L.map(row), L.map((m) => m.y)); out.model = m2; out.row = row; out.w = EXP_F.map((nm, j) => [nm, m2.w[j]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])); }
+    ap.expModel = out; return out; }
+  function apExpPredict(X) { const E = apExpTrain(); if (!E.model) return { valid: false, n: E.n }; const p = E.model.p(E.row({ f: apFeat(X) })); return { valid: E.valid, p, n: E.n, auc: E.auc }; }
+  function drawApLearn() { const E = apExpTrain(), M = apMem(), tr = pp.a.hist.filter((o) => o.ap && o.side === "sell" && o.pl != null), w = tr.filter((o) => o.pl > 0).length;
+    $("apLearnN").textContent = `${M.length} keputusan tersimpan · ${E.n} sudah berlabel`;
+    const b = (v) => { const x = E.byV[v]; return x.n ? `<td>${x.n}</td><td>${pct(x.win, 0)}</td><td class="${cls(x.r)}">${spct(x.r, 2)}</td>` : '<td>0</td><td>–</td><td>–</td>'; };
+    $("apLearnBody").innerHTML = `<div class="act-tiles">
+      <div class="kpi"><div class="k">Model pengalaman</div><div class="v">${E.valid ? '<span class="pos">teruji</span>' : E.n >= 40 ? '<span class="note">belum teruji</span>' : `<span class="note">${E.n}/40 label</span>`}</div><div class="h">${isFinite(E.auc) ? `AUC uji ${nf(2).format(E.auc)} (${E.nTest} sampel terbaru)` : "butuh ≥ 40 keputusan berlabel"}</div></div>
+      <div class="kpi"><div class="k">Transaksi autopilot demo</div><div class="v">${tr.length}</div><div class="h">${tr.length ? `${pct(w / tr.length, 0)} untung · ${big(tr.reduce((t, o) => t + o.pl, 0), "IDR")}` : "belum ada yang selesai"}</div></div>
+      <div class="kpi"><div class="k">Peluang dasar untung ${AP_H} bar</div><div class="v">${isFinite(E.base) ? pct(E.base, 0) : "–"}</div><div class="h">setelah biaya</div></div></div>
+      ${E.n ? `<div class="table-wrap"><table><thead><tr><th>Keputusan</th><th>Jumlah</th><th>Untung ${AP_H} bar</th><th>Rata-rata return</th></tr></thead><tbody><tr><td><b class="pos">BELI</b></td>${b("BELI")}</tr><tr><td>TUNGGU</td>${b("TUNGGU")}</tr><tr><td><b class="neg">JUAL</b></td>${b("JUAL")}</tr></tbody></table></div>` : ""}
+      ${E.w ? `<p class="note keep">Faktor yang paling menentukan menurut pengalamanmu: ${E.w.slice(0, 4).map(([nm, v]) => `${esc(nm)} <b class="${v > 0 ? "pos" : "neg"}">${v > 0 ? "▲" : "▼"}</b>`).join(" · ")}</p>` : ""}
+      <p class="note">Setiap pemeriksaan (autopilot hidup atau mati, termasuk Uji cepat) disimpan ke akunmu bersama nilai ML, DL, AI, keyakinan, konfluensi, tren, dan berita. ${AP_H} bar kemudian hasil aslinya dicatat. Model pengalaman dilatih ulang dari semua catatan itu dan diuji pada ${pct(0.3, 0)} catatan terbaru. Setelah teruji (AUC ≥ 0,55), autopilot menahan beli bila pola serupa di masa lalu peluang untungnya &lt; 55%.</p>`; }
+  async function apLabelSweep() { if (ap.sweepAt && Date.now() - ap.sweepAt < 6 * 3600e3) return; ap.sweepAt = Date.now();
+    const M = apMem(), old = Date.now() - 6 * 864e5, S = [...new Set(M.filter((m) => m.y == null && Date.parse(m.d) < old).map((m) => m.s))].slice(0, 15); let lab = 0;
+    for (const s of S) { try { const d = await fetchSymbol(s, "6mo"), ix = new Map(d.dates.map((x, k) => [x, k])), n = d.dates.length, cost = apCostRT(s);
+        for (const m of M) if (m.s === s && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } } } catch { /* */ } }
+    if (lab) { ap.expModel = null; saveSettings({ apMem: M }); } }
+  const AP_QUICK = ["BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AAPL", "NVDA", "MSFT"];
+  async function apQuick() { if (ap.busy) { toast("Autopilot sedang memeriksa, tunggu sebentar."); return; } ap.busy = true; ap.scan = AP_QUICK.slice(); const btn = $("apQuick"); btn.disabled = true;
+    try { for (const [i, s] of AP_QUICK.entries()) { btn.textContent = `Menguji ${i + 1}/${AP_QUICK.length}…`; const st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
+        try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: V.act === "BELI" ? "lolos semua syarat" : "" }); apRemember(X, V); } catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; } drawAp(); }
+      const ok = AP_QUICK.filter((s) => ap.st[s] && ap.st[s].V && ap.st[s].V.act === "BELI"); apLogAdd("—", `Uji cepat ${AP_QUICK.length} aset: ${ok.length ? "lolos " + ok.join(", ") : "tidak ada yang lolos semua syarat"}`); }
+    finally { ap.busy = false; btn.disabled = false; btn.textContent = "Uji cepat 12 aset"; apSave(); drawAp(); } }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes(apPositions()); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
-      if (c.on) await apNewsGuard();
+      if (c.on) await apNewsGuard(); apLabelSweep();
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
       for (const s of apSyms()) {
       const st = ap.st[s] || (ap.st[s] = {}); if (!force && st.at && Date.now() - st.at < c.every * 60e3) continue;
       if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
       st.note = "menganalisis…"; drawAp();
-      try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); const held = apPositions().includes(s);
+      try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = apPositions().includes(s);
         if (!c.on) { st.note = "simulasi (autopilot mati)"; }
         else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
         else if (V.act === "BELI" && !held) {
@@ -3776,18 +3832,19 @@
     ap.porto = R.map((r) => ({ s: r.s, w: r.w, cur: r.cur / B, net: r.net })); }
   function drawAp() { if (!ap.cfg || !$("apTable")) return; const g = demoGate(), c = ap.cfg;
     $("apGate").innerHTML = (c.target === "idx" ? gateText(g) : `Eksekusi di <b>akun demo</b>. ${gateText(g)}`) + ` · Order baru hari ini ${c.nDay || 0}/${c.maxDay} · posisi autopilot ${apPositions().length}/${c.maxPos}`;
-    const S = apSyms(), ar = (v, ok) => (ok === false ? '<span class="note">belum teruji</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
-    $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Berita 24j</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
+    const S = [...new Set([...apSyms(), ...(ap.scan || [])])], ar = (v, ok) => (ok === false ? '<span class="note">belum teruji</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
+    $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Berita 24j</th><th>Pengalaman</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
       return `<tr><td><b>${esc(s)}</b>${apPositions().includes(s) ? ' <span class="pill pos">posisi</span>' : ""}</td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
-        <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note">${X.N.n} berita · ${X.N.neg} negatif</span>`) : "–"}</td>
+        <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note">${X.N.n} berita · ${X.N.neg} negatif</span>`) : "–"}</td><td>${X && X.exp && X.exp.p != null && isFinite(X.exp.p) ? `${pct(X.exp.p, 0)}${X.exp.valid ? "" : ' <span class="note">belum teruji</span>'}` : '<span class="note">–</span>'}</td>
         <td class="note">${esc(st.note || (V ? V.why : ""))}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
     $("apLog").innerHTML = ap.log.length ? "<tbody>" + ap.log.slice(0, 120).map((l) => `<tr><td class="note">${wib(l.t)}</td><td><b>${esc(l.s)}</b></td><td class="${l.k === "buy" ? "pos" : l.k === "sell" ? "neg" : l.k === "err" ? "neg" : ""}">${esc(l.m)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada aktivitas.</td></tr></tbody>';
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
+    drawApLearn();
     $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
-  function bindAp() { apLoad();
-    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews"].forEach((id) => $(id).addEventListener("change", () => {
+  function bindAp() { apLoad(); setTimeout(() => apLabelSweep(), 20e3);
+    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews", "apUseExp"].forEach((id) => $(id).addEventListener("change", () => {
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apOn" && ap.cfg.on) { if (!apSyms().length) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
@@ -3795,7 +3852,7 @@
       apSave(); drawAp(); }));
     $("apAddCur").onclick = () => { if (!state.data) return; const L = apSyms(); if (!L.includes(state.data.symbol)) { $("apList").value = [...L, state.data.symbol].join(", "); apRead(); apSave(); drawAp(); } };
     $("apAddGems").onclick = () => { const G = gm.rows.filter((r) => r.st === "Kandidat kuat").map((r) => r.s); if (!G.length) { toast("Belum ada Kandidat kuat di Hidden gems."); return; } $("apList").value = [...new Set([...apSyms(), ...G])].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); };
-    $("apNow").onclick = () => apCycle(true);
+    $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
     if (location.hostname === "localhost") window.__ap = { idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
