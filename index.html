@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029075029">
+<link rel="stylesheet" href="style.css?v=20261029081336">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -619,6 +619,19 @@
         <li><b>Tanda B/S di grafik candle (timeframe 1H)</b> = kapan aturan ini membeli/menjual di masa lalu.</li>
         <li><b>Backtest</b>: kalau aturan ini tidak mengalahkan beli-dan-tahan di periode out-of-sample, jangan jadikan sinyal sebagai perintah. Untuk banyak saham, hasilnya memang begitu.</li></ul></details>
     </div>
+    <div class="card price-only ml-card" id="mlCard" hidden>
+      <div class="card-h"><h2>Machine learning <span class="tag">model sendiri · walk-forward</span></h2>
+        <div class="ml-ctl"><label class="lbl" for="mlH">Horizon</label><select id="mlH"><option value="5" selected>5 hari</option><option value="10">10 hari</option><option value="20">20 hari</option></select><button class="btn" id="mlRun">Latih ulang</button></div></div>
+      <div id="mlBody"><p class="note">Model dilatih otomatis setelah analisis selesai.</p></div>
+      <details class="formula"><summary>Cara kerja model</summary><div class="fx">
+        <p><b>Pertanyaan yang dijawab:</b> apakah harga H hari lagi lebih tinggi dari sekarang setelah biaya beli + jual? (ya = 1, tidak = 0).</p>
+        <p><b>17 fitur</b> dihitung hanya dari data sampai hari itu: return 1/5/20/60 hari, jarak ke MA20/50/200, RSI, volatilitas 20 hari dan rasionya ke 60 hari, ATR/harga, volume relatif, posisi di rentang 20 hari, histogram MACD, jarak dari puncak 1 tahun, %B Bollinger, dan suara 50 strategi.</p>
+        <p><b>Dua model, dirata-rata:</b> regresi logistik dengan penalti L2 (Newton–Raphson) dan gradient boosting 60 pohon kedalaman 2 (fitur dibagi 16 kuantil, subsampel 80%). Keduanya ditulis sendiri di aplikasi ini — tidak memakai layanan luar.</p>
+        <p><b>Uji jujur (walk-forward):</b> mulai 40% data, model dilatih ulang tiap 63 hari memakai data sampai H hari sebelumnya (jeda H mencegah label yang tumpang tindih bocor), lalu memprediksi 63 hari berikutnya yang belum pernah dilihat. Semua metrik di atas berasal dari prediksi ini.</p>
+        <p><b>AUC</b> = peluang model memberi skor lebih tinggi ke hari "naik" daripada hari "tidak naik" (0,5 = tebak koin). Nilai-p memakai jumlah sampel efektif n/H karena hari-hari berurutan saling tumpang tindih. <b>Brier skill</b> &gt; 0 = lebih akurat daripada selalu menebak rata-rata. Peluang dikalibrasi (Platt) supaya "60%" benar-benar terjadi ±60% kali.</p>
+        <p><b>Teruji</b> bila AUC ≥ 0,53, nilai-p &lt; 0,05, dan Brier skill &gt; 0. Hanya model yang teruji yang boleh mengubah keputusan Rencana aksi.</p>
+      </div></details>
+    </div>
     <div class="card" id="candleCard">
       <div class="card-h">
         <h2>Pergerakan harga</h2>
@@ -982,8 +995,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029075029";</script>
-<script src="engine.js?v=20261029075029"></script>
-<script src="app.js?v=20261029075029"></script>
+<script>window.APP_V = "20261029081336";</script>
+<script src="engine.js?v=20261029081336"></script>
+<script src="app.js?v=20261029081336"></script>
 </body>
 </html>

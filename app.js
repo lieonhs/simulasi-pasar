@@ -1175,7 +1175,7 @@
     window.renderMathInElement(d, { delimiters: [{ left: "\\(", right: "\\)", display: false }, { left: "$$", right: "$$", display: true }], throwOnError: false }); d.dataset.rendered = "1"; } }, true);
 
   // ---------- bilah fokus ----------
-  const FOCUS = { signal: ["headCard", "actCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "actCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
+  const FOCUS = { ml: ["headCard", "actCard", "mlCard"], signal: ["headCard", "actCard", "mlCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "actCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
     plan: ["headCard", "actCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {
@@ -2279,6 +2279,12 @@
   // PANDUAN DALAM BENTUK CHAT
   // =====================================================================
   const KB = [
+    ["machine learning ml model peluang auc brier kalibrasi", "Machine learning", "Kartu <b>Machine learning</b> di Analisis (perintah <code>ML</code>). Model buatan sendiri (regresi logistik + gradient boosting) menebak apakah harga H hari lagi naik melebihi biaya. Diuji walk-forward di data yang belum pernah dilihat. <b>AUC</b> 0,5 = tebak koin; <b>Teruji</b> bila AUC ≥ 0,53 dan nilai-p &lt; 0,05 serta Brier skill &gt; 0 — hanya model teruji yang boleh mengubah Rencana aksi."],
+    ["prediksi harga forecast rentang conformal keyakinan 80 90", "Prediksi harga", "Di kartu Machine learning: titik tengah harga H hari lagi plus rentang 50%/80%/90%. Rentang dibuat dari kesalahan model di data yang belum dilihat (conformal), lalu diuji: kolom <b>teruji</b> menunjukkan seberapa sering harga benar-benar jatuh di rentang itu. Kalau R² ≤ 0, pegang rentangnya, bukan titik tengahnya."],
+    ["valuasi gabungan nilai wajar graham residual income ddm murah mahal", "Valuasi gabungan", "Hingga 6 metode: DCF Damodaran, Graham number, residual income, dividend discount (Gordon), P/E wajar, dan laba tahun depan. Median = nilai wajar gabungan; <b>kesepakatan</b> = porsi metode yang setuju murah/mahal. Valuasi menjawab murah atau mahal, bukan kapan naik."],
+    ["dampak berita sentimen uji kejadian event study reaksi", "Dampak berita", "Uji kejadian dari berita yang ada: rata-rata reaksi harga abnormal 3 hari setelah berita positif vs negatif, dengan statistik t. Hanya dipakai kalau polanya kuat (≥ 5 kejadian, |t| ≥ 2). AI juga membaca judul berita terbaru."],
+    ["rekam jejak track record catat benar salah ai terlalu percaya diri", "Rekam jejak", "Setiap rencana dicatat (tersimpan di akunmu) dan dinilai otomatis setelah tanggal evaluasinya lewat: benar/salah, keyakinan yang dijanjikan vs kenyataan, dan apakah AI terlalu percaya diri. Makin lama dipakai, makin bisa dicek apakah angka keyakinannya jujur."],
+    ["setup sql persetujuan admin aktifkan approval supabase", "Aktifkan persetujuan admin", "Ketik <code>SETUP</code> di baris perintah (atau PROFIL → Aktifkan sekarang). Klik <b>Salin SQL</b> → <b>Buka SQL Editor</b> → tempel → <b>Run</b> → kembali dan klik <b>Cek status</b>. Setelah aktif, pendaftar baru harus kamu setujui di PROFIL."],
     ["quick mode cepat trading satu lembar sheet", "Mode Quick", "Klik tombol <b>MODE</b> di atas sampai jadi <b>MODE: QUICK</b>. Layar Analisis jadi satu lembar: kartu <b>Rencana aksi</b> (beli/jual/tahan, harga antre, stop, target, sampai kapan), keyakinan %, risk:reward, ukuran posisi, target uang, ringkasan AI, plus grafik dan tiket order di samping. AI otomatis merangkum saat aset dibuka (maks 30×/jam)."],
     ["rencana aksi beli jual tahan harga kapan stop target antre", "Rencana aksi", "Kartu paling atas di Analisis. <b>Antre beli</b> = harga order limit; <b>Stop</b> = jual bila harga <i>tutup</i> di bawahnya; <b>Target 1</b> = jual ½ lalu stop naik ke harga masuk; <b>Target 2</b> = jual sisa. <b>Batal bila lewat</b> = jangan kejar harga. Tanggal: kapan order dipasang, sampai kapan berlaku, dan batas evaluasi. Ada langkah terpisah untuk yang <b>belum punya</b> dan <b>sudah punya</b> aset."],
     ["keyakinan persen teruji akurasi ai yakin", "Keyakinan %", "<b>Keyakinan teruji</b> = seberapa sering keputusan yang sama di masa lalu benar dalam H hari, dibanding peluang dasar tanpa sinyal. Kalau selisihnya kecil, sinyal belum memberi keunggulan. <b>Keyakinan AI</b> = penilaian Gemini atas semua data di halaman — subjektif, bukan peluang yang dihitung."],
@@ -2482,10 +2488,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2506,6 +2512,8 @@
     if (fn === "MENU") { closeFn(); return; }
     if (fn === "HELP") return showHelp();
     if (fn === "TOUR") { closeFn(); return startTour(); }
+    if (fn === "SETUP") return showApprovalSetup();
+    if (fn === "QUICK") { closeFn(); applyMode("quick"); if (sym && sym !== state.symbol) await openDetail(sym); else setView("detail"); return; }
     if (fn === "ALRT") return showAlerts(sym);
     const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
     if (market[fn]) { closeFn(); setView("market"); if (fn === "MOST") { mk.mov = "value"; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.m === "value")); if (mk.at) renderMovers(); }
@@ -2520,7 +2528,7 @@
     if (fn === "DES") return showDes(target);
     if (fn === "HP") return showHp(target);
     closeFn();
-    const focus = { GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust", MATH: "math" }[fn] || "all";
+    const focus = { ML: "ml", ACT: "signal", GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust", MATH: "math" }[fn] || "all";
     const need = sym && (sym !== state.symbol || !state.res);
     if (need) { setFocus(focus); await openDetail(sym); } else { setView("detail"); }
     setFocus(focus);
@@ -2775,17 +2783,18 @@
   // =====================================================================
   // RENCANA AKSI (beli/jual/tahan + harga + waktu) & MODE QUICK
   // =====================================================================
-  const act = { key: null, all: null, plan: null, goal: null, ai: null, aiKey: null, busy: false };
+  const act = { key: null, all: null, plan: null, goal: null, ai: null, aiKey: null, busy: false, ml: null, mlKey: null };
+  const marketOf = () => (isIdx() ? "IDX" : isCrypto() ? null : (state.data && state.data.currency) === "USD" ? "US" : null);
   const fmtDay = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
   const actFx = () => ((state.data && state.data.currency) === "IDR" ? 1 : pp.fx || 16000);
   function actStartInfo(lastDate) {
     const now = new Date(Date.now() + 7 * 3600e3), today = now.toISOString().slice(0, 10), h = now.getUTCHours() + now.getUTCMinutes() / 60, w = now.getUTCDay();
     if (isCrypto()) return { date: today, when: "sekarang — pasar kripto buka 24 jam" };
-    if (isIdx()) { const wk = w >= 1 && w <= 5;
+    if (isIdx()) { const wk = w >= 1 && w <= 5 && !MCEngine.isHoliday(today, "IDX");
       if (wk && h < 9) return { date: today, when: `hari ini (${fmtDay(today)}) sebelum pasar buka 09:00 WIB` };
       if (wk && h < 15.8) return { date: today, when: `hari ini (${fmtDay(today)}) — pasar sedang buka` };
-      const d = MCEngine.addBiz(today, 1, false); return { date: d, when: `${fmtDay(d)}, pasang sebelum 09:00 WIB` }; }
-    const d = MCEngine.addBiz(lastDate > today ? lastDate : today, 1, false); return { date: d, when: `${fmtDay(d)} (jam bursa setempat)` };
+      const d = MCEngine.addBiz(today, 1, false, "IDX"); return { date: d, when: `${fmtDay(d)}, pasang sebelum 09:00 WIB${MCEngine.isHoliday(today, "IDX") ? " (hari ini libur bursa)" : ""}` }; }
+    const d = MCEngine.addBiz(lastDate > today ? lastDate : today, 1, false, marketOf()); return { date: d, when: `${fmtDay(d)} (jam bursa setempat)` };
   }
   function rawD(d) { const D = { d: [], o: [], h: [], l: [], c: [], v: [] };
     for (const b of d.ohlc) { D.d.push(b[0]); D.o.push(b[1]); D.h.push(b[2]); D.l.push(b[3]); D.c.push(b[4]); D.v.push(b[5] || 0); } D.n = D.c.length; return D; }
@@ -2793,26 +2802,40 @@
     const d = state.data; if (!d || !state.res || state.res.mode !== "price" || !d.ohlc || d.ohlc.length < 130) { $("actCard").hidden = true; return; }
     $("actCard").hidden = false;
     const D = buildD(d), key = `${d.symbol}|${D.d[D.n - 1]}|${D.n}|${stratOpts().costBps}`;
-    if (act.key !== key) { act.key = key; act.all = null; act.plan = null; $("actBody").innerHTML = '<p class="status">Menguji 50 strategi di aset ini untuk menyusun rencana…</p>';
+    if (act.key !== key) { act.key = key; act.all = null; act.plan = null; act.ml = null; act.mlKey = null; $("actBody").innerHTML = '<p class="status">Menguji 50 strategi di aset ini untuk menyusun rencana…</p>';
       try { const A = await compute("stratAll", { D, o: { ...stratOpts(), short: false } }); if (act.key !== key) return; act.all = A; }
       catch (e) { $("actBody").innerHTML = `<p class="status err">${esc(e.message)}</p>`; return; } }
     if (!act.all) return;
+    const mH = parseInt($("mlH").value, 10) || 5, mk = `${key}|${mH}`;
+    if (act.mlKey !== mk) { act.mlKey = mk; $("mlCard").hidden = false; $("mlBody").innerHTML = '<p class="status">Melatih model machine learning (walk-forward)…</p>';
+      if (act.plan === null) $("actBody").innerHTML = '<p class="status">Melatih model machine learning…</p>';
+      try { // ML memakai riwayat terpanjang (10 tahun) terlepas dari rentang analisis yang dipilih
+        let DM = D, vote = act.all.votes.all; if (D.n < 2000) { try { const dl = await fetchSymbol(d.symbol, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) { DM = D2; vote = null; } } catch { /* pakai data yang ada */ } }
+        const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote } }); if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
+        if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; } // jangkarkan ke harga terkini
+        act.ml = M; }
+      catch (e) { if (act.mlKey !== mk) return; act.ml = { error: e.message }; }
+      renderML(); }
+    else renderForecast();
     const R = rawD(d), st0 = actStartInfo(R.d[R.n - 1]), cap = Math.max(0, parseFloat($("actCap").value) || 0), risk = parseFloat($("actRisk").value) || 0.01;
     // harga live terbaru menggantikan tutup terakhir bila ada
     if (state.res.s0 && Math.abs(state.res.s0 / R.c[R.n - 1] - 1) < 0.25) R.c[R.n - 1] = state.res.s0;
     act.plan = MCEngine.actionPlan(R, { isIdx: isIdx(), crypto: isCrypto(), strats: act.all.list, votes: act.all.votes, score: state.sig && state.sig.now ? state.sig.now.score : 0,
-      capital: cap / actFx(), riskPct: risk, unit: isIdx() ? 100 : 1, start: st0.date, costBps: stratOpts().costBps });
-    act.plan.when = st0.when; drawAction(); renderTcPos();
+      capital: cap / actFx(), riskPct: risk, unit: isIdx() ? 100 : 1, start: st0.date, costBps: stratOpts().costBps, market: marketOf(), ml: act.ml && !act.ml.error ? act.ml : null });
+    act.plan.when = st0.when; try { trkEval(); act.trk = trkRecord(act.plan); } catch { /* */ } drawAction(); renderTcPos();
   }
   function drawAction() {
     const P = act.plan; if (!P) return; const A = act.all, idx = isIdx(), cur = state.data.currency || "", fx = actFx(), unitW = idx ? "lot" : "unit";
     const vcls = P.action === "BELI" ? "buy" : P.action === "JUAL" ? "sell" : "hold", pr = P.pr, acc = P.acc, rp = (v) => big(v * fx, "IDR");
     const money = (v) => (cur === "IDR" ? rp(v) : `${fmtNum(v)} ${cur} (≈ ${rp(v)})`);
     $("actTag").textContent = `${state.data.symbol} · ${P.action}`; $("actAsOf").textContent = `harga ${fmtNum(P.px)} · data s/d ${state.data.dates[state.data.dates.length - 1]}`;
-    const accTxt = acc && isFinite(acc.p) ? `${pct(acc.p, 0)}` : "–";
+    const accTxt = acc && isFinite(acc.p) ? `${pct(acc.p, 0)}` : "–", ml = P.ml, fc = act.ml && act.ml.fc, aiAdj = aiAdjusted();
     const tiles = [
-      ["Keyakinan teruji", accTxt, acc && isFinite(acc.p) ? `dasar tanpa sinyal ${pct(acc.base, 0)} · ≈${acc.nInd} kejadian` : "belum cukup kejadian serupa", acc && acc.p - acc.base > 0.05 ? "hl" : ""],
-      ["Keyakinan AI", act.ai && act.ai.keyakinan != null ? `${nf(0).format(act.ai.keyakinan)}%` : "–", act.ai ? `sikap: ${esc(act.ai.sikap || "?")}` : "klik Minta AI merangkum", ""],
+      ["Keyakinan keputusan", isFinite(P.confPct) ? pct(P.confPct, 0) : "–", isFinite(P.confPct) ? `dari ${P.confSrc}` : "belum ada ukuran yang teruji", "hl"],
+      [`Peluang naik ${ml ? ml.H : ""} hari (ML)`, ml ? pct(ml.p, 0) : "–", ml ? `AUC ${nf(2).format(ml.auc)} · ${ml.valid ? "teruji" : "belum teruji"}` : "model belum siap", ml && ml.valid ? "hl" : ""],
+      [`Prediksi harga ${fc ? act.ml.H + " hari" : ""}`, fc ? fmtNum(fc.px) : "–", fc ? `80%: ${fmtNum(fc.bands[1].lo)}–${fmtNum(fc.bands[1].hi)} (teruji ${pct(fc.bands[1].cover, 0)})` : "", ""],
+      ["Akurasi historis", accTxt, acc && isFinite(acc.p) ? `dasar ${pct(acc.base, 0)} · ≈${acc.nInd} kejadian · out-of-sample` : "belum cukup kejadian serupa", ""],
+      ["Keyakinan AI", aiAdj ? `${nf(0).format(aiAdj.v)}%` : "–", aiAdj ? (aiAdj.v !== aiAdj.raw ? `AI bilang ${aiAdj.raw}% → disesuaikan ke bukti teruji` : `sikap: ${esc(act.ai.sikap || "?")}`) : "klik Minta AI merangkum", ""],
       ["Peluang kena target 1", pr ? pct(pr.t1, 0) : "–", pr ? `sebelum stop · stop ${pct(pr.stop, 0)}` : "", ""],
       ["Risk : Reward", `1 : ${nf(1).format(P.rr1)} / 1 : ${nf(1).format(P.rr2)}`, `risiko −${pct(P.riskPctPx, 1)} · target +${pct(P.rewPct1, 1)} / +${pct(P.rewPct2, 1)}`, ""],
       ["Ekspektasi / transaksi", pr ? `${pr.expR >= 0 ? "+" : ""}${nf(2).format(pr.expR)} R` : "–", pr && P.qty > 0 ? `≈ ${pr.expR >= 0 ? "+" : "−"}${rp(Math.abs(pr.expR) * P.R * P.qty * (idx ? 100 : 1))} · menang ${pct(pr.win, 0)}` : "", pr && pr.expR > 0 ? "hl" : ""],
@@ -2839,7 +2862,7 @@
     const warn = [];
     if (!P.nRobust) warn.push("Tidak ada strategi yang lolos uji keandalan untuk aset ini, jadi keputusan di atas <b>lemah</b>.");
     if (acc && isFinite(acc.p) && acc.p - acc.base < 0.03) warn.push(`Keputusan seperti ini di masa lalu benar ${pct(acc.p, 0)}, hampir sama dengan peluang dasar ${pct(acc.base, 0)} — sinyalnya belum menambah keunggulan.`);
-    if (acc && acc.inSample) warn.push("Strategi yang lolos dipilih memakai data yang sama dengan uji akurasi, jadi angka keyakinan teruji cenderung terlalu optimis.");
+    if (ml && !ml.valid) warn.push(`Model ML belum lolos uji untuk aset ini (AUC ${nf(2).format(ml.auc)}), jadi hanya jadi informasi dan tidak mengubah keputusan.`);
     if (pr && pr.expR <= 0) warn.push("Ekspektasi per transaksi ≤ 0 setelah biaya: secara historis rencana harga ini tidak menghasilkan untung.");
     $("actBody").innerHTML = `<div class="act-top"><div class="sig-verdict ${vcls}"><div class="note">Yang sebaiknya dilakukan</div><div class="big">${P.action}</div><div class="note">keyakinan ${P.conf}</div></div>
         <div class="act-tiles">${tiles.map(([k, v, h, c]) => `<div class="kpi ${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("")}</div></div>
@@ -2849,11 +2872,12 @@
       <div class="act-grid"><div><table class="act-ladder">${ladder}</table><p class="note">Order mulai: ${P.when}. ATR ${fmtNum(P.atr)} (gerak harian wajar). Stop memakai harga tutup supaya tidak kena “sapuan” sesaat.</p></div>
         <div style="display:grid;gap:10px"><div class="act-col"><h4>Kalau belum punya</h4><ol>${steps[0].map((x) => `<li>${x}</li>`).join("")}</ol></div><div class="act-col"><h4>Kalau sudah punya</h4><ol>${steps[1].map((x) => `<li>${x}</li>`).join("")}</ol></div></div></div>
       ${warn.length ? `<div class="verdict">${warn.join(" ")}</div>` : ""}
+      <div class="trk" id="actTrack"></div>
       <div class="act-btns">${P.action === "JUAL" && pp.a && pp.a.pos[state.data.symbol] ? `<button class="btn" id="actSell">Isi tiket demo: jual posisi demo</button>` : ""}${P.action === "BELI" && P.qty > 0 ? `<button class="btn primary" id="actDemo">Isi tiket demo: beli ${idx ? nf(0).format(P.qty) : nf(4).format(P.qty)} ${unitW} @ ${fmtNum(P.entry)}</button>` : ""}<button class="btn" data-cmd="${esc(state.data.symbol)} STRAT">Lihat 50 strategi</button></div>`;
     const dm = $("actDemo"); if (dm) dm.onclick = actToDemo;
     const ds = $("actSell"); if (ds) ds.onclick = () => { const sym = state.data.symbol, p = pp.a.pos[sym]; if (!p) return; openTrade(sym, "sell");
       setTimeout(() => { $("dType").value = "market"; $("dQty").value = isIdx() ? Math.floor(p.units / 100) : p.units; ppPreview(); }, 350); };
-    drawGoal();
+    drawGoal(); drawTrack();
     if (act.ai && act.aiKey === aiKeyOf()) drawBrief(); else { $("actAi").innerHTML = ""; if (document.body.classList.contains("mode-quick")) runBrief(true); }
   }
   function actToDemo() { const P = act.plan; if (!P) return; openTrade(state.data.symbol, "buy");
@@ -2861,15 +2885,20 @@
   function drawGoal() {
     const P = act.plan, pr = P && P.pr; if (!pr) { $("actGoalOut").innerHTML = ""; return; }
     const cap = Math.max(0, parseFloat($("actCap").value) || 0), goal = Math.max(0, parseFloat($("actGoal").value) || 0), rk = parseFloat($("actRisk").value) || 0.01;
-    const tpy = (isCrypto() ? 365 : 252) / Math.max(3, pr.avgDur);
-    if (!(cap > 0) || !(goal > cap)) { $("actGoalOut").innerHTML = `<p class="note">Isi modal dan target (target harus lebih besar dari modal).</p>`; return; }
-    if (pr.expR <= 0) { $("actGoalOut").innerHTML = `<div class="verdict"><b>Target ${big(goal, "IDR")}:</b> dengan rencana ini ekspektasi per transaksi negatif setelah biaya (${nf(2).format(pr.expR)} R). Mengulanginya terus justru menjauhkan modal dari target, dan menaikkan risiko per transaksi hanya mempercepat rugi.</div>`; return; }
+    const capTpy = (isCrypto() ? 365 : 252) / Math.max(3, pr.avgDur), sTpy = P.setupsPerYear, tpy = isFinite(sTpy) && sTpy > 0 ? Math.min(capTpy, sTpy) : capTpy;
+    const tpyTxt = isFinite(sTpy) && sTpy > 0 ? `±${nf(1).format(tpy)} transaksi/tahun (setup BELI muncul ±${nf(1).format(sTpy)}× per tahun di aset ini)` : `±${nf(0).format(tpy)} transaksi/tahun (anggap selalu ada posisi)`;
+    if (!(goal > cap)) { $("actGoalOut").innerHTML = `<p class="note">Isi modal dan target (target harus lebih besar dari modal).</p>`; return; }
+    const base = { rDist: pr.rDist, capital: cap, target: goal, riskPct: rk, tradesPerYear: tpy };
+    const depRows = [1, 3, 5].map((y) => ({ y, save: Math.max(0, (goal - cap) / (12 * y)), m50: pr.expR > 0 ? MCEngine.goalMonthly(base, y, 0.5) : NaN, m80: pr.expR > 0 ? MCEngine.goalMonthly(base, y, 0.8) : NaN }));
+    const depTbl = `<div class="subh">Kalau ditambah setoran rutin tiap bulan</div><div class="table-wrap"><table><thead><tr><th>Target tercapai dalam</th><th>Hanya menabung (tanpa trading)</th><th>Menabung + rencana ini, peluang 50%</th><th>… peluang 80%</th></tr></thead><tbody>${depRows.map((r) => `<tr><td>${r.y} tahun</td><td>${big(r.save, "IDR")}/bln</td><td>${isFinite(r.m50) ? big(r.m50, "IDR") + "/bln" : "–"}</td><td>${isFinite(r.m80) ? big(r.m80, "IDR") + "/bln" : "–"}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note">Setoran dihitung dengan simulasi (setoran dibagi rata per transaksi, bunga majemuk). Ini cara paling realistis mencapai target besar: setoran rutin + risiko kecil, bukan menaikkan risiko.</p>`;
+    if (pr.expR <= 0) { $("actGoalOut").innerHTML = `<div class="verdict"><b>Target ${big(goal, "IDR")}:</b> dengan rencana ini ekspektasi per transaksi negatif setelah biaya (${nf(2).format(pr.expR)} R). Mengulanginya terus justru menjauhkan modal dari target, dan menaikkan risiko per transaksi hanya mempercepat rugi.</div>${depTbl}`; return; }
     const rows = [0.005, 0.01, 0.02, 0.05].map((r) => [r, MCEngine.goalSim({ rDist: pr.rDist, capital: cap, target: goal, riskPct: r, tradesPerYear: tpy, years: 5 })]);
     const G = MCEngine.goalSim({ rDist: pr.rDist, capital: cap, target: goal, riskPct: rk, tradesPerYear: tpy, years: 5 });
     const yrs = isFinite(G.tradesNeeded) ? G.tradesNeeded / tpy : Infinity;
-    $("actGoalOut").innerHTML = `<p><b>Target ${big(goal, "IDR")}</b> dari modal ${big(cap, "IDR")} (×${nf(1).format(goal / cap)}). Dengan risiko ${pct(rk, 1)} per transaksi, rata-rata modal tumbuh <b>${spct(G.growthPerTrade, 2)}</b> per transaksi → butuh ±<b>${isFinite(G.tradesNeeded) ? nf(0).format(G.tradesNeeded) : "∞"} transaksi</b>${isFinite(yrs) ? ` (≈ ${nf(1).format(yrs)} tahun bila ±${nf(0).format(tpy)} transaksi/tahun, selalu ada posisi)` : ""}. Peluang tercapai dalam 1 tahun <b>${pct(G.p1, 0)}</b>, 3 tahun <b>${pct(G.p3, 0)}</b>. Agar target tercapai dalam ±1 tahun (median), modal awal yang dibutuhkan ≈ <b>${big(G.capFor1y, "IDR")}</b>.</p>
+    $("actGoalOut").innerHTML = `<p><b>Target ${big(goal, "IDR")}</b> dari modal ${big(cap, "IDR")} (×${nf(1).format(goal / cap)}). Dengan risiko ${pct(rk, 1)} per transaksi, rata-rata modal tumbuh <b>${spct(G.growthPerTrade, 2)}</b> per transaksi → butuh ±<b>${isFinite(G.tradesNeeded) ? nf(0).format(G.tradesNeeded) : "∞"} transaksi</b>${isFinite(yrs) ? ` (≈ ${nf(1).format(yrs)} tahun pada ${tpyTxt})` : ""}. Peluang tercapai dalam 1 tahun <b>${pct(G.p1, 0)}</b>, 3 tahun <b>${pct(G.p3, 0)}</b>. Agar target tercapai dalam ±1 tahun (median), modal awal yang dibutuhkan ≈ <b>${big(G.capFor1y, "IDR")}</b>.</p>
       <div class="table-wrap"><table><thead><tr><th>Risiko / transaksi</th><th>Tumbuh / transaksi</th><th>Tercapai ≤ 1 th</th><th>≤ 3 th</th><th>≤ 5 th</th><th>Sempat turun 50% dari puncak</th></tr></thead><tbody>${rows.map(([r, g]) => `<tr${r === rk ? ' class="best"' : ""}><td>${pct(r, 1)}</td><td>${spct(g.growthPerTrade, 2)}</td><td>${pct(g.p1, 0)}</td><td>${pct(g.p3, 0)}</td><td>${pct(g.p5, 0)}</td><td class="${g.pRuin > 0.2 ? "neg" : ""}">${pct(g.pRuin, 0)}</td></tr>`).join("")}</tbody></table></div>
-      <p class="note">Simulasi mengulang pola hasil rencana ini (dari jalur bootstrap) dengan bunga majemuk. Kenyataannya tidak selalu ada setup yang layak, dan hasil historis bisa tidak berulang. Menaikkan risiko mempercepat target hanya di atas kertas: peluang turun 50% naik tajam.</p>`;
+      <p class="note">Simulasi mengulang pola hasil rencana ini (dari jalur bootstrap) dengan bunga majemuk, memakai frekuensi setup yang benar-benar muncul di riwayat aset ini. Menaikkan risiko mempercepat target hanya di atas kertas: peluang turun 50% naik tajam.</p>${depTbl}`;
     act.goal = G;
   }
   const aiKeyOf = () => (act.plan ? `${state.data.symbol}|${act.plan.action}|${act.plan.entry}|${act.key}` : "");
@@ -2888,6 +2917,13 @@
       volatilitas_tahunan: r && r.stats ? rnd(r.stats.volAnn, 3) : null, rezim_bergejolak: state.math && state.math.hmm ? rnd(state.math.hmm.probHighNow, 3) : null,
       valuasi_upside: state.valUpside != null && isFinite(state.valUpside) ? rnd(state.valUpside, 3) : null,
       ai_berita: state.ai && state.ai.overall ? { arah: state.ai.overall.arah, peluang_naik: state.ai.overall.peluang_naik, ringkasan: String(state.ai.overall.ringkasan || "").slice(0, 300) } : null,
+      machine_learning: P.ml ? { horizon_hari: P.ml.H, peluang_naik_terkalibrasi: rnd(P.ml.p, 3), auc_oos: rnd(P.ml.auc, 3), p_value: rnd(P.ml.aucP, 3), teruji: P.ml.valid, brier_skill: rnd(P.ml.bss, 3),
+        fitur_teratas: P.ml.imp.slice(0, 5).map((f) => f.name) } : null,
+      prediksi_harga: act.ml && act.ml.fc ? { horizon_hari: act.ml.H, titik_tengah: rnd(act.ml.fc.px, 6), rentang: act.ml.fc.bands.map((b) => ({ keyakinan: b.q, bawah: rnd(b.lo, 6), atas: rnd(b.hi, 6), terbukti: rnd(b.cover, 3) })), arah_benar_oos: rnd(act.ml.fc.dirHit, 3), r2_oos: rnd(act.ml.fc.r2, 3) } : null,
+      keyakinan_keputusan: isFinite(P.confPct) ? { nilai: rnd(P.confPct, 3), sumber: P.confSrc } : null,
+      valuasi_gabungan: act.val && act.val.methods && act.val.methods.length ? { median: rnd(act.val.med, 6), rentang: [rnd(act.val.lo, 6), rnd(act.val.hi, 6)], upside: rnd(act.val.upside, 3), kesepakatan: rnd(act.val.agree, 2), metode: act.val.methods.map(([nm, v]) => [nm, rnd(v, 6)]) } : null,
+      berita: act.news ? { sentimen_7_hari: act.news.net, jumlah_7_hari: act.news.nRecent, dampak_positif_3h: rnd(act.news.pos.m, 3), t_positif: rnd(act.news.pos.t, 2), dampak_negatif_3h: rnd(act.news.neg.m, 3), t_negatif: rnd(act.news.neg.t, 2), pola_teruji: act.news.reliable, terbaru: act.news.top } : null,
+      volume: (() => { const v = state.data.ohlc.slice(-60).map((b) => b[5] || 0), a5 = MCEngine.mean(v.slice(-5)), a60 = MCEngine.mean(v); return a60 > 0 ? { rasio_5h_vs_60h: rnd(a5 / a60, 3), hari_ini_vs_60h: rnd(v[v.length - 1] / a60, 3) } : null; })(),
       target_uang: act.goal ? { modal_rp: parseFloat($("actCap").value) || 0, target_rp: parseFloat($("actGoal").value) || 0, risiko_per_transaksi: parseFloat($("actRisk").value), peluang_1th: rnd(act.goal.p1, 3), peluang_3th: rnd(act.goal.p3, 3), transaksi_dibutuhkan: isFinite(act.goal.tradesNeeded) ? act.goal.tradesNeeded : "tidak tercapai" } : null };
   }
   async function runBrief(auto = false) {
@@ -2895,22 +2931,175 @@
     act.busy = true; $("actAiRun").disabled = true; $("actAi").innerHTML = '<p class="status">AI sedang membaca semua hasil analisis…</p>';
     try { const res = await apiFetch(`${API}?action=brief`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: state.data.symbol, data: briefData() }) });
       const j = await res.json(); if (!res.ok || j.error) throw new Error(j.error || `AI gagal (${res.status})`);
-      if (k !== aiKeyOf()) return; act.ai = j; act.aiKey = k; drawAction(); }
+      if (k !== aiKeyOf()) return; act.ai = j; act.aiKey = k;
+      try { const L = trkLoad(), e = L.find((x) => act.trk && x.s === act.trk.s && x.d === act.trk.d); const adj = aiAdjusted(); if (e && adj) { e.ai = adj.raw; e.aiAdj = adj.v; trkSave(L); } } catch { /* */ }
+      drawAction(); }
     catch (e) { $("actAi").innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
     finally { act.busy = false; $("actAiRun").disabled = false; }
   }
+  // keyakinan AI dijangkarkan ke bukti yang teruji: maks ±15 poin dari keyakinan keputusan (atau ±20 dari akurasi historis); tanpa bukti teruji maks 60%
+  function aiAdjusted() { const a = act.ai, P = act.plan; if (!a || a.keyakinan == null || !P) return null; const raw = Math.round(a.keyakinan);
+    const ref = isFinite(P.confPct) ? P.confPct * 100 : null, w = P.ml && P.ml.valid ? 15 : 20;
+    const v = ref != null ? Math.round(Math.max(ref - w, Math.min(ref + w, raw))) : Math.min(60, raw); return { raw, v }; }
   function drawBrief() {
     const a = act.ai; if (!a) return; const sc = /tidak/i.test(a.sikap) ? "neg" : /setuju/i.test(a.sikap) ? "pos" : "";
     $("actAi").innerHTML = `<p><span class="ai-stance ${sc}">${esc((a.sikap || "?").toUpperCase())}</span> &nbsp;keyakinan AI <b>${nf(0).format(a.keyakinan)}%</b></p><p>${esc(a.ringkasan)}</p>
       ${a.poin && a.poin.length ? `<b>Pendukung</b><ul>${a.poin.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${a.risiko && a.risiko.length ? `<b>Risiko</b><ul>${a.risiko.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      ${a.pemicu_batal ? `<p><b>Batalkan rencana bila:</b> ${esc(a.pemicu_batal)}</p>` : ""}${a.catatan_target ? `<p><b>Target uang:</b> ${esc(a.catatan_target)}</p>` : ""}
-      <p class="note">${esc(a.model || "")}${a.cached ? " · tersimpan" : ""}. Keyakinan AI adalah penilaian model bahasa atas data di halaman ini, bukan peluang yang dihitung; angka yang teruji ada di kotak “Keyakinan teruji”.</p>`;
+      ${a.alasan_keyakinan ? `<p class="note">Alasan keyakinan: ${esc(a.alasan_keyakinan)}</p>` : ""}${a.pemicu_batal ? `<p><b>Batalkan rencana bila:</b> ${esc(a.pemicu_batal)}</p>` : ""}${a.catatan_target ? `<p><b>Target uang:</b> ${esc(a.catatan_target)}</p>` : ""}
+      ${a.prediksi ? `<p><b>Prediksi AI ${esc(String(act.ml && act.ml.H || ""))} hari:</b> ${esc(a.prediksi)}</p>` : ""}
+      <p class="note">${esc(a.model || "")}${a.cached ? " · tersimpan" : ""}. Keyakinan AI adalah penilaian model bahasa, jadi dijangkarkan ke bukti yang teruji (maks ±15 poin dari keyakinan keputusan) dan dicatat di rekam jejak untuk dicek ketepatannya.</p>`;
   }
   function bindAction() {
     ["actCap", "actRisk", "actGoal"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(act.t); act.t = setTimeout(() => { if (act.all) renderAction(); }, 300); }));
     $("actAiRun").onclick = () => runBrief(false);
+    $("mlRun").onclick = () => { act.mlKey = null; renderAction(); }; $("mlH").addEventListener("change", () => { act.mlKey = null; renderAction(); });
     try { const c = localStorage.getItem("sp_act_cap"), g = localStorage.getItem("sp_act_goal"); if (c) $("actCap").value = c; if (g) $("actGoal").value = g; } catch { /* */ }
     ["actCap", "actGoal"].forEach((id) => $(id).addEventListener("change", () => { try { localStorage.setItem(id === "actCap" ? "sp_act_cap" : "sp_act_goal", $(id).value); } catch { /* */ } }));
+  }
+
+  // ---------- Valuasi gabungan (beberapa metode) ----------
+  function valEnsemble() {
+    const F = state.fund, px = state.res && state.res.s0; if (!F || !(px > 0)) return null;
+    const usd = (state.data.currency || "") !== "IDR", beta = isFinite(F.beta) && F.beta > 0 ? Math.min(2.5, F.beta) : 1;
+    const rf = usd ? state.usRf ?? 0.04 : DAMO.sbn10, ke = rf + beta * (DAMO.erp + (usd ? 0 : DAMO.crpID));
+    const eps = F.trailingPE > 0 ? px / F.trailingPE : null, bv = F.bookValuePerShare > 0 ? F.bookValuePerShare : null, roe = isFinite(F.roe) ? F.roe : bv && eps ? eps / bv : null;
+    const pay = isFinite(F.payoutRatio) && F.payoutRatio >= 0 ? Math.min(1, F.payoutRatio) : F.dividendYield > 0 && eps ? Math.min(1, (px * F.dividendYield) / eps) : 0.4;
+    const g = Math.max(0, Math.min(roe != null ? roe * (1 - pay) : 0.04, ke - 0.02, usd ? 0.04 : 0.06)), M = [];
+    if (state.valUpside != null && isFinite(state.valUpside)) M.push(["DCF Damodaran (kartu Valuasi)", px * (1 + state.valUpside)]);
+    if (eps > 0 && bv > 0) M.push(["Graham number √(22,5·EPS·BV)", Math.sqrt(22.5 * eps * bv)]);
+    if (bv > 0 && roe != null && ke > g) M.push(["Residual income (ROE vs biaya modal)", bv + ((roe - ke) * bv) / (ke - g)]);
+    if (F.dividendYield > 0 && ke > g) M.push(["Dividend discount (Gordon)", (px * F.dividendYield * (1 + g)) / (ke - g)]);
+    if (eps > 0 && ke > g) M.push(["P/E wajar = payout·(1+g)/(r−g)", (eps * pay * (1 + g)) / (ke - g)]);
+    if (F.forwardPE > 0 && F.trailingPE > 0) M.push(["Laba tahun depan × P/E sekarang", px * (F.trailingPE / F.forwardPE)]);
+    const ok = M.filter(([, v]) => isFinite(v) && v > 0); if (!ok.length) return { methods: [], ke, g };
+    const vals = ok.map(([, v]) => v).sort((a, b) => a - b), med = vals[vals.length >> 1] * (vals.length % 2 ? 1 : 0) + (vals.length % 2 ? 0 : (vals[vals.length / 2 - 1] + vals[vals.length / 2]) / 2);
+    const above = ok.filter(([, v]) => v > px).length, agree = Math.max(above, ok.length - above) / ok.length, cv = MCEngine.std(vals, 0) / MCEngine.mean(vals);
+    return { methods: ok, med, lo: vals[0], hi: vals[vals.length - 1], upside: med / px - 1, agree, cv, ke, g, side: above * 2 >= ok.length ? "di bawah nilai wajar (murah)" : "di atas nilai wajar (mahal)",
+      conf: ok.length >= 3 && agree >= 0.75 && cv < 0.5 ? "sedang" : "rendah" };
+  }
+  // ---------- Dampak berita: uji kejadian dari berita yang sudah ada + sentimen terbaru ----------
+  function newsImpact() {
+    const N = (state.news || []).filter((x) => x.tday); if (N.length < 5) return null;
+    const by = new Map(); for (const x of N) { const ai = aiOf(x), s = ai ? (ai.arah === "naik" ? 1 : ai.arah === "turun" ? -1 : 0) : Math.sign(x.sent || 0); const e = by.get(x.tday) || { d: x.tday, s: 0, car: x.car, ar: x.ar, n: 0 }; e.s += s; e.n++; by.set(x.tday, e); }
+    const days = [...by.values()].filter((e) => e.car != null), grp = (f) => { const a = days.filter(f).map((e) => e.car); const m = a.length ? MCEngine.mean(a) : NaN, sd = a.length > 1 ? MCEngine.std(a) : NaN; return { n: a.length, m, t: a.length > 1 && sd > 0 ? m / (sd / Math.sqrt(a.length)) : NaN }; };
+    const pos = grp((e) => e.s > 0), neg = grp((e) => e.s < 0), now = Date.now() / 1000, rec = (state.news || []).filter((x) => now - x.time < 7 * 86400);
+    const net = rec.reduce((a, x) => { const ai = aiOf(x); return a + (ai ? (ai.arah === "naik" ? 1 : ai.arah === "turun" ? -1 : 0) : Math.sign(x.sent || 0)); }, 0);
+    const reliable = (g) => g.n >= 5 && Math.abs(g.t) >= 2, cur = net > 0 ? pos : net < 0 ? neg : null;
+    return { pos, neg, net, nRecent: rec.length, nDays: days.length, src: state.ai ? "AI berita" : "kamus sentimen", effect: cur && reliable(cur) ? cur.m : 0, reliable: !!(cur && reliable(cur)),
+      top: rec.slice(0, 6).map((x) => { const ai = aiOf(x); return { judul: x.title.slice(0, 140), tanggal: new Date(x.time * 1000).toISOString().slice(0, 10), arah: ai ? ai.arah : x.sent > 0 ? "naik" : x.sent < 0 ? "turun" : "netral", reaksi_abnormal: x.ar != null ? +(x.ar * 100).toFixed(2) : null }; }) };
+  }
+  // ---------- Machine learning (kartu) ----------
+  function renderML() {
+    const M = act.ml; $("mlCard").hidden = !M; if (!M) return;
+    if (M.error) { $("mlBody").innerHTML = `<p class="status err">${esc(M.error)}</p>`; return; }
+    const st = M.valid ? '<span class="pill pos">teruji — ikut menentukan Rencana aksi</span>' : '<span class="pill">belum teruji — hanya informasi</span>';
+    const k = (a, b, c, hl) => `<div class="kpi ${hl ? "hl" : ""}"><div class="k">${a}</div><div class="v">${b}</div><div class="h">${c}</div></div>`;
+    const maxAcc = Math.max(M.base, 1 - M.base);
+    $("mlBody").innerHTML = `<div class="act-tiles">${k(`Peluang naik > biaya dalam ${M.H} hari`, pct(M.p, 0), `logistik ${pct(M.pLog, 0)} · boosting ${pct(M.pGb, 0)} (sebelum kalibrasi)`, M.valid)}
+        ${k("AUC out-of-sample", nf(3).format(M.auc), `nilai-p ${nf(3).format(M.aucP)} · logistik ${nf(2).format(M.aucLog)} · boosting ${nf(2).format(M.aucGb)}`)}
+        ${k("Brier skill", spct(M.bss, 1), "> 0 = lebih baik dari menebak rata-rata")}
+        ${k("Akurasi", pct(M.acc, 0), `patokan selalu-tebak-mayoritas ${pct(maxAcc, 0)}`)}
+        ${k("Data uji", `${nf(0).format(M.nOos)} hari`, `≈ ${M.nEff} sampel independen · sejak ${M.from} · dilatih ${nf(0).format(M.nTrain)} hari (±${nf(0).format(M.yrs || 0)} th)`)}</div>
+      <p style="margin:10px 0 0">Status: ${st}. ${M.valid ? `Model menemukan pola yang <b>bertahan di data yang belum pernah dilihatnya</b> untuk aset ini.` : `Pada data yang belum pernah dilihatnya, model <b>belum lebih baik secara meyakinkan</b> daripada tebakan dasar (${pct(M.base, 0)} hari naik). Itu hasil yang jujur — kebanyakan harga memang sulit ditebak.`}</p>
+      <div class="ml-grid"><div><div class="subh">Kalibrasi: peluang yang diberikan vs yang terjadi</div><div class="chart-box" style="height:200px"><canvas id="mlCal"></canvas></div>
+          <p class="note">Kalau titik-titik mendekati garis diagonal, angka "${pct(M.p, 0)}" bisa dibaca apa adanya.</p></div>
+        <div><div class="subh">Fitur paling berpengaruh</div><div class="ml-imp">${M.imp.slice(0, 8).map((f) => `<span>${esc(f.name)}</span><span><i class="${f.dir < 0 ? "neg" : ""}" style="width:${Math.max(4, (f.v / M.imp[0].v) * 100).toFixed(0)}%"></i></span><span class="note">${f.dir > 0 ? "↑ naik" : f.dir < 0 ? "↓ turun" : ""}</span>`).join("")}</div>
+          <p class="note">Biru: nilai fitur yang lebih tinggi menaikkan peluang (menurut regresi logistik); merah: menurunkan. Panjang batang = seberapa banyak model memakai fitur itu.</p></div></div>
+      ${M.bt ? `<div class="subh">Kalau dipakai trading (out-of-sample sejak ${M.bt.from}): pegang besok bila peluang &gt; 50%</div>
+        <div class="table-wrap"><table><thead><tr><th></th><th>Return</th><th>CAGR</th><th>Sharpe</th><th>Max DD</th></tr></thead><tbody>
+          <tr><td>Strategi ML (setelah biaya)</td><td>${pc(M.bt.s.total)}</td><td>${pc(M.bt.s.cagr)}</td><td class="${M.bt.s.sharpe > M.bt.b.sharpe ? "pos" : "neg"}">${nf(2).format(M.bt.s.sharpe)}</td><td>${pct(M.bt.s.maxDD)}</td></tr>
+          <tr><td>Beli & tahan</td><td>${pc(M.bt.b.total)}</td><td>${pc(M.bt.b.cagr)}</td><td>${nf(2).format(M.bt.b.sharpe)}</td><td>${pct(M.bt.b.maxDD)}</td></tr></tbody></table></div>` : ""}
+      <div id="mlFc"></div><div id="mlVal"></div><div id="mlNews"></div>`;
+    renderForecast();
+    drawChart("mlCal", { type: "scatter", data: { datasets: [{ label: "Terjadi", data: M.calib.map((c) => ({ x: c.pred * 100, y: c.act * 100 })), backgroundColor: css("--accent"), pointRadius: 6 },
+        { label: "Sempurna", type: "line", data: [{ x: 0, y: 0 }, { x: 100, y: 100 }], borderColor: css("--muted"), borderDash: [4, 4], pointRadius: 0, borderWidth: 1 }] },
+      options: baseOpts({ plugins: { legend: { display: false } }, scales: { x: { min: 0, max: 100, title: { display: true, text: "peluang dari model (%)" }, grid: { color: css("--grid") } }, y: { min: 0, max: 100, title: { display: true, text: "benar-benar naik (%)" }, grid: { color: css("--grid") } } } }) });
+  }
+
+  function renderForecast() {
+    const M = act.ml; if (!M || M.error || !$("mlFc")) return; const F = M.fc, V = valEnsemble(), Nw = newsImpact(); act.val = V; act.news = Nw;
+    if (F) { const b80 = F.bands[1], b90 = F.bands[2], b50 = F.bands[0], ok = (b) => Math.abs(b.cover - b.q) <= 0.06;
+      $("mlFc").innerHTML = `<div class="subh">Prediksi harga ${M.H} hari bursa ke depan (model regresi + rentang conformal)</div>
+        <div class="act-tiles"><div class="kpi hl"><div class="k">Titik tengah</div><div class="v">${fmtNum(F.px)}</div><div class="h">${spct(Math.exp(F.ret) - 1, 2)} dari ${fmtNum(state.res.s0)}</div></div>
+          ${F.bands.map((b) => `<div class="kpi"><div class="k">Keyakinan ${pct(b.q, 0)}</div><div class="v">${fmtNum(b.lo)} – ${fmtNum(b.hi)}</div><div class="h">teruji: tepat ${pct(b.cover, 0)} kali ${ok(b) ? "✓" : "<b class='neg'>meleset</b>"}</div></div>`).join("")}
+          <div class="kpi"><div class="k">Arah benar (OOS)</div><div class="v">${pct(F.dirHit, 0)}</div><div class="h">R² vs tebakan nol ${spct(F.r2, 1)}</div></div></div>
+        <p class="note">Rentang dihitung dari kesalahan prediksi model di data yang belum pernah dilihatnya (split-conformal, dinormalkan volatilitas), lalu diuji di ${nf(0).format(F.nEval)} hari berikutnya — kolom "teruji" menunjukkan seberapa sering harga benar-benar jatuh di rentang itu. ${F.r2 <= 0 ? "Titik tengahnya <b>tidak lebih baik</b> dari menebak \"tidak berubah\" — andalkan rentangnya, bukan titik tengahnya." : "Titik tengahnya sedikit lebih baik dari menebak \"tidak berubah\"."}</p>`; }
+    $("mlVal").innerHTML = !V ? '<p class="note">Valuasi gabungan muncul setelah data fundamental termuat (saham).</p>' : !V.methods.length ? '<p class="note">Data fundamental tidak cukup untuk valuasi gabungan.</p>' :
+      `<div class="subh">Valuasi gabungan (${V.methods.length} metode) · biaya modal ${pct(V.ke, 1)} · pertumbuhan jangka panjang ${pct(V.g, 1)}</div>
+      <div class="table-wrap"><table><thead><tr><th>Metode</th><th>Nilai wajar</th><th>vs harga</th></tr></thead><tbody>${V.methods.map(([nm, v]) => `<tr><td>${esc(nm)}</td><td>${fmtNum(v)}</td><td>${pc(v / state.res.s0 - 1)}</td></tr>`).join("")}
+        <tr class="best"><td><b>Median gabungan</b></td><td><b>${fmtNum(V.med)}</b> <span class="note">(${fmtNum(V.lo)}–${fmtNum(V.hi)})</span></td><td>${pc(V.upside)}</td></tr></tbody></table></div>
+      <p class="note">Harga sekarang ${V.side}. Kesepakatan antar-metode <b>${pct(V.agree, 0)}</b>, sebaran ${pct(V.cv, 0)} → keyakinan valuasi <b>${V.conf}</b>. Valuasi menjawab "murah atau mahal", bukan "kapan naik" — selisihnya bisa bertahan bertahun-tahun.</p>`;
+    $("mlNews").innerHTML = !Nw ? '<p class="note">Dampak berita muncul setelah berita termuat (minimal 5 berita bertanggal).</p>' :
+      `<div class="subh">Dampak berita terhadap harga (uji kejadian, ${Nw.nDays} hari berita, sumber arah: ${Nw.src})</div>
+      <p>Hari berita positif → reaksi abnormal 3 hari rata-rata <b>${spct(Nw.pos.m, 2)}</b> (${Nw.pos.n} hari, t = ${nf(1).format(Nw.pos.t)}); hari berita negatif → <b>${spct(Nw.neg.m, 2)}</b> (${Nw.neg.n} hari, t = ${nf(1).format(Nw.neg.t)}).
+      Sentimen 7 hari terakhir: <b class="${cls(Nw.net)}">${Nw.net > 0 ? "+" : ""}${Nw.net}</b> dari ${Nw.nRecent} berita. ${Nw.reliable ? `Polanya cukup kuat (|t| ≥ 2) → dampak yang diperkirakan <b>${spct(Nw.effect, 2)}</b>.` : "Polanya <b>belum cukup kuat</b> secara statistik (butuh ≥ 5 kejadian dan |t| ≥ 2), jadi berita tidak dipakai untuk menggeser prediksi."}</p>
+      <p class="note">Berita belum dimasukkan ke pelatihan model karena riwayatnya hanya ±6 bulan; dipakai lewat uji kejadian ini dan dibaca AI. Jalankan "Analisis berita dengan AI" di kartu Berita untuk arah per berita yang lebih akurat dari kamus kata.</p>`;
+  }
+  // ---------- Rekam jejak: semua rencana dicatat lalu dinilai otomatis setelah jatuh tempo ----------
+  const TRK = "sp_track";
+  const trkLoad = () => { try { return JSON.parse(localStorage.getItem(TRK) || "[]"); } catch { return []; } };
+  function trkSave(L, sync = true) { L = L.slice(-400); try { localStorage.setItem(TRK, JSON.stringify(L)); } catch { /* */ } if (sync) saveSettings({ track: L }); }
+  function trkRecord(P) {
+    const L = trkLoad(), s = state.data.symbol, d = state.data.dates[state.data.dates.length - 1];
+    let e = L.find((x) => x.s === s && x.d === d);
+    if (!e) { e = { s, d }; L.push(e); }
+    Object.assign(e, { a: P.action, px: P.px, e: P.entry, st: P.stop, t1: P.t1, H: P.H, rv: P.review, cp: isFinite(P.confPct) ? +P.confPct.toFixed(3) : null,
+      ml: P.ml ? +P.ml.p.toFixed(3) : null, mlH: P.ml ? P.ml.H : null, mlv: P.ml ? !!P.ml.valid : null, sd: P.atr / P.px * Math.sqrt(P.H), cost: stratOpts().costBps * 2e-4 });
+    trkSave(L, false); return e; }
+  function trkEval() {
+    const L = trkLoad(), d = state.data, D = d.ohlc, last = D[D.length - 1][0]; let ch = false;
+    for (const e of L) { if (e.s !== d.symbol || e.r) continue; const i0 = D.findIndex((b) => b[0] >= e.d); if (i0 < 0) continue;
+      const iR = (() => { let k = -1; for (let i = i0; i < D.length; i++) if (D[i][0] <= e.rv) k = i; return k; })();
+      // keluaran ML (horizon mlH) dinilai terpisah dan bisa jatuh tempo lebih dulu
+      if (e.ml != null && e.mlUp == null && e.mlH && i0 + e.mlH < D.length) { e.mlUp = D[i0 + e.mlH][4] > D[i0][4] * (1 + e.cost) ? 1 : 0; ch = true; }
+      if (e.rv > last || iR <= i0) continue;
+      const cR = D[iR][4]; e.up = cR > e.px * (1 + e.cost) ? 1 : 0;
+      if (e.a === "BELI") { let filled = false, out = null; for (let i = i0 + 1; i <= iR; i++) { const b = D[i]; if (!filled) { if (i <= i0 + 3 && b[3] <= e.e) filled = true; else continue; }
+          if (b[4] <= e.st) { out = 0; break; } if (b[2] >= e.t1) { out = 1; break; } }
+        e.r = filled ? "ok" : "skip"; e.ok = filled ? (out != null ? out : cR > e.e * (1 + e.cost) ? 1 : 0) : null; }
+      else { e.r = "ok"; e.ok = e.a === "JUAL" ? (cR < e.px ? 1 : 0) : cR > e.px * (1 - e.sd) ? 1 : 0; }
+      ch = true; }
+    if (ch) trkSave(L);
+  }
+  function trkSummary() {
+    const L = trkLoad(), R = L.filter((e) => e.r === "ok"), avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+    const C = R.filter((e) => e.cp != null), A = R.filter((e) => e.ai != null), Mv = L.filter((e) => e.mlUp != null);
+    return { n: L.length, done: R.length, pending: L.filter((e) => !e.r).length, ok: avg(R.map((e) => e.ok)), cpPred: avg(C.map((e) => e.cp)), cpAct: avg(C.map((e) => e.ok)),
+      aiPred: avg(A.map((e) => e.ai / 100)), aiAct: avg(A.map((e) => e.ok)), nAi: A.length, nMl: Mv.length, mlPred: avg(Mv.map((e) => e.ml)), mlAct: avg(Mv.map((e) => e.mlUp)),
+      mlBrier: avg(Mv.map((e) => (e.ml - e.mlUp) ** 2)), mine: L.filter((e) => e.s === state.data.symbol).slice(-5).reverse() };
+  }
+  function drawTrack() {
+    const S = trkSummary(), el = $("actTrack"); if (!el) return;
+    const row = (e) => `<tr><td>${esc(e.d)}</td><td>${e.a}</td><td>${fmtNum(e.px)}</td><td>${e.cp != null ? pct(e.cp, 0) : "–"}</td><td>${e.ai != null ? e.ai + "%" : "–"}</td><td>${e.r === "ok" ? (e.ok ? '<span class="pos">benar</span>' : '<span class="neg">salah</span>') : e.r === "skip" ? '<span class="note">tidak terisi</span>' : `<span class="note">menunggu ${esc(e.rv)}</span>`}</td></tr>`;
+    el.innerHTML = `<b>Rekam jejak rencana</b> <span class="note">— setiap rencana dicatat (tersimpan di akunmu) lalu dinilai otomatis setelah tanggal evaluasinya lewat.</span><br>
+      ${S.done ? `Selesai dinilai: <b>${S.done}</b> rencana, benar <b>${pct(S.ok, 0)}</b>.${isFinite(S.cpPred) ? ` Keyakinan yang dijanjikan rata-rata ${pct(S.cpPred, 0)} vs kenyataan ${pct(S.cpAct, 0)}.` : ""}${S.nAi ? ` AI: rata-rata yakin ${pct(S.aiPred, 0)} vs benar ${pct(S.aiAct, 0)} (${S.nAi} rencana)${S.aiPred - S.aiAct > 0.1 ? " — <b class='neg'>AI terlalu percaya diri</b>" : ""}.` : ""}` : `Belum ada rencana yang jatuh tempo (${S.pending} menunggu).`}
+      ${S.nMl ? ` ML: rata-rata peluang ${pct(S.mlPred, 0)} vs benar-benar naik ${pct(S.mlAct, 0)} (${S.nMl} prediksi, Brier ${nf(3).format(S.mlBrier)}).` : ""}
+      ${S.mine.length ? `<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Aksi</th><th>Harga</th><th>Keyakinan</th><th>AI</th><th>Hasil</th></tr></thead><tbody>${S.mine.map(row).join("")}</tbody></table></div>` : ""}`;
+  }
+
+  // ---------- Aktifkan persetujuan admin: SQL siap salin + tutorial ----------
+  const SQL_PATH = "supabase/migrations/20261021_sp_members_approval.sql", SQL_EDITOR = "https://supabase.com/dashboard/project/immvxirnxumsvjelbmum/sql/new";
+  async function showApprovalSetup() {
+    openFn("AKTIFKAN PERSETUJUAN ADMIN", `<p>Status sekarang: <b id="sqlState">${me && !me._nodb ? '<span class="pos">aktif</span>' : '<span class="neg">belum aktif</span> — siapa pun yang daftar bisa langsung masuk'}</b></p>
+      <ol class="steps-ol">
+        <li>Klik <b>Salin SQL</b> di bawah (seluruh kode langsung tersalin).</li>
+        <li>Klik <b>Buka SQL Editor</b>. Login ke Supabase bila diminta — halaman query baru untuk project <b>my_pricess</b> terbuka.</li>
+        <li>Klik di area editor, tempel (<b>Ctrl+V</b> / <b>Cmd+V</b>), lalu klik <b>Run</b> (atau <b>Ctrl+Enter</b>). Hasil yang benar: <i>Success. No rows returned</i>.</li>
+        <li>Kalau muncul peringatan <i>"destructive operation"</i>, pilih <b>Run this query</b>. Yang dihapus hanya 4 aturan akses lama tabel pengaturan, dan langsung dibuat ulang di baris berikutnya — data tidak hilang.</li>
+        <li>Kembali ke sini dan klik <b>Cek status</b>. Harus berubah jadi <b>aktif</b>, dan profilmu jadi <b>ADMIN</b>.</li>
+        <li>Uji: buka jendela penyamaran, daftar dengan email lain. Akun itu tertahan di layar <i>Menunggu persetujuan</i> sampai kamu klik <b>Setujui</b> di <b>PROFIL</b> (klik namamu di kanan atas).</li>
+      </ol>
+      <div class="fn-actions"><button class="fn-key" id="sqlCopy">Salin SQL</button><a class="fn-key" href="${SQL_EDITOR}" target="_blank" rel="noopener">Buka SQL Editor ↗</a><button class="fn-key" id="sqlCheck">Cek status</button></div>
+      <pre class="sql-box" id="sqlBox">Memuat…</pre>
+      <p class="note">Aman dijalankan lebih dari sekali (memakai <code>if not exists</code> / <code>or replace</code>). Setelah aktif, akun lain yang sudah pernah login akan berstatus <i>menunggu</i> sampai kamu setujui. Kamu sendiri otomatis jadi admin.</p>`);
+    let txt = ""; try { const r = await fetch(`${SQL_PATH}?t=${Date.now()}`); if (r.ok) txt = await r.text(); } catch { /* */ }
+    $("sqlBox").textContent = txt || `Gagal memuat file. Buka langsung: https://github.com/lieonhs/simulasi-pasar/blob/main/${SQL_PATH}`;
+    $("sqlCopy").onclick = async () => { try { await navigator.clipboard.writeText(txt); toast("SQL tersalin — tempel di SQL Editor lalu Run."); $("sqlCopy").textContent = "Tersalin ✓"; }
+      catch { const r = document.createRange(); r.selectNodeContents($("sqlBox")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast("Kode sudah terpilih — tekan Ctrl+C / Cmd+C."); } };
+    $("sqlCheck").onclick = async () => { $("sqlCheck").disabled = true; try { me = await fetchMe(session); } catch (e) { toast(e.message || String(e)); }
+      $("sqlCheck").disabled = false; const okk = me && !me._nodb;
+      $("sqlState").innerHTML = okk ? `<span class="pos">aktif</span> · peranmu: ${me.role === "admin" ? "ADMIN" : esc(me.role)}` : '<span class="neg">belum aktif</span> — cek lagi apakah Run berhasil tanpa error merah';
+      if (okk) { $("cmdUser").textContent = (me.name || (session.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); if (me.role === "admin") refreshAdminBadge(); toast("Persetujuan admin aktif."); } };
   }
 
   // ---------- event ----------
@@ -3029,6 +3218,7 @@
     if (settings.focus) setFocus(settings.focus, false);
     if (Array.isArray(settings.portfolio)) { pf.list = settings.portfolio.filter((p) => p && p.s && p.avg > 0 && p.qty > 0); try { localStorage.setItem(PF_KEY, JSON.stringify(pf.list)); } catch { /* */ } }
     if (settings.pfCash != null) $("pfCash").value = settings.pfCash;
+    if (Array.isArray(settings.track)) { const L = trkLoad(), key = (e) => e.s + "|" + e.d, m = new Map(settings.track.map((e) => [key(e), e])); L.forEach((e) => { const o = m.get(key(e)); m.set(key(e), o && o.r && !e.r ? o : e); }); trkSave([...m.values()].sort((a, b) => (a.d < b.d ? -1 : 1)), false); }
     if (Array.isArray(settings.alerts)) { al.list = settings.alerts; try { localStorage.setItem(AL_KEY, JSON.stringify(al.list)); } catch { /* */ } updateAlBadge(); }
   }
   let authMode = "login";
@@ -3071,6 +3261,7 @@
     $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
     $("cmdUser").textContent = (me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : "");
     if (me.role === "admin") refreshAdminBadge();
+    if (me._nodb && isOwner()) setTimeout(() => toast("Persetujuan admin belum aktif — ketik SETUP di baris perintah (atau buka PROFIL) untuk SQL siap salin + langkahnya."), 2500);
     if (booted) return; booted = true;
     readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade(); bindStrat(); bindChat(); bindAction();
     const P = new URLSearchParams(location.search);
@@ -3098,7 +3289,7 @@
     openFn("PROFIL", `<div class="fn-cols"><div class="kvs"><div class="subh">Akun</div>
         <div><span>Nama</span><b><input id="profName" value="${esc(me.name || "")}" maxlength="60" style="width:200px;padding:4px 8px"></b></div>
         <div><span>Email</span><b>${esc(session.user.email || "")}</b></div><div><span>Peran</span><b>${me.role === "admin" ? "Admin" : "Pengguna"}</b></div>
-        <div><span>Status</span><b>${me._nodb ? "persetujuan belum aktif (database belum dipasang)" : "disetujui"}</b></div><div><span>Terdaftar</span><b>${esc(String(me.requested_at || "").slice(0, 10) || "–")}</b></div>
+        <div><span>Status</span><b>${me._nodb ? `persetujuan belum aktif ${isOwner() ? '<button class="fn-key" data-cmd="SETUP">Aktifkan sekarang</button>' : ""}` : "disetujui"}</b></div><div><span>Terdaftar</span><b>${esc(String(me.requested_at || "").slice(0, 10) || "–")}</b></div>
         <div><span>Login terakhir</span><b>${esc(String(session.user.last_sign_in_at || "").slice(0, 16).replace("T", " "))}</b></div></div>
       <div class="kvs"><div class="subh">Tampilan & sesi</div><div><span>Tema</span><b>${["pro", "light", "terminal"].map((t) => `<button class="fn-key ${t === th ? "on" : ""}" data-theme-set="${t}">${THEME_LBL[t]}</button>`).join(" ")}</b></div>
         <div><span>Keluar otomatis</span><b>${IDLE_MIN} menit tidak aktif · saat jendela ditutup</b></div><div><span>Alarm aktif</span><b>${al.list.filter((a) => a.on).length}</b></div><div><span>Posisi portofolio</span><b>${pf.list.length}</b></div></div></div>

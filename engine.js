@@ -1263,6 +1263,15 @@
     // suara konsensus per hari (untuk menguji akurasi historis Rencana aksi)
     const vote = (L, wfn) => { const v = new Array(D.n).fill(0); let W = 0; for (const x of L) { const w = wfn(x); W += w; const pa = PA[x.id]; for (let t = 0; t < D.n; t++) v[t] += w * Math.max(0, Math.min(1, pa[t])); } return W > 0 ? v.map((x) => x / W) : null; };
     const passL = ok.filter((x) => x.pass), votes = { pass: passL.length ? vote(passL, (x) => Math.max(0.05, x.dsr - 0.5)) : null, all: vote(ok, () => 1) };
+    // versi jujur: strategi "lolos" dipilih ulang tiap 63 hari HANYA dari data sebelum titik itu → suara out-of-sample
+    const passAt = (a) => { const sl = ok.map((x) => ({ x, r: R[x.id].slice(0, a) })), rbs = rb.slice(0, a), k = Math.floor(a * 0.7), srB = srOf(rbs), srBo = srOf(rbs.slice(k));
+      const srsA = sl.map((q) => srOf(q.r)), vA = srsA.length > 1 ? std(srsA) ** 2 : 0, star = Math.sqrt(Math.max(vA, 1 / a)) * E;
+      return sl.filter((q, i) => { const pa = PA[q.x.id]; let tr = 0; for (let t = 1; t < a; t++) if (pa[t] > 0 && !(pa[t - 1] > 0)) tr++;
+        const ds = dsr(q.r, star), cs = consistency(q.r, rbs, 5); q.d = ds; return ds >= 0.9 && cs.k >= Math.ceil(0.6 * cs.of) && srOf(q.r.slice(k)) > srBo && srsA[i] > srB && tr >= 5; }); };
+    const passOOS = new Array(D.n).fill(null), s0p = Math.max(252, Math.floor(n * 0.4)); let nCk = 0, nCkPass = 0;
+    for (let a = s0p; a < D.n; a += 63) { const L = passAt(Math.min(a, n)); nCk++; if (!L.length) continue; nCkPass++; let W = 0; L.forEach((q) => (W += Math.max(0.05, q.d - 0.5)));
+      for (let t = a; t < Math.min(D.n, a + 63); t++) { let v = 0; for (const q of L) v += Math.max(0.05, q.d - 0.5) * Math.max(0, Math.min(1, PA[q.x.id][t])); passOOS[t] = v / W; } }
+    votes.passOOS = passOOS; votes.oosFrom = D.d[s0p]; votes.ckPass = nCkPass; votes.ck = nCk;
     const wf = wr.length ? { s: perf(wr, wd, ppy, o.rf || 0), b: perf(wb, wd, ppy, o.rf || 0), picks, from: wd[0] } : null;
     if (wf) { wf.s.curve = undefined; wf.b.curve = undefined; }
     return { list: out, bh: { total: bh.bh.total, cagr: bh.bh.cagr, sharpe: bh.bh.sharpe, maxDD: bh.bh.maxDD, oosSharpe: bhOos }, luckSharpe: luck, yrsOos, splitDate: bh.splitDate,
@@ -1327,9 +1336,136 @@
       topBuy: lo + bI * step, topSell: lo + sI * step, imbalances: imb, vwap, nBars: bars.length, open: bars[0][1], close: bars[bars.length - 1][4], pAbovePoc: pAbove, realShare: nReal / bars.length };
   }
 
+  // =====================================================================
+  // MACHINE LEARNING sendiri: regresi logistik (L2) + gradient boosting (pohon dangkal)
+  // dilatih walk-forward (tanpa melihat masa depan), dikalibrasi (Platt), diuji AUC/Brier.
+  // Target: apakah return H hari ke depan > biaya pulang-pergi.
+  // =====================================================================
+  const ML_FEATS = ["Return 1 hari", "Return 5 hari", "Return 20 hari", "Return 60 hari", "Jarak ke MA20", "Jarak ke MA50", "Jarak ke MA200", "RSI 14", "Volatilitas 20 hari",
+    "Rasio vol 20/60", "ATR / harga", "Volume vs rata-rata 20h", "Posisi di rentang 20h", "MACD hist / harga", "Jarak dari puncak 1 th", "%B Bollinger", "Suara 50 strategi",
+    "Volume 5h vs 60h", "Tekanan beli-jual 5h (volume bertanda)", "Korelasi harga–volume 20h"];
+  function mlFeatures(D, vote) {
+    const c = D.c, n = D.n, lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0));
+    const m20 = T.sma(c, 20), m50 = T.sma(c, 50), m200 = T.sma(c, 200), rsi = T.rsi(c, 14), s20 = T.std(lr, 20), s60 = T.std(lr, 60), atr = T.atr(D.h, D.l, c, 14);
+    const hh = T.hh(D.h, 20), ll = T.ll(D.l, 20), e12 = T.ema(c, 12), e26 = T.ema(c, 26), sd20 = T.std(c, 20), hi252 = T.hh(D.h, 252);
+    const lv = D.v.map((v) => Math.log(1 + (v || 0))), lvm = T.sma(lv, 20), hasVol = D.v.some((v) => v > 0), lv5 = T.sma(lv, 5), lv60 = T.sma(lv, 60);
+    const X = new Array(n).fill(null);
+    for (let t = 210; t < n; t++) {
+      const macd = e12[t] - e26[t]; let sig = 0, k = 0; for (let j = Math.max(26, t - 8); j <= t; j++) { if (e12[j] != null && e26[j] != null) { sig += e12[j] - e26[j]; k++; } } sig = k ? sig / k : 0;
+      const row = [lr[t], Math.log(c[t] / c[t - 5]), Math.log(c[t] / c[t - 20]), Math.log(c[t] / c[t - 60]), c[t] / m20[t] - 1, c[t] / m50[t] - 1, c[t] / m200[t] - 1, (rsi[t] - 50) / 50,
+        s20[t] * Math.sqrt(252), s60[t] > 0 ? s20[t] / s60[t] : 1, atr[t] / c[t], hasVol ? lv[t] - lvm[t] : 0, hh[t] > ll[t] ? (c[t] - ll[t]) / (hh[t] - ll[t]) : 0.5, (macd - sig) / c[t],
+        c[t] / (hi252[t] || hh[t]) - 1, sd20[t] > 0 ? (c[t] - m20[t]) / (4 * sd20[t]) + 0.5 : 0.5, vote ? vote[t] : 0.5, 0, 0, 0];
+      if (hasVol) { row[17] = lv5[t] - lv60[t]; let sv = 0, va = 0; for (let j = t - 4; j <= t; j++) { sv += Math.sign(lr[j]) * (D.v[j] || 0); va += D.v[j] || 0; } row[18] = va > 0 ? sv / va : 0;
+        let ma = 0, mb = 0; for (let j = t - 19; j <= t; j++) { ma += Math.abs(lr[j]); mb += lv[j]; } ma /= 20; mb /= 20; let sab = 0, saa = 0, sbb = 0;
+        for (let j = t - 19; j <= t; j++) { const a = Math.abs(lr[j]) - ma, b = lv[j] - mb; sab += a * b; saa += a * a; sbb += b * b; } row[19] = saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0; }
+      if (row.every((x) => isFinite(x))) X[t] = row; }
+    return X;
+  }
+  const sigm = (z) => 1 / (1 + Math.exp(-Math.max(-35, Math.min(35, z))));
+  function solveLin(A, b) { const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+    for (let i = 0; i < n; i++) { let p = i; for (let r = i + 1; r < n; r++) if (Math.abs(M[r][i]) > Math.abs(M[p][i])) p = r; [M[i], M[p]] = [M[p], M[i]]; const d = M[i][i] || 1e-12;
+      for (let r = 0; r < n; r++) if (r !== i) { const f = M[r][i] / d; if (f) for (let k = i; k <= n; k++) M[r][k] -= f * M[i][k]; } }
+    return M.map((r, i) => r[n] / (r[i] || 1e-12)); }
+  function fitLogit(X, y, lam = 1) { // Newton–Raphson (IRLS) dengan penalti L2 (intersep tidak dipenalti)
+    const n = X.length, d = X[0].length + 1; let w = new Array(d).fill(0);
+    for (let it = 0; it < 25; it++) { const g = new Array(d).fill(0), H = Array.from({ length: d }, () => new Array(d).fill(0));
+      for (let i = 0; i < n; i++) { const xi = [1, ...X[i]]; let z = 0; for (let j = 0; j < d; j++) z += w[j] * xi[j]; const p = sigm(z), r = y[i] - p, s = Math.max(1e-6, p * (1 - p));
+        for (let j = 0; j < d; j++) { g[j] += r * xi[j]; const sj = s * xi[j]; for (let k = j; k < d; k++) H[j][k] += sj * xi[k]; } }
+      for (let j = 0; j < d; j++) { for (let k = 0; k < j; k++) H[j][k] = H[k][j]; if (j) { g[j] -= lam * w[j]; H[j][j] += lam; } }
+      const step = solveLin(H, g); let mx = 0; w = w.map((v, j) => { mx = Math.max(mx, Math.abs(step[j])); return v + step[j]; }); if (mx < 1e-7) break; }
+    return w; }
+  const predLogit = (w, x) => { let z = w[0]; for (let j = 0; j < x.length; j++) z += w[j + 1] * x[j]; return sigm(z); };
+  function fitGBM(X, y, o = {}) { // gradient boosting: pohon kedalaman 2, fitur di-bin per kuantil
+    const n = X.length, d = X[0].length, M = o.trees ?? 60, lr = o.lr ?? 0.1, lam = o.lam ?? 1, NB = 16, rng = makeRng(o.seed || 3);
+    const thr = []; const B = Array.from({ length: d }, () => new Uint8Array(n));
+    for (let j = 0; j < d; j++) { const s = X.map((r) => r[j]).sort((a, b) => a - b), q = []; for (let k = 1; k < NB; k++) q.push(s[Math.floor((k * n) / NB)]); const u = [...new Set(q)]; thr.push(u);
+      for (let i = 0; i < n; i++) { let b = 0; while (b < u.length && X[i][j] > u[b]) b++; B[j][i] = b; } }
+    const reg = !!o.reg, ybar = reg ? mean(y) : Math.min(0.99, Math.max(0.01, mean(y))), f0 = reg ? ybar : Math.log(ybar / (1 - ybar)), F = new Float64Array(n).fill(f0), trees = [], imp = new Array(d).fill(0);
+    const best = (idx, g, h) => { let G = 0, Hh = 0; for (const i of idx) { G += g[i]; Hh += h[i]; } const base = (G * G) / (Hh + lam); let bst = null;
+      for (let j = 0; j < d; j++) { const nb = thr[j].length + 1, gb = new Float64Array(nb), hb = new Float64Array(nb); for (const i of idx) { gb[B[j][i]] += g[i]; hb[B[j][i]] += h[i]; }
+        let gl = 0, hl = 0; for (let b = 0; b < nb - 1; b++) { gl += gb[b]; hl += hb[b]; const gr = G - gl, hr = Hh - hl; if (hl < 2 || hr < 2) continue;
+          const gain = (gl * gl) / (hl + lam) + (gr * gr) / (hr + lam) - base; if (!bst || gain > bst.gain) bst = { j, b, gain }; } }
+      return { bst, G, H: Hh }; };
+    for (let m = 0; m < M; m++) { const g = new Float64Array(n), h = new Float64Array(n), idx = [];
+      for (let i = 0; i < n; i++) { if (reg) { g[i] = y[i] - F[i]; h[i] = 1; } else { const p = sigm(F[i]); g[i] = y[i] - p; h[i] = Math.max(1e-6, p * (1 - p)); } if (rng.u() < 0.8) idx.push(i); }
+      const r = best(idx, g, h); if (!r.bst || r.bst.gain <= 0) break; imp[r.bst.j] += r.bst.gain;
+      const L = idx.filter((i) => B[r.bst.j][i] <= r.bst.b), R = idx.filter((i) => B[r.bst.j][i] > r.bst.b), node = { j: r.bst.j, t: thr[r.bst.j][r.bst.b], kids: [] };
+      for (const part of [L, R]) { const s = best(part, g, h); if (s.bst && s.bst.gain > 0) { imp[s.bst.j] += s.bst.gain; const t2 = thr[s.bst.j][s.bst.b]; let gl = 0, hl = 0, gr = 0, hr = 0;
+          for (const i of part) { if (X[i][s.bst.j] <= t2) { gl += g[i]; hl += h[i]; } else { gr += g[i]; hr += h[i]; } } node.kids.push({ j: s.bst.j, t: t2, vl: (lr * gl) / (hl + lam), vr: (lr * gr) / (hr + lam) }); }
+        else node.kids.push({ leaf: (lr * s.G) / (s.H + lam) }); }
+      trees.push(node); for (let i = 0; i < n; i++) F[i] += treeOut(node, X[i]); }
+    return { f0, trees, imp };
+  }
+  const predGBMraw = (mdl, x) => { let z = mdl.f0; for (const t of mdl.trees) z += treeOut(t, x); return z; };
+  function fitRidge(Z, y, lam = 5) { const d = Z[0].length + 1, A = Array.from({ length: d }, () => new Array(d).fill(0)), b = new Array(d).fill(0);
+    for (let i = 0; i < Z.length; i++) { const x = [1, ...Z[i]]; for (let j = 0; j < d; j++) { b[j] += x[j] * y[i]; for (let k = j; k < d; k++) A[j][k] += x[j] * x[k]; } }
+    for (let j = 0; j < d; j++) { for (let k = 0; k < j; k++) A[j][k] = A[k][j]; if (j) A[j][j] += lam; } return solveLin(A, b); }
+  const predRidge = (w, z) => { let v = w[0]; for (let j = 0; j < z.length; j++) v += w[j + 1] * z[j]; return v; };
+  function treeOut(node, x) { const k = node.kids[x[node.j] <= node.t ? 0 : 1]; return k.leaf != null ? k.leaf : x[k.j] <= k.t ? k.vl : k.vr; }
+  const predGBM = (mdl, x) => { let z = mdl.f0; for (const t of mdl.trees) z += treeOut(t, x); return sigm(z); };
+  function aucOf(p, y) { const idx = p.map((v, i) => i).sort((a, b) => p[a] - p[b]); let r = 0, n1 = 0, k = 0;
+    while (k < idx.length) { let e = k; while (e + 1 < idx.length && p[idx[e + 1]] === p[idx[k]]) e++; const avg = (k + e) / 2 + 1; for (let q = k; q <= e; q++) if (y[idx[q]]) { r += avg; n1++; } k = e + 1; }
+    const n0 = y.length - n1; return n1 && n0 ? (r - (n1 * (n1 + 1)) / 2) / (n1 * n0) : NaN; }
+  function fitPlatt(p, y) { const X = p.map((v) => [Math.log(Math.max(1e-6, v) / Math.max(1e-6, 1 - v))]); return fitLogit(X, y, 0.01); }
+  const applyPlatt = (w, p) => predLogit(w, [Math.log(Math.max(1e-6, p) / Math.max(1e-6, 1 - p))]);
+  function mlModel(D, o = {}) {
+    const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, X = mlFeatures(D, o.vote), c = D.c;
+    const y = new Array(n).fill(null), yr = new Array(n).fill(null); for (let t = 0; t < n - H; t++) { y[t] = c[t + H] / c[t] - 1 > cost ? 1 : 0; yr[t] = Math.log(c[t + H] / c[t]); }
+    const sig = (t) => Math.max(1e-4, X[t][8] * Math.sqrt(H / 252)); // volatilitas 20h (fitur ke-9) diskalakan ke horizon
+    const lab = []; for (let t = 0; t < n; t++) if (X[t] && y[t] != null) lab.push(t);
+    if (lab.length < 300) throw new Error("Data terlalu pendek untuk machine learning (butuh ±2 tahun lebih).");
+    const fitBoth = (tr) => { const Xt = tr.map((t) => X[t]), yt = tr.map((t) => y[t]), d = Xt[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0);
+      for (const r of Xt) r.forEach((v, j) => (mu[j] += v / Xt.length)); for (const r of Xt) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xt.length)); for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
+      const Z = Xt.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), ys = tr.map((t) => yr[t] / sig(t)); // regresi pada return yang dinormalkan volatilitas
+      return { mu, sd, w: fitLogit(Z, yt, o.lam ?? 2), g: fitGBM(Xt, yt, { trees: o.trees ?? 60, seed: tr.length }), rw: fitRidge(Z, ys, 20), rg: fitGBM(Xt, ys, { reg: true, trees: 50, lr: 0.05, lam: 5, seed: tr.length + 1 }) }; };
+    const predBoth = (M, x) => { const z = x.map((v, j) => (v - M.mu[j]) / M.sd[j]), a = predLogit(M.w, z), b = predGBM(M.g, x); return { a, b, p: 0.5 * a + 0.5 * b, f: 0.5 * predRidge(M.rw, z) + 0.5 * predGBMraw(M.rg, x) }; };
+    // walk-forward: latih pada data s/d (a − H) — jarak H mencegah label tumpang tindih bocor — lalu prediksi 63 hari berikutnya
+    const first = lab[0], s0 = Math.max(first + 250, lab[Math.floor(lab.length * 0.4)]), oos = [], step = 63;
+    for (let a = s0; a < n; a += step) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const M = predBoth.bind(null, fitBoth(tr));
+      for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = M(X[t]); oos.push({ t, p: q.p, a: q.a, b: q.b, y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }); } }
+    const ev = oos.filter((r) => r.y != null), P = ev.map((r) => r.p), Y = ev.map((r) => r.y);
+    const auc = aucOf(P, Y), aucA = aucOf(ev.map((r) => r.a), Y), aucB = aucOf(ev.map((r) => r.b), Y), base = mean(Y), brier = mean(ev.map((r) => (r.p - r.y) ** 2)), brierBase = base * (1 - base);
+    const platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p)), brierCal = mean(cal.map((p, i) => (p - Y[i]) ** 2));
+    // signifikansi AUC (Hanley–McNeil) dengan jumlah sampel efektif ≈ n / H karena label tumpang tindih
+    const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
+    const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / Math.max(1, n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
+    // kalibrasi: 5 kelompok berdasarkan peluang terkalibrasi
+    const ord = cal.map((p, i) => i).sort((a, b) => cal[a] - cal[b]), calib = [];
+    for (let k = 0; k < 5; k++) { const part = ord.slice(Math.floor((k * ord.length) / 5), Math.floor(((k + 1) * ord.length) / 5)); if (!part.length) continue;
+      calib.push({ pred: mean(part.map((i) => cal[i])), act: mean(part.map((i) => Y[i])), n: part.length }); }
+    // strategi ML out-of-sample: pegang besok bila peluang > 50%
+    const rs = [], rb = [], dts = []; let prev = 0, cst = (o.costBps ?? 20) / 1e4;
+    for (const r of oos) { if (r.t >= n - 1) continue; const pos = r.p > 0.5 ? 1 : 0, ret = c[r.t + 1] / c[r.t] - 1; rs.push(pos * ret - cst * Math.abs(pos - prev)); rb.push(ret); dts.push(D.d[r.t + 1]); prev = pos; }
+    const bt = rs.length > 20 ? { s: perf(rs, dts, o.ppy || 252), b: perf(rb, dts, o.ppy || 252), from: dts[0] } : null; if (bt) { bt.s.curveDates = dts; }
+    // model akhir: semua data berlabel → peluang untuk hari terakhir
+    const MF = fitBoth(lab), xNow = X[n - 1]; const now = xNow ? predBoth(MF, xNow) : null;
+    const gi = MF.g.imp, gs = gi.reduce((a, b) => a + b, 0) || 1, ls = MF.w.slice(1).map(Math.abs), lsum = ls.reduce((a, b) => a + b, 0) || 1;
+    const imp = ML_FEATS.map((name, j) => ({ name, v: 0.5 * gi[j] / gs + 0.5 * ls[j] / lsum, dir: Math.sign(MF.w[j + 1]) })).sort((a, b) => b.v - a.v);
+    const pCal = now ? applyPlatt(platt, now.p) : NaN, bss = 1 - brierCal / brierBase;
+    // ---- prediksi harga: titik tengah + rentang conformal (dikalibrasi dari kesalahan out-of-sample) ----
+    const er = oos.filter((r) => r.yr != null), half = Math.floor(er.length / 2), sc = (r) => Math.abs(r.yr - r.f) / r.s, qOf = (arr, q) => { const s2 = arr.slice().sort((a, b) => a - b); return s2[Math.min(s2.length - 1, Math.ceil(q * (s2.length + 1)) - 1)]; };
+    const LV = [0.5, 0.8, 0.9], qA = LV.map((q) => qOf(er.slice(0, half).map(sc), q)), cover = LV.map((q, i) => mean(er.slice(half).map((r) => (sc(r) <= qA[i] ? 1 : 0))));
+    const qAll = LV.map((q) => qOf(er.map(sc), q)), sse = er.reduce((a, r) => a + (r.yr - r.f) ** 2, 0), sse0 = er.reduce((a, r) => a + r.yr ** 2, 0);
+    const dirHit = mean(er.filter((r) => Math.abs(r.f) > 1e-9).map((r) => (Math.sign(r.f) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? now.f * sNow : NaN;
+    const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
+      r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1] } : null;
+    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, auc, aucLog: aucA, aucGb: aucB, aucP, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
+      nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
+      oosP: oos.map((r) => ({ t: r.t, p: applyPlatt(platt, r.p) })), fc, featNames: ML_FEATS, feats: xNow ? ML_FEATS.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
+  }
+
   // ---------- Rencana aksi: beli / jual / tahan, harga, waktu ----------
-  function addBiz(dateStr, k, crypto) { const d = new Date(dateStr + "T00:00:00Z"); let left = k;
-    while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(); if (crypto || (w !== 0 && w !== 6)) left--; } return d.toISOString().slice(0, 10); }
+  // hari libur bursa (BEI: kalender resmi 2026–2027 termasuk cuti bersama; AS: NYSE)
+  const HOL = {
+    IDX: new Set(["2026-01-01", "2026-01-16", "2026-02-16", "2026-02-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-04-03", "2026-05-01", "2026-05-14", "2026-05-15", "2026-05-27", "2026-05-28",
+      "2026-06-01", "2026-06-16", "2026-08-17", "2026-08-25", "2026-12-24", "2026-12-25", "2026-12-31", "2027-01-01", "2027-01-05", "2027-02-05", "2027-03-08", "2027-03-09", "2027-03-10", "2027-03-11", "2027-03-12", "2027-03-15",
+      "2027-03-25", "2027-03-26", "2027-05-06", "2027-05-17", "2027-05-18", "2027-05-19", "2027-05-20", "2027-06-01", "2027-08-17", "2027-12-24", "2027-12-31"]),
+    US: new Set(["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+      "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"]) };
+  const HOL_UNTIL = "2027-12-31";
+  function isHoliday(dateStr, mkt) { return !!(mkt && HOL[mkt] && HOL[mkt].has(dateStr)); }
+  function addBiz(dateStr, k, crypto, mkt) { const d = new Date(dateStr + "T00:00:00Z"); let left = k;
+    while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(), ds = d.toISOString().slice(0, 10); if (crypto || (w !== 0 && w !== 6 && !isHoliday(ds, mkt))) left--; } return d.toISOString().slice(0, 10); }
   /* D: OHLCV mentah {d,o,h,l,c,v,n}. o: { isIdx, crypto, strats: daftar hasil runAllStrategies, score: skor teknikal (−5..5), capital, riskPct, unit, start (tanggal mulai berlaku), seed } */
   function actionPlan(D, o = {}) {
     const n = D.n, c = D.c, px = c[n - 1], isIdx = !!o.isIdx, rt = (v, dir) => roundTick(v, isIdx, dir);
@@ -1337,10 +1473,12 @@
     const sl = (a, k) => a.slice(Math.max(0, n - k)), hi20 = Math.max(...sl(D.h, 20)), lo20 = Math.min(...sl(D.l, 20)), lo10 = Math.min(...sl(D.l, 10)), hi52 = Math.max(...sl(D.h, 252));
     const S = (o.strats || []).filter((x) => !x.error), robust = S.filter((x) => x.pass);
     const voteOf = (L, wf) => { let w = 0, v = 0; for (const x of L) { const ww = wf(x); w += ww; v += ww * Math.max(0, Math.min(1, x.pos)); } return w > 0 ? v / w : NaN; };
-    const vRob = voteOf(robust, (x) => Math.max(0.05, x.dsr - 0.5)), vAll = voteOf(S, () => 1), score = o.score ?? 0;
+    const vAll = voteOf(S, () => 1), score = o.score ?? 0;
+    // keputusan memakai strategi yang lolos uji pada data SEBELUM titik evaluasi terakhir (out-of-sample) — sama persis dengan cara akurasinya diuji
+    const VO = o.votes && o.votes.passOOS, vRob = VO && VO[n - 1] != null ? VO[n - 1] : NaN, useRob = isFinite(vRob);
     let action, basis, conf;
-    if (robust.length) { action = vRob >= 0.5 ? "BELI" : vRob < 0.25 ? "JUAL" : "TAHAN"; conf = robust.length >= 3 && Math.abs(vRob - 0.5) >= 0.3 ? "sedang" : "rendah–sedang";
-      basis = `${robust.length} strategi yang lolos uji keandalan; ${Math.round(vRob * 100)}% bobotnya sedang di posisi beli`; }
+    if (useRob) { action = vRob >= 0.5 ? "BELI" : vRob < 0.25 ? "JUAL" : "TAHAN"; conf = Math.abs(vRob - 0.5) >= 0.3 ? "sedang" : "rendah–sedang";
+      basis = `strategi yang lolos uji keandalan (dipilih ulang tiap 63 hari dari data sebelumnya saja); ${Math.round(vRob * 100)}% bobotnya sedang di posisi beli`; }
     else { const v = isFinite(vAll) ? vAll : 0.5; action = v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN"; conf = "rendah";
       basis = `tidak ada strategi yang lolos uji keandalan untuk aset ini — dipakai suara ${S.length} strategi (${isFinite(vAll) ? Math.round(vAll * 100) : "–"}% sedang beli; BELI bila ≥ 55%, JUAL bila ≤ 40%)`; }
     const hd = robust.map((x) => x.avgDays).filter((x) => isFinite(x)).sort((a, b) => a - b);
@@ -1369,35 +1507,52 @@
     const voteAction = action;
     if (action === "BELI" && pr && pr.expR <= 0) { action = "TAHAN"; basis += `; sinyal BELI diturunkan jadi TAHAN karena ekspektasi rencana harga ini ${pr.expR.toFixed(2)} R (≤ 0) setelah biaya`; }
     // akurasi historis: seberapa sering keputusan yang sama (dari suara strategi) benar dalam H hari ke depan
-    let acc = null; const V = robust.length && o.votes && o.votes.pass ? o.votes.pass : o.votes && o.votes.all;
-    if (V && V.length === n) { const thrB = robust.length ? 0.5 : 0.55, cls = robust.length ? (v) => (v >= 0.5 ? "BELI" : v < 0.25 ? "JUAL" : "TAHAN") : (v) => (v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN");
+    let acc = null, setupsPerYear = NaN; const V = useRob ? VO : o.votes && o.votes.all;
+    const cls = useRob ? (v) => (v == null ? null : v >= 0.5 ? "BELI" : v < 0.25 ? "JUAL" : "TAHAN") : (v) => (v == null ? null : v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN");
+    if (V && V.length === n) { // berapa kali setup BELI baru muncul per tahun (untuk simulasi target uang)
+      let ent = 0, days = 0; for (let t = Math.max(1, n - 756); t < n; t++) { if (V[t] == null) continue; days++; if (cls(V[t]) === "BELI" && cls(V[t - 1]) !== "BELI") ent++; }
+      setupsPerYear = days > 120 ? (ent / days) * (o.crypto ? 365 : 252) : NaN; }
+    if (V && V.length === n) {
       const sdH = Math.sqrt(H) * std(lr), ok = (f) => (voteAction === "BELI" ? f > (o.costBps ?? 20) * 2e-4 : voteAction === "JUAL" ? f < 0 : f > -sdH);
       let k = 0, m = 0, kb = 0, mb = 0; for (let t = 210; t < n - H; t++) { const f = c[t + H] / c[t] - 1; mb++; if (ok(f)) kb++; if (cls(V[t]) === voteAction) { m++; if (ok(f)) k++; } }
-      acc = m >= 10 ? { p: k / m, n: m, nInd: Math.max(1, Math.round(m / H)), base: mb ? kb / mb : NaN, voteAction, rule: voteAction === "BELI" ? `sinyal BELI → harga ${H} hari kemudian lebih tinggi (setelah biaya)` : voteAction === "JUAL" ? `harga ${H} hari kemudian lebih rendah` : `harga ${H} hari kemudian tidak turun lebih dari 1 simpangan baku`, inSample: robust.length > 0 } : { p: NaN, n: m }; }
+      acc = m >= 10 ? { p: k / m, n: m, nInd: Math.max(1, Math.round(m / H)), base: mb ? kb / mb : NaN, voteAction, rule: voteAction === "BELI" ? `sinyal BELI → harga ${H} hari kemudian lebih tinggi (setelah biaya)` : voteAction === "JUAL" ? `harga ${H} hari kemudian lebih rendah` : `harga ${H} hari kemudian tidak turun lebih dari 1 simpangan baku`, inSample: false, src: useRob ? "lolos-OOS" : "semua" } : { p: NaN, n: m }; }
+    // machine learning (bila lolos uji out-of-sample) ikut memutuskan: veto BELI bila peluangnya rendah
+    const ml = o.ml && isFinite(o.ml.p) ? o.ml : null;
+    if (ml && ml.valid && action === "BELI" && ml.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) hanya memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
+    if (ml && ml.valid && action === "TAHAN" && voteAction !== "JUAL" && ml.p >= 0.62 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
+    // keyakinan % untuk keputusan akhir: peluang ML terkalibrasi (bila teruji), selain itu akurasi historis
+    let confPct = NaN, confSrc = "";
+    if (ml && ml.valid) { confPct = action === "JUAL" ? 1 - ml.p : action === "BELI" ? ml.p : Math.max(ml.p, 1 - ml.p) * 0 + (acc && isFinite(acc.p) ? acc.p : NaN); confSrc = action === "TAHAN" ? "akurasi historis" : "model ML terkalibrasi"; }
+    if (!isFinite(confPct) && acc && isFinite(acc.p) && acc.voteAction === action) { confPct = acc.p; confSrc = "akurasi historis"; }
     // ukuran posisi: risiko maks riskPct dari modal bila stop kena
     const unit = o.unit || 1, cap = o.capital || 0, risk = cap * (o.riskPct ?? 0.01);
     let qty = R > 0 ? risk / R / unit : 0; qty = Math.min(qty, cap / (entry * unit)); qty = isIdx ? Math.floor(qty) : +qty.toFixed(6);
-    const start = o.start || addBiz(D.d[n - 1], 1, o.crypto);
-    return { action, conf, basis, acc, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
-      cost: qty * unit * entry, start, expire: addBiz(start, 2, o.crypto), review: addBiz(start, H, o.crypto), nRobust: robust.length, robust: robust.map((x) => ({ name: x.name, pos: x.pos, posPrev: x.posPrev, dsr: x.dsr })),
+    const start = o.start || addBiz(D.d[n - 1], 1, o.crypto, o.market);
+    return { action, conf, basis, acc, ml, confPct, confSrc, setupsPerYear, voteAction, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
+      cost: qty * unit * entry, start, expire: addBiz(start, 2, o.crypto, o.market), review: addBiz(start, H, o.crypto, o.market), holUntil: HOL_UNTIL, nRobust: robust.length, robust: robust.map((x) => ({ name: x.name, pos: x.pos, posPrev: x.posPrev, dsr: x.dsr })),
       vRob, vAll, nAll: S.length };
   }
 
   // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
   function goalSim(o) {
-    const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5;
-    if (!rd.length || !(cap > 0) || !(tgt > cap)) return null;
-    const rng = makeRng(11), NP = 2000, maxT = Math.round(tpy * yrs), hitAt = [], ends = []; let ruin = 0;
+    const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5, dep = Math.max(0, o.monthly || 0) * 12 / tpy;
+    if (!rd.length || !(cap >= 0) || !(tgt > cap)) return null;
+    const rng = makeRng(11), NP = o.paths || 2000, maxT = Math.round(tpy * yrs), hitAt = [], ends = []; let ruin = 0;
     for (let p = 0; p < NP; p++) { let eq = cap, pk = cap, hit = -1, dd = false;
-      for (let k = 1; k <= maxT; k++) { eq *= Math.max(0, 1 + rp * rd[rng.int(rd.length)]); pk = Math.max(pk, eq); if (!dd && eq <= 0.5 * pk) dd = true; if (eq >= tgt) { hit = k; break; } if (eq <= 0) break; }
+      for (let k = 1; k <= maxT; k++) { eq = eq * Math.max(0, 1 + rp * rd[rng.int(rd.length)]) + dep; pk = Math.max(pk, eq); if (!dd && eq <= 0.5 * pk) dd = true; if (eq >= tgt) { hit = k; break; } if (eq <= 0 && dep <= 0) break; }
       if (dd) ruin++; hitAt.push(hit); if (hit < 0) ends.push(eq); }
     const P = (yr) => hitAt.filter((h) => h > 0 && h <= tpy * yr).length / NP, hs = hitAt.filter((h) => h > 0).sort((a, b) => a - b);
     const g = mean(rd.map((r) => Math.log(Math.max(1e-9, 1 + rp * r))));
     return { p1: P(1), p3: P(3), p5: P(yrs), medTrades: hs.length >= NP / 2 ? hs[NP >> 1] ?? hs[hs.length - 1] : null, pRuin: ruin / NP, growthPerTrade: Math.exp(g) - 1,
-      tradesNeeded: g > 0 ? Math.ceil(Math.log(tgt / cap) / g) : Infinity, capFor1y: g > 0 ? tgt / Math.exp(g * tpy) : Infinity, tpy };
+      tradesNeeded: g > 0 && cap > 0 ? Math.ceil(Math.log(tgt / cap) / g) : Infinity, capFor1y: g > 0 ? tgt / Math.exp(g * tpy) : Infinity, tpy };
   }
+  // setoran bulanan minimum agar target tercapai dengan peluang ≥ conf dalam N tahun (bisection)
+  function goalMonthly(o, years, conf = 0.5) { let lo = 0, hi = Math.max(o.target / (12 * years), 1);
+    const P = (m) => { const G = goalSim({ ...o, monthly: m, years, paths: 600 }); return G ? (years <= 1 ? G.p1 : years <= 3 ? G.p3 : G.p5) : 0; };
+    if (P(0) >= conf) return 0; let k = 0; while (P(hi) < conf && k++ < 20) hi *= 2;
+    for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (P(m) >= conf) hi = m; else lo = m; } return hi; }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { STRAT_LIST, actionPlan, goalSim, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { STRAT_LIST, actionPlan, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);
