@@ -3921,6 +3921,11 @@
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
     drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX();
+    { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
+      if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
+      else if (!S2.length && !c.autoPick) { el.className = "ap-state idle"; el.innerHTML = "● NYALA tapi <b>menganggur</b>: belum ada aset yang dipantau. Klik aset di bawah, atau centang <b>Pilih aset otomatis</b>."; }
+      else if (ap.busy || ap.picking) { el.className = "ap-state on"; el.innerHTML = "● NYALA — sedang menganalisis…"; }
+      else { el.className = "ap-state on"; el.innerHTML = `● NYALA — memantau ${S2.length} aset${c.autoPick ? " (pilih otomatis)" : ""} · pemeriksaan berikutnya ${nxt > 0 ? "±" + Math.ceil(nxt / 60e3) + " menit lagi" : "sebentar lagi"} · hanya jalan selama web ini terbuka`; } }
     $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
   const AP_GROUPS = [["Saham IDX", ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", "ASII.JK", "ANTM.JK", "GOTO.JK"]], ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD", "ADA-USD"]], ["Saham AS", ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN"]], ["Lainnya", ["GC=F", "^JKSE"]]];
   const apWatch = () => [...new Set((($("wlQ") && $("wlQ").value) || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
@@ -3952,7 +3957,7 @@
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
     if (location.hostname === "localhost") window.__ap = { au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
-    clearInterval(ap.timer); ap.timer = setInterval(() => apCycle(false), 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+    clearInterval(ap.timer); ap.timer = setInterval(() => { apCycle(false); if (!$("apPane").hidden && !ap.busy) drawAp(); }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
   // MANAJEMEN ASET: semua yang kamu pegang dalam satu layar (uang asli dan demo dipisah)
