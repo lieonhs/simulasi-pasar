@@ -753,3 +753,4 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 .tg-ph { margin: 8px 0 6px; font-size: 13px; } .tg-agresif b { color: #e0a33a; } .tg-rem b { color: var(--bad); } .tg-hati-hati b { color: var(--good); }
 .tg-bar { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; } .tg-bar i { display: block; height: 100%; background: linear-gradient(90deg, #e0a33a, var(--good)); }
 .tg-odds { width: 100%; margin-top: 8px; font-size: 12.5px; } .tg-odds td, .tg-odds th { padding: 4px 6px; text-align: left; }
+.ap-SHORT { border-color: var(--bad); color: var(--bad); font-weight: 700; background: rgba(255,80,80,.08); }

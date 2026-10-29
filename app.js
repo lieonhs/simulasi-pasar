@@ -2043,7 +2043,7 @@
         if (sell(half, "target 1")) { const np = pp.a.pos[s]; if (np) np.brk = { ...b, hit1: true, stop: Math.max(b.stop || 0, b.entry) }; } } }
     return ch;
   }
-  function ppEquity() { let v = pp.a.cash; for (const [s, p] of Object.entries(pp.a.pos)) { const q = pp.q[s]; v += q ? p.units * q.price * fxOf(s) : p.cost; } return v; }
+  function ppEquity() { let v = pp.a.cash; for (const f of pp.a.fut || []) { const q = pp.q[f.s]; v += f.margin + (q ? Math.max(-f.margin, futPnl(f, q.price)) : 0); } for (const [s, p] of Object.entries(pp.a.pos)) { const q = pp.q[s]; v += q ? p.units * q.price * fxOf(s) : p.cost; } return v; }
   function ppSnap() { const d = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), e = ppEquity(), L = pp.a.eq; if (L.length && L[L.length - 1].d === d) L[L.length - 1].v = e; else L.push({ d, v: e }); if (L.length > 400) L.splice(0, L.length - 400); }
   async function refreshPaper() {
     await ppQuotes([...Object.keys(pp.a.pos), ...pp.a.orders.map((o) => o.s), normTicker($("dSym").value.trim() || "")]);
@@ -3661,10 +3661,10 @@
   // AUTOPILOT: bid & offer otomatis dari ML + deep learning + RAM AI (centang mana yang wajib sepakat)
   // =====================================================================
   const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
-  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, tgOn: false, tgAmt: 5e7, tgAgg: 0.03, tgSafe: 0.005, tgBrake: 0.25, scope: "list", news: true, exp: true, autoPick: false, pickAt: 0, pickSrc: "all", maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
+  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, fut: false, lev: 2, tgOn: false, tgAmt: 5e7, tgAgg: 0.03, tgSafe: 0.005, tgBrake: 0.25, scope: "list", news: true, exp: true, autoPick: false, pickAt: 0, pickSrc: "all", maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
   function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
-    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("tgOn").checked = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
-  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.tgOn = $("tgOn").checked; c.tgAmt = Math.max(1e6, +$("tgAmt").value || 5e7); c.tgAgg = Math.min(0.05, +$("tgAgg").value); c.tgSafe = +$("tgSafe").value; c.tgBrake = +$("tgBrake").value; if (c.tgOn) c.mode = "asset"; c.scope = $("apScope").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.pickSrc = $("apPickSrc").value; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apFut1").checked = !!c.fut; $("apLev").value = String(c.lev || 2); $("tgOn").checked = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.fut = $("apFut1").checked; c.lev = Math.min(5, +$("apLev").value || 2); c.tgOn = $("tgOn").checked; c.tgAmt = Math.max(1e6, +$("tgAmt").value || 5e7); c.tgAgg = Math.min(0.05, +$("tgAgg").value); c.tgSafe = +$("tgSafe").value; c.tgBrake = +$("tgBrake").value; if (c.tgOn) c.mode = "asset"; c.scope = $("apScope").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.pickSrc = $("apPickSrc").value; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
   const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
@@ -3681,7 +3681,8 @@
     let DM = D; try { const dl = await fetchSymbol(sym, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) DM = D2; } catch { /* */ }
     if (DM.n > 2600) { const k = DM.n - 2600; DM = { d: DM.d.slice(k), o: DM.o.slice(k), h: DM.h.slice(k), l: DM.l.slice(k), c: DM.c.slice(k), v: DM.v.slice(k), n: 2600 }; }
     const ek = idx ? "idx" : crypto ? "c" : "us"; if (!ap.ext[ek]) ap.ext[ek] = await mlExt(sym).catch(() => []);
-    let M = null; try { M = await compute("ml", { D: DM, o: { horizon: 5, costBps: so.costBps, ext: ap.ext[ek] } }); } catch (e) { M = { error: e.message }; }
+    const mk = `${sym}|${DM.d[DM.n - 1]}`, mc = (ap.mlc || (ap.mlc = new Map())).get(mk); let M = null; // model ML/DL dilatih sekali per aset per hari bar; dalam hari yang sama dipakai ulang
+    if (mc) M = mc; else { try { M = await compute("ml", { D: DM, o: { horizon: 5, costBps: so.costBps, ext: ap.ext[ek] } }); if (M && !M.error) { ap.mlc.set(mk, M); if (ap.mlc.size > 60) ap.mlc.delete(ap.mlc.keys().next().value); } } catch (e) { M = { error: e.message }; } }
     const C = MCEngine.confluence(D, { H: 10, costBps: so.costBps, ppy: crypto ? 365 : 252 }), fx = (d.currency || "") === "IDR" ? 1 : pp.fx || 16000;
     const cap = ap.cfg.target === "demo" ? apRun().free : Math.max(0, parseFloat($("actCap").value) || 1e7), risk = ap.cfg.tgOn && ap.cfg.target === "demo" ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
     const P = MCEngine.actionPlan(R, { isIdx: idx, crypto, strats: all.list, votes: all.votes, capital: cap / fx, riskPct: risk, unit: idx ? 100 : 1, costBps: so.costBps, market: idx ? "IDX" : crypto ? null : "US", ml: M && !M.error ? M : null, sel: C && C.sel }); if (M && M.error) M = null;
@@ -3692,7 +3693,8 @@
     if (P.pr) { if (P.pr.expR > 0.15) sc += 1; else if (P.pr.expR <= 0) sc -= 2; }
     const thr = Math.max(AP_MIN, ap.cfg.thr), dir = (m) => (!m || !isFinite(m.p) || !m.valid ? 0 : m.p >= thr ? 1 : m.p <= 1 - thr ? -1 : 0), DLm = M && M.dl && !M.dl.error ? M.dl : null;
     const N = ap.cfg.news ? await apNews(sym, d) : null; if (N && N.shock) { sc -= 3; why.push("berita kejutan"); }
-    const X0 = { T, cs: C ? C.sNow : 0 };
+    const atr = (() => { const o = d.ohlc || [], n = o.length; if (n < 20) return NaN; let s = 0; for (let i = n - 14; i < n; i++) s += Math.max(o[i][2] - o[i][3], Math.abs(o[i][2] - o[i - 1][4]), Math.abs(o[i][3] - o[i - 1][4])); return s / 14; })();
+    const X0 = { T, cs: C ? C.sNow : 0, atr, px: d.values[d.values.length - 1] };
     return { sym, d, P, M, C, N, ...X0, ml: dir(M), dl: dir(DLm), ai: sc >= 2 ? 1 : sc <= -2 ? -1 : 0, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
   }
   function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
@@ -3702,10 +3704,11 @@
     const E = c.exp ? apExpPredict(X) : null; X.exp = E;
     if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0 && E && E.valid && E.p < 0.55) return { act: "TUNGGU", why: `semua sepakat, tapi pengalaman demo hanya ${pct(E.p, 0)} untung pada pola seperti ini` };
     if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0) return { act: "BELI", why: `${use.map((u) => u[0]).join("+")} sepakat naik · keyakinan ${pct(P.confPct, 0)}` };
+    if (c.fut && X.crypto && allDn && P.action === "JUAL" && use.some((u) => u[0] !== "AI")) return { act: "SHORT", why: `${use.map((u) => u[0]).join("+")} sepakat turun (peluang naik ≤ ${pct(1 - Math.max(AP_MIN, c.thr), 0)}) · rencana JUAL` };
     if (allDn || P.action === "JUAL") return { act: "JUAL", why: allDn ? `${use.map((u) => u[0]).join("+")} sepakat turun` : "rencana berubah JUAL" };
     const miss = use.filter((u) => u[2] <= 0).map((u) => `${u[0]} ${u[2] < 0 ? "turun" : u[0] === "AI" ? "netral" : "belum teruji/< ambang"}`); if (P.action !== "BELI") miss.push(`rencana ${P.action}`); if (!(P.confPct >= c.thr)) miss.push(`keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}`);
     return { act: "TUNGGU", why: miss.join(", ") }; }
-  const apPositions = () => { const demo = Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi")).map((x) => x.sym); return [...new Set([...demo, ...live])]; };
+  const apPositions = () => { const demo = [...Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), ...((pp.a && pp.a.fut) || []).filter((f) => f.ap).map((f) => f.s)], live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi")).map((x) => x.sym); return [...new Set([...demo, ...live])]; };
   async function apBuy(X, valIdr) {
     const c = ap.cfg, P = X.P; if (!valIdr && !(P.qty > 0)) throw new Error("modal terlalu kecil untuk 1 lot/unit");
     if (c.target === "idx") { if (!demoGate().pass) throw new Error("Indodax terkunci (syarat demo belum terpenuhi)"); await idxPairsLoad(); const p = idxPairFor(X.sym); if (!p) throw new Error("tidak listing di Indodax");
@@ -3718,7 +3721,7 @@
     const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "buy", type: "limit", units, limit: lim, status: "terbuka", brk: { stop: P.stop, t1: P.t1, t2: P.t2 }, ap: true };
     if (!(units > 0)) throw new Error("dana terlalu kecil untuk 1 lot/unit"); pp.a.orders.push(o); await ppQuotes([s]); checkLimits(); ppSnap(); ppSave(); renderPaper(); return `${o.status === "terisi" ? "Demo TEREKSEKUSI" : "Demo order MENUNGGU"}: beli limit ${X.idx ? units / unit + " lot" : nf(6).format(units)} ${s} @ ${fmtNum(lim)} (stop ${fmtNum(P.stop)}, target ${fmtNum(P.t1)}/${fmtNum(P.t2)})`; }
   async function apSell(X, frac = 1) {
-    const s = X.sym, out = []; const pos = pp.a.pos[s]; if (pos && pos.ap) { await ppQuotes([s]); const q = pp.q[s]; const u = frac >= 0.999 ? pos.units : /\.JK$/.test(s) ? Math.floor(pos.units * frac / 100) * 100 : +(pos.units * frac).toFixed(6); if (q && u > 0) { const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "sell", type: "autopilot", units: u, limit: null, status: "terbuka" }; if (ppFill(o, q.price)) out.push(`Demo: jual ${s} @ ${fmtNum(q.price)}`); ppSnap(); ppSave(); renderPaper(); } }
+    const s = X.sym, out = []; for (const f of futList().filter((y) => y.ap && y.s === s)) { await ppQuotes([s]); const q = pp.q[s]; if (q) { const pl = futClose(f, q.price, "autopilot"); out.push(`Futures demo: tutup ${f.dir > 0 ? "LONG" : "SHORT"} ${s} @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`); ppSnap(); ppSave(); renderPaper(); } } const pos = pp.a.pos[s]; if (pos && pos.ap) { await ppQuotes([s]); const q = pp.q[s]; const u = frac >= 0.999 ? pos.units : /\.JK$/.test(s) ? Math.floor(pos.units * frac / 100) * 100 : +(pos.units * frac).toFixed(6); if (q && u > 0) { const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "sell", type: "autopilot", units: u, limit: null, status: "terbuka" }; if (ppFill(o, q.price)) out.push(`Demo: jual ${s} @ ${fmtNum(q.price)}`); ppSnap(); ppSave(); renderPaper(); } }
     if (frac < 0.999) { if (out.length) auSave(); return out.join(" · "); }
     pp.a.orders = pp.a.orders.filter((o) => !(o.ap && o.s === s && o.status === "terbuka"));
     for (const x of au.list.filter((y) => y.ap && y.sym === s && (y.st === "menunggu" || y.st === "terisi"))) {
@@ -3732,6 +3735,7 @@
     const r = c.run; let real = 0, used = 0, unreal = 0; for (const o of pp.a.hist) if (o.ap && o.side === "sell" && o.fillAt >= r.start) real += o.pl || 0;
     for (const [s, p] of Object.entries(pp.a.pos)) if (p.ap) { const q = pp.q[s], v = q ? p.units * q.price * fxOf(s) : p.cost; used += p.cost; unreal += v - p.cost; }
     for (const o of pp.a.orders) if (o.ap && o.side === "buy" && o.status === "terbuka") used += o.units * o.limit * fxOf(o.s);
+    for (const f of pp.a.fut || []) if (f.ap) { const q = pp.q[f.s]; used += f.margin; unreal += q ? Math.max(-f.margin, futPnl(f, q.price)) : 0; }
     const eq = r.cap + real + unreal; return { ...r, real, unreal, eq, used, free: Math.max(0, Math.min(r.cap + real - used, pp.a.cash)), ratio: eq / r.cap }; }
   async function apFailCheck() { const c = ap.cfg; if (c.target !== "demo" || !c.on) return false; const R = apRun(); if (R.ratio > AP_FAIL) return false;
     c.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { await apSell({ sym: s }); } catch { /* */ } }
@@ -3827,7 +3831,7 @@
   // ---- Order autopilot di akun demo: dipisah antara yang masih menunggu dan yang sudah tereksekusi
   function drawApOrders() { const pend = pp.a.orders.filter((o) => o.ap && o.status === "terbuka"), done = pp.a.hist.filter((o) => o.ap).slice(0, 60);
     const seen = ap.seenFill || (ap.seenFill = new Set(done.map((o) => o.id + o.side)));
-    for (const o of done) { const k = o.id + o.side; if (!seen.has(k)) { seen.add(k); apLogAdd(o.s, `TEREKSEKUSI ${o.side === "buy" ? "beli" : "jual"} @ ${fmtNum(o.fillPx)}${o.pl != null ? ` · laba ${big(o.pl, "IDR")}` : ""}`, o.side === "buy" ? "buy" : "sell"); } }
+    for (const o of done) { const k = o.id + o.side; if (!seen.has(k)) { seen.add(k); apLogAdd(o.s, `TEREKSEKUSI ${o.fut ? o.type : o.side === "buy" ? "beli" : "jual"} @ ${fmtNum(o.fillPx)}${o.pl != null ? ` · laba ${big(o.pl, "IDR")}` : ""}`, o.side === "buy" ? "buy" : "sell"); } }
     const qty = (o) => (kindOf(o.s) === "idx" ? nf(0).format(o.units / 100) + " lot" : nf(6).format(o.units));
     $("apOrdN").textContent = `${pend.length} menunggu · ${done.length} tereksekusi`;
     $("apPend").innerHTML = pend.length ? `<thead><tr><th>Dipasang</th><th>Aset</th><th>Sisi</th><th>Harga limit</th><th>Harga kini</th><th>Jarak</th><th>Jumlah</th><th>Stop / target</th><th></th></tr></thead><tbody>` + pend.map((o) => { const q = pp.q[o.s], d = q ? q.price / o.limit - 1 : NaN;
@@ -3895,10 +3899,43 @@
       <div class="tg-bar"><i style="width:${(prog * 100).toFixed(1)}%"></i></div><div class="note keep">${fmtIdr(P.eq)} dari target ${fmtIdr(c.tgAmt)} (${pct(prog, 0)} jalan, skala log) · puncak ${fmtIdr(P.peak)}</div>
       <table class="tg-odds"><thead><tr><th>Dalam</th><th>Peluang capai target</th><th>Peluang run gagal (−50%)</th></tr></thead><tbody>${O.out.map((o) => `<tr><td>${o.yrs} tahun</td><td class="${o.hit >= 0.5 ? "pos" : ""}"><b>${o.hit < 0.001 ? "< 0,1%" : pct(o.hit, 1)}</b></td><td class="${o.ruin >= 0.2 ? "neg" : ""}">${pct(o.ruin, 1)}</td></tr>`).join("")}</tbody></table>
       <p class="note keep">Simulasi ${esc(O.src)}, ±8 transaksi/bulan. Angka ini dihitung ulang otomatis setelah ada ≥ 20 transaksi autopilot demo.</p>`; }
+
+  // =====================================================================
+  // FUTURES DEMO (kripto): long & short dengan leverage, margin terisolasi, likuidasi, fee & funding.
+  // Uang virtual saja: Indodax (API yang tersambung) tidak menyediakan futures.
+  // =====================================================================
+  const FUT_FEE = 0.0005, FUT_FUND8H = 0.0001, FUT_MM = 0.9; // fee taker 0,05%/sisi, funding 0,01%/8 jam, likuidasi saat rugi 90% margin
+  const futList = () => (pp.a.fut || (pp.a.fut = []));
+  const futLiq = (f) => f.entry * (1 - f.dir * (FUT_MM / f.lev));
+  function futPnl(f, px) { const fx = fxOf(f.s), hrs = (Date.now() - Date.parse(f.t)) / 3600e3; return f.dir * (px - f.entry) * f.units * fx - f.entry * f.units * fx * FUT_FUND8H * Math.floor(hrs / 8); }
+  function futOpen(s, dir, px, units, lev, brk, ap1) { const fx = fxOf(s), notional = units * px * fx, margin = notional / lev, fee = notional * FUT_FEE;
+    if (margin + fee > pp.a.cash) throw new Error("kas demo tidak cukup untuk margin"); pp.a.cash -= margin + fee;
+    const f = { id: Date.now().toString(36), t: new Date().toISOString(), s, dir, entry: px, units, lev, margin, fee, brk, ap: !!ap1 }; futList().push(f);
+    pp.a.hist.unshift({ id: f.id, t: f.t, s, name: s, side: dir > 0 ? "buy" : "sell", type: `futures ${dir > 0 ? "LONG" : "SHORT"} ${lev}x buka`, units, fillPx: px, fillAt: f.t, fee, status: "terisi", ap: !!ap1, fut: true }); return f; }
+  function futClose(f, px, why) { const fx = fxOf(f.s), pnl = Math.max(-f.margin, futPnl(f, px)), fee = f.units * px * fx * FUT_FEE, back = Math.max(0, f.margin + pnl - fee);
+    pp.a.cash += back; pp.a.fut = futList().filter((x) => x !== f);
+    pp.a.hist.unshift({ id: f.id + "c", t: new Date().toISOString(), s: f.s, name: f.s, side: f.dir > 0 ? "sell" : "buy", type: `futures ${f.dir > 0 ? "LONG" : "SHORT"} ${f.lev}x tutup · ${why}`, units: f.units, fillPx: px, fillAt: new Date().toISOString(), fee, pl: back - f.margin - f.fee, status: "terisi", ap: f.ap, fut: true, side2: "close" });
+    return back - f.margin - f.fee; }
+  async function futCheck() { const L = futList(); if (!L.length) return; await ppQuotes(L.map((f) => f.s)); let ch = false;
+    for (const f of L.slice()) { const q = pp.q[f.s]; if (!q) continue; const px = q.price, b = f.brk || {};
+      if (f.dir * (px - futLiq(f)) <= 0) { futClose(f, futLiq(f), "LIKUIDASI"); apLogAdd(f.s, `FUTURES ${f.dir > 0 ? "LONG" : "SHORT"} ${f.lev}x DILIKUIDASI @ ${fmtNum(futLiq(f))} · margin hilang`, "err"); ch = true; continue; }
+      if (b.stop && f.dir * (px - b.stop) <= 0) { const pl = futClose(f, px, "stop"); apLogAdd(f.s, `FUTURES stop @ ${fmtNum(px)} · ${big(pl, "IDR")}`, "sell"); ch = true; continue; }
+      if (b.t2 && f.dir * (px - b.t2) >= 0) { const pl = futClose(f, px, "target"); apLogAdd(f.s, `FUTURES target @ ${fmtNum(px)} · ${big(pl, "IDR")}`, "buy"); ch = true; continue; }
+      if (b.t1 && !f.hit1 && f.dir * (px - b.t1) >= 0) { f.hit1 = true; b.stop = f.entry; apLogAdd(f.s, `FUTURES T1 tersentuh @ ${fmtNum(px)} → stop dipindah ke harga masuk`); ch = true; } }
+    if (ch) { ppSnap(); ppSave(); renderPaper(); } }
+  async function apShort(X, valIdr) { await ppQuotes([X.sym]); const c = ap.cfg, px = (pp.q[X.sym] && pp.q[X.sym].price) || X.px, atr = isFinite(X.atr) && X.atr > 0 ? X.atr : px * 0.03, fx = fxOf(X.sym);
+    const brk = { stop: px + 1.5 * atr, t1: px - 2 * atr, t2: px - 3 * atr }, eq = apRun().eq, risk = c.tgOn ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
+    let units = valIdr ? valIdr / fx / px : (eq * risk) / ((brk.stop - px) * fx); units = Math.min(units, (apRun().free * c.lev * 0.95) / (px * fx)); units = +units.toFixed(6);
+    if (!(units > 0)) throw new Error("dana terlalu kecil"); const f = futOpen(X.sym, -1, px, units, c.lev, brk, true);
+    return `Futures demo: SHORT ${c.lev}x ${nf(6).format(units)} ${X.sym} @ ${fmtNum(px)} (stop ${fmtNum(brk.stop)}, target ${fmtNum(brk.t1)}/${fmtNum(brk.t2)}, likuidasi ${fmtNum(futLiq(f))})`; }
+  function drawFut() { const L = futList(), el = $("apFut"); if (!el) return; $("apFutCard").hidden = !(ap.cfg.fut || L.length);
+    el.innerHTML = L.length ? `<thead><tr><th>Dibuka</th><th>Aset</th><th>Arah</th><th>Lev</th><th>Masuk</th><th>Kini</th><th>Likuidasi</th><th>Stop / target</th><th>Margin</th><th>Untung/rugi</th><th></th></tr></thead><tbody>` + L.map((f) => { const q = pp.q[f.s], pl = q ? futPnl(f, q.price) : NaN, b = f.brk || {};
+      return `<tr><td>${wib(f.t)}</td><td><b>${esc(f.s)}</b></td><td class="${f.dir > 0 ? "pos" : "neg"}"><b>${f.dir > 0 ? "LONG" : "SHORT"}</b></td><td>${f.lev}x</td><td>${fmtNum(f.entry)}</td><td>${q ? fmtNum(q.price) : "–"}</td><td class="neg">${fmtNum(futLiq(f))}</td><td class="note">${b.stop ? fmtNum(b.stop) : "–"} / ${b.t1 ? fmtNum(b.t1) : "–"} · ${b.t2 ? fmtNum(b.t2) : "–"}</td><td>${big(f.margin, "IDR")}</td>
+        <td>${isFinite(pl) ? `<span class="${cls(pl)}">${pl >= 0 ? "+" : "−"}${big(Math.abs(pl), "IDR")} (${spct(pl / f.margin, 0)})</span>` : "–"}</td><td><button class="x-btn" data-futx="${esc(f.id)}" title="Tutup posisi">Tutup</button></td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada posisi futures.</td></tr></tbody>'; }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits(); ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
-      if (c.on) await apNewsGuard(); apLabelSweep(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
+      if (c.on) await apNewsGuard(); apLabelSweep(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
       for (const s of apSyms()) {
       const st = ap.st[s] || (ap.st[s] = {}); if (!force && st.at && Date.now() - st.at < c.every * 60e3) continue;
@@ -3910,7 +3947,11 @@
         else if (V.act === "BELI" && !held) {
           if (c.dayHalt) st.note = "rugi harian ≥ 5%: beli baru diblok sampai besok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
           else { const m = await apBuy(X); c.nDay++; st.note = "order beli dipasang"; apLogAdd(s, `BELI · ${V.why} · ${m}`, "buy"); toast(`Autopilot: ${m}`); } }
-        else if (V.act === "JUAL" && held) { const m = await apSell(X); c.cool[s] = Date.now(); st.note = "posisi dijual"; apLogAdd(s, `JUAL · ${V.why} · ${m || "tidak ada yang dijual"}`, "sell"); if (m) toast(`Autopilot: ${m}`); }
+        else if (V.act === "SHORT" && !held) {
+          if (c.target !== "demo") st.note = "short hanya di demo"; else if (c.dayHalt) st.note = "rugi harian ≥ 5%: posisi baru diblok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
+          else { const m = await apShort(X); c.nDay++; st.note = "short dibuka"; apLogAdd(s, `SHORT · ${V.why} · ${m}`, "sell"); toast(`Autopilot: ${m}`); } }
+        else if (held && futList().some((f) => f.ap && f.s === s && f.dir < 0) && (V.act === "BELI" || X.ml > 0 || X.dl > 0 || X.ai > 0)) { const m = await apSell(X); c.cool[s] = Date.now(); st.note = "short ditutup"; apLogAdd(s, `TUTUP SHORT · sinyal tidak lagi turun · ${m}`, "buy"); }
+        else if (V.act === "JUAL" && held && !futList().some((f) => f.ap && f.s === s && f.dir < 0)) { const m = await apSell(X); c.cool[s] = Date.now(); st.note = "posisi dijual"; apLogAdd(s, `JUAL · ${V.why} · ${m || "tidak ada yang dijual"}`, "sell"); if (m) toast(`Autopilot: ${m}`); }
         else apLogAdd(s, `${V.act} · ${V.why}`); }
       catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
       drawAp(); }
@@ -3952,7 +3993,7 @@
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
-    drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg();
+    drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut();
     { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
@@ -3978,7 +4019,7 @@
     $("apChips").addEventListener("click", (e) => { const d = e.target.closest("[data-apdel]"); if (d) apSetList(apList().filter((s) => s !== d.dataset.apdel)); });
     $("apPick").addEventListener("click", (e) => { const b = e.target.closest("[data-apadd]"); if (!b) return; const s = b.dataset.apadd, L = apList();
       if (L.includes(s)) apSetList(L.filter((x) => x !== s)); else if (L.length >= 8) toast("Maksimal 8 aset. Hapus satu dulu."); else apSetList([...L, s]); }); setTimeout(() => apLabelSweep(), 20e3);
-    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apScope", "apMode", "apBudget", "tgOn", "tgAmt", "tgAgg", "tgSafe", "tgBrake", "apMaxW", "apUseNews", "apUseExp", "apAutoPick", "apPickSrc"].forEach((id) => $(id).addEventListener("change", () => {
+    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apScope", "apMode", "apBudget", "apFut1", "apLev", "tgOn", "tgAmt", "tgAgg", "tgSafe", "tgBrake", "apMaxW", "apUseNews", "apUseExp", "apAutoPick", "apPickSrc"].forEach((id) => $(id).addEventListener("change", () => {
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apScope" && ap.cfg.scope === "all") { if (ap.cfg.target !== "demo") { toast("Simulasi semua aset hanya untuk akun demo."); ap.cfg.scope = "list"; $("apScope").value = "list"; } else { toast(`Simulasi penuh: ${apAll().length} aset dipantau. Satu putaran bisa ±${Math.ceil(apAll().length * 15 / 60)} menit.`); if (ap.cfg.on) setTimeout(() => apCycle(true), 300); } }
@@ -3999,14 +4040,15 @@
       apLogAdd("—", `Simulasi semua aset DIMULAI (${apAll().length} aset, demo, terus-menerus)`); apSave(); drawAp(); setTimeout(() => apCycle(true), 300); };
     $("tgStart").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const c = ap.cfg; c.tgOn = true; $("tgOn").checked = true; c.budget = 1e6; $("apBudget").value = 1e6; c.target = "demo"; $("apTarget").value = "demo"; c.mode = "asset"; $("apMode").value = "asset";
       const n = ((c.run && c.run.n) || 0) + 1; c.run = { start: new Date().toISOString(), cap: 1e6, n }; ap.tgOdds = null; apLogAdd("—", `Run #${n} TARGET dimulai: Rp 1 jt → ${fmtIdr(c.tgAmt)} · agresif ${pct(c.tgAgg, 0)}/transaksi, hati-hati ${pct(c.tgSafe, 2)}, rem ${pct(c.tgBrake, 0)}`); apSave(); drawAp(); };
+    $("apFutCard").addEventListener("click", async (e) => { const x = e.target.closest("[data-futx]"); if (!x) return; const f = futList().find((y) => y.id === x.dataset.futx); if (!f) return; await ppQuotes([f.s]); const q = pp.q[f.s]; if (!q) return; const pl = futClose(f, q.price, "manual"); apLogAdd(f.s, `Futures ditutup manual @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`); ppSnap(); ppSave(); renderPaper(); drawAp(); });
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
     $("apWake").addEventListener("change", () => apWakeSync());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
-    if (location.hostname === "localhost") window.__ap = { au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
-    clearInterval(ap.timer); ap.timer = setInterval(() => { apCycle(false); if (!$("apPane").hidden && !ap.busy) drawAp(); }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+    if (location.hostname === "localhost") window.__ap = { apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    clearInterval(ap.timer); ap.timer = setInterval(() => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) drawAp(); }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
   // MANAJEMEN ASET: semua yang kamu pegang dalam satu layar (uang asli dan demo dipisah)

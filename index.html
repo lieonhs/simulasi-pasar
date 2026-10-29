@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029202407">
+<link rel="stylesheet" href="style.css?v=20261029205242">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -384,6 +384,10 @@
       <div class="row ap-auto"><label class="toggle"><input type="checkbox" id="apAutoPick"> <b>Pilih aset otomatis</b></label><select id="apPickSrc" class="mini-sel"><option value="all">dari watchlist + aset utama + Hidden gems</option><option value="rdc">hanya kripto Perhatikan / Uji dulu (Radar)</option></select></div><p class="note">Tiap 6 jam autopilot memindai sumber yang dipilih, lalu mengisi daftar dengan 8 aset terbaik. Posisi yang masih terbuka tetap di daftar.</p>
       <div class="row"><button class="btn" id="apAddCur">+ Aset yang sedang dianalisis</button><button class="btn" id="apAddWl">+ Dari watchlist</button><button class="btn" id="apAddRd">+ Kripto “Uji dulu” dari Radar</button><button class="btn" id="apAddGems">+ Kandidat kuat Hidden gems</button><button class="btn" id="apNow">Periksa sekarang</button><button class="btn" id="apQuick">Uji cepat 12 aset</button><button class="btn" id="apNewRun">Mulai run baru</button><button class="btn" id="apKill" style="color:var(--bad)">Matikan & tutup posisi autopilot</button></div>
       <div class="ap-tgt">
+        <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual</span></label>
+        <div class="grid"><div><label class="lbl" for="apLev">Leverage</label><select id="apLev"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x (maks)</option></select></div></div>
+      </div>
+      <div class="ap-tgt">
         <label class="toggle"><input type="checkbox" id="tgOn"> <b>Mode target compounding</b> <span class="note">agresif sampai target, lalu hati-hati</span></label>
         <div class="grid">
           <div><label class="lbl" for="tgAmt">Target (Rp)</label><input id="tgAmt" type="number" min="1000000" step="1000000" value="50000000"></div>
@@ -398,6 +402,7 @@
       <p class="note keep">Aturan: <b>beli</b> hanya bila Rencana aksi = BELI, keyakinan ≥ ambang, ekspektasi &gt; 0, dan <b>semua kecerdasan yang dicentang</b> mendukung naik (ML/DL harus <i>teruji</i> dan peluang naik ≥ ambang; RAM AI skor ≥ +2). Model dengan keyakinan di bawah 75% tidak pernah dipakai untuk eksekusi. Stop & target dipasang otomatis. <b>Jual</b> posisi autopilot bila semua kecerdasan yang dicentang condong turun atau rencana berubah JUAL. <b>Berita kejutan</b> (diretas, bangkrut, delisting, suspensi, gugatan, sanksi, depeg, dll., atau ≥ 3 berita negatif dalam 24 jam) langsung menjual posisi autopilot tanpa menunggu kecerdasan lain dan memblok beli 24 jam; berita diperiksa tiap 5 menit. <b>Batas rugi harian 5%</b>: bila nilai run turun ≥ 5% dalam sehari, beli baru diblok sampai besok. Tidak menyentuh posisi manualmu. <b>Mode portofolio:</b> dana dibagi ke aset yang lolos sesuai keyakinan × ekspektasi, lalu hanya dipindah bila keuntungan yang diharapkan melebihi biaya jual + beli + spread + margin 0,5%. Jeda 24 jam per aset setelah keluar. <b>Run demo</b>: dana uji maks Rp 1 miliar; bila nilai run turun ke 50% (mis. 1 miliar tinggal 500 juta), autopilot dianggap <b>gagal memprediksi</b>, dimatikan, dan posisinya ditutup. Saham IDX hanya diproses saat jam bursa. Hanya berjalan selama web ini terbuka.</p>
     </section>
     <div><div class="card"><div class="card-h"><h2>Status per aset</h2><span class="note" id="apNext"></span></div><div class="table-wrap"><table id="apTable"></table></div></div>
+      <div class="card" id="apFutCard" hidden><div class="card-h"><h2>Posisi futures · demo</h2><span class="note">likuidasi bila rugi 90% margin · fee 0,05%/sisi · funding 0,01%/8 jam</span></div><div class="table-wrap"><table id="apFut"></table></div></div>
       <div class="card" id="apOrd"><div class="card-h"><h2>Order autopilot · akun demo</h2><span class="note" id="apOrdN"></span></div>
         <div class="subh">⏳ Menunggu eksekusi (order limit belum terisi)</div><div class="table-wrap"><table id="apPend"></table></div>
         <div class="subh">✅ Sudah dieksekusi</div><div class="table-wrap"><table id="apDone"></table></div></div>
@@ -1133,8 +1138,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029202407";</script>
-<script src="engine.js?v=20261029202407"></script>
-<script src="app.js?v=20261029202407"></script>
+<script>window.APP_V = "20261029205242";</script>
+<script src="engine.js?v=20261029205242"></script>
+<script src="app.js?v=20261029205242"></script>
 </body>
 </html>
