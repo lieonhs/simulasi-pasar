@@ -1,15 +1,16 @@
-// indodax-menu: fitur BACA Indodax untuk RAM Capital (pasar, order book, saldo, order terbuka, riwayat).
-// Order beli/jual & batal tetap lewat fungsi market-data (validasi batas & konfirmasi). Tidak ada withdraw.
-// GET  ?action=pairs                 semua pasangan IDR + harga + perubahan 24 jam / 7 hari (publik Indodax)
-// GET  ?action=book&pair=btc_idr     order book 20 level + 30 transaksi terakhir
-// POST ?action=private {method,params}  hanya pemilik: getInfo, openOrders, orderHistory, tradeHistory, transHistory, getOrder
+// indodax-menu: Indodax untuk RAM Capital memakai Trade API v2 (api.indodax.com/api/v2, HMAC-SHA256, header X-APIKEY + Sign).
+// GET  ?action=pairs                 semua pasangan IDR + harga + perubahan 24 jam / 7 hari (publik)
+// GET  ?action=book&pair=btc_idr     order book 20 level + 30 transaksi terakhir (publik)
+// POST ?action=private {method,params,confirm}  hanya pemilik:
+//   status, account, openOrders, orderHistory, myTrades, deposits, withdrawals (baca)
+//   createOrder (wajib konfirmasi + batas INDODAX_MAX_IDR), cancelOrder. Penarikan dana TIDAK tersedia.
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 const json = (body: unknown, status = 200, cache = 0) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json", ...(cache ? { "Cache-Control": `private, max-age=${cache}` } : {}) } });
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "", SB_ANON = Deno.env.get("SUPABASE_ANON_KEY") ?? "", SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const IDX_KEY = Deno.env.get("INDODAX_KEY") ?? "", IDX_SECRET = Deno.env.get("INDODAX_SECRET") ?? "";
 const OWNER = (Deno.env.get("OWNER_EMAIL") ?? "raafialmuchsin6805@gmail.com").toLowerCase();
-const READ = new Set(["getInfo", "openOrders", "orderHistory", "tradeHistory", "transHistory", "getOrder"]);
+const IDX_MAX = Number(Deno.env.get("INDODAX_MAX_IDR") ?? "2000000");
 
 const okTokens = new Map<string, number>(), memberCache = new Map<string, { at: number; ok: boolean }>();
 async function isApproved(sub: string) {
@@ -49,19 +50,49 @@ async function book(pair: string) {
   const lv = (a: any) => (Array.isArray(a) ? a.slice(0, 20).map((x: any) => [Number(x[0]), Number(x[1])]) : []);
   return { status: 200, data: { pair, bids: lv(dj.buy), asks: lv(dj.sell), trades: (Array.isArray(tj) ? tj : []).slice(0, 30).map((x: any) => ({ t: Number(x.date), px: Number(x.price), amt: Number(x.amount), side: x.type })), at: Math.floor(Date.now() / 1000) } };
 }
-async function hmac512(key: string, msg: string) {
-  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+async function hmac256(key: string, msg: string) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return [...new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+async function v2(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}) {
+  const qs = new URLSearchParams({ ...params, timestamp: String(Date.now()), recvWindow: "10000" }).toString(), sig = await hmac256(IDX_SECRET, qs);
+  const r = await fetch(`https://api.indodax.com${path}${method === "POST" ? "" : "?" + qs}`, { method,
+    headers: { ...UA, Accept: "application/json", "X-APIKEY": IDX_KEY, Sign: sig, ...(method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) }, body: method === "POST" ? qs : undefined });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || (j && typeof j === "object" && !Array.isArray(j) && typeof j.code === "number" && j.code < 0)) return { status: r.ok ? 400 : r.status, data: { error: (j && (j.msg || j.message || j.error)) || `HTTP ${r.status}`, code: j && j.code } };
+  return { status: 200, data: j };
+}
+const SYM = /^[a-z0-9]{2,15}idr$/;
+const str = (v: unknown, n = 40) => String(v ?? "").slice(0, n);
 async function priv(body: any, email: string) {
   if ((email ?? "").toLowerCase() !== OWNER) return { status: 403, data: { error: "Fitur Indodax hanya untuk pemilik akun." } };
+  const m = String(body?.method ?? ""), p = body?.params ?? {};
+  if (m === "status") { if (!IDX_KEY || !IDX_SECRET) return { status: 200, data: { configured: false, maxIdr: IDX_MAX } };
+    const a = await v2("GET", "/api/v2/account", { omitZeroBalances: "true" }); return { status: 200, data: { configured: true, maxIdr: IDX_MAX, ok: a.status === 200, error: a.status === 200 ? null : a.data.error, canTrade: a.data?.canTrade ?? null, canWithdraw: a.data?.canWithdraw ?? null } }; }
   if (!IDX_KEY || !IDX_SECRET) return { status: 503, data: { error: "Belum dikonfigurasi: tambahkan secret INDODAX_KEY dan INDODAX_SECRET di Supabase." } };
-  const method = String(body?.method ?? ""); if (!READ.has(method)) return { status: 400, data: { error: "Metode tidak diizinkan di fungsi baca." } };
-  const P: Record<string, string> = {}; for (const [k, v] of Object.entries(body?.params ?? {})) if (/^[a-z_]{1,24}$/.test(k) && v != null && String(v).length < 40) P[k] = String(v);
-  if (P.pair && !/^[a-z0-9]{2,15}_idr$/.test(P.pair)) return { status: 400, data: { error: "pair tidak valid" } };
-  const q = new URLSearchParams({ method, timestamp: String(Date.now()), recvWindow: "10000", ...P }).toString();
-  const r = await fetch("https://indodax.com/tapi", { method: "POST", headers: { ...UA, "Content-Type": "application/x-www-form-urlencoded", Key: IDX_KEY, Sign: await hmac512(IDX_SECRET, q) }, body: q });
-  return { status: r.ok ? 200 : r.status, data: await r.json().catch(() => ({ success: 0, error: `HTTP ${r.status}` })) };
+  const sym = str(p.symbol, 20).toLowerCase(), week = { startTime: String(Date.now() - 7 * 864e5 + 60e3), endTime: String(Date.now()) };
+  if (sym && !SYM.test(sym)) return { status: 400, data: { error: "Simbol tidak valid (contoh: btcidr)." } };
+  if (m === "account") return v2("GET", "/api/v2/account", { omitZeroBalances: "true" });
+  if (m === "openOrders") return v2("GET", "/api/v2/openOrders", sym ? { symbol: sym } : {});
+  if (m === "orderHistory") return sym ? v2("GET", "/api/v2/order/histories", { symbol: sym, limit: "500", ...week }) : { status: 400, data: { error: "Pilih koin dulu." } };
+  if (m === "myTrades") return sym ? v2("GET", "/api/v2/myTrades", { symbol: sym, limit: "1000", ...week }) : { status: 400, data: { error: "Pilih koin dulu." } };
+  if (m === "deposits" || m === "withdrawals") { const coin = str(p.coin, 12).toUpperCase(); if (!/^[A-Z0-9]{2,12}$/.test(coin)) return { status: 400, data: { error: "Koin tidak valid." } };
+    return v2("GET", m === "deposits" ? "/api/v2/capital/deposit/hisrec" : "/api/v2/capital/withdraw/history", { coin }); } // hanya riwayat; tidak ada fungsi tarik dana
+  if (m === "cancelOrder") { const id = str(p.orderId, 40); if (!sym || !/^[0-9]{1,30}$/.test(id)) return { status: 400, data: { error: "Order tidak valid." } }; return v2("DELETE", "/api/v2/order", { symbol: sym, orderId: id }); }
+  if (m === "createOrder") {
+    const side = str(p.side, 4).toUpperCase(), type = str(p.type, 6).toUpperCase(), price = Number(p.price ?? 0), qty = Number(p.quantity ?? 0), quote = Number(p.quoteOrderQty ?? 0);
+    if (!sym || !["BUY", "SELL"].includes(side) || !["LIMIT", "MARKET"].includes(type)) return { status: 400, data: { error: "Simbol/sisi/jenis order tidak valid." } };
+    if (body?.confirm !== `${side.toLowerCase()} ${sym.replace(/idr$/, "_idr")}`) return { status: 400, data: { error: "Konfirmasi order tidak cocok." } };
+    let value = 0; const P: Record<string, string> = { symbol: sym, side, type };
+    if (type === "LIMIT") { if (!(price > 0 && qty > 0)) return { status: 400, data: { error: "Harga & jumlah wajib untuk order limit." } }; P.price = String(price); P.quantity = String(qty); value = price * qty; }
+    else if (side === "BUY") { if (!(quote > 0)) return { status: 400, data: { error: "Isi jumlah rupiah untuk beli market." } }; P.quoteOrderQty = String(Math.floor(quote)); value = quote; }
+    else { if (!(qty > 0)) return { status: 400, data: { error: "Isi jumlah koin." } }; P.quantity = String(qty);
+      const t = await (await fetch(`https://indodax.com/api/ticker/${sym}`, { headers: UA })).json().catch(() => ({})); value = qty * Number(t?.ticker?.last ?? 0); }
+    if (!(value > 0)) return { status: 400, data: { error: "Nilai order tidak valid." } };
+    if (value > IDX_MAX) return { status: 400, data: { error: `Order Rp ${Math.round(value).toLocaleString("id-ID")} melebihi batas per order Rp ${IDX_MAX.toLocaleString("id-ID")} (secret INDODAX_MAX_IDR).` } };
+    return v2("POST", "/api/v2/order", P);
+  }
+  return { status: 400, data: { error: "Metode tidak diizinkan." } };
 }
 
 Deno.serve(async (req) => {

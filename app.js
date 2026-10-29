@@ -2065,16 +2065,15 @@
 
   // ---------- Indodax ----------
   const ix = { pairs: null, side: "buy", pair: null, log: [], cfg: null };
-  async function idxCall(method, params = {}, confirm) {
-    const r = await apiFetch(`${API}?action=indodax`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
-    const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.success === 0) throw new Error(j.error || j.message || `Gagal (${r.status})`); return j;
-  }
-  async function idxRead(method, params = {}) { // fitur baca lewat fungsi indodax-menu
-    const r = await apiFetch(`${API_IDX}?action=private`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params }) });
-    const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.success === 0) { if ((r.status === 404 || r.status >= 500) && (method === "getInfo" || method === "openOrders")) return idxCall(method, params); throw new Error(j.error || j.message || `Gagal (${r.status})`); } return j; }
+  async function idxCall(method, params = {}, confirm) { // Trade API v2 lewat fungsi indodax-menu
+    const r = await apiFetch(`${API_IDX}?action=private`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || (j && j.error)) throw new Error((j && j.error) || `Gagal (${r.status})`); return j; }
+  const idxRead = (method, params = {}) => idxCall(method, params);
   async function idxInit() {
     if (!isOwner()) { $("xStatus").textContent = "Fitur Indodax hanya untuk akun pemilik."; return; }
-    try { ix.cfg = await idxCall("status"); $("xStatus").innerHTML = ix.cfg.configured ? `<span class="pos">Tersambung ke server.</span> Batas per order Rp ${nf(0).format(ix.cfg.maxIdr)}.` : '<span class="neg">Belum dikonfigurasi.</span> Ikuti langkah di kanan untuk menambahkan API key.'; }
+    try { ix.cfg = await idxCall("status"); const c = ix.cfg;
+      $("xStatus").innerHTML = !c.configured ? '<span class="neg">Belum dikonfigurasi.</span> Ikuti langkah di tab Setup.' : !c.ok ? `<span class="neg">Key ditolak Indodax:</span> ${esc(c.error || "")}` :
+        `<span class="pos">Tersambung (Trade API v2).</span> Izin trade: ${c.canTrade ? '<b class="pos">ya</b>' : '<b class="neg">tidak</b>'}${c.canWithdraw ? ' · <b class="neg">izin withdraw AKTIF — sebaiknya buat key tanpa withdraw</b>' : ""} · batas per order Rp ${nf(0).format(c.maxIdr)}.`; ix.cfg.configured = c.configured && c.ok; }
     catch (e) { $("xStatus").textContent = e.message; }
     await idxPairsLoad(); $("xPair").placeholder = `ketik: btc, eth… (${(ix.pairs || []).length} koin)`;
     renderIdxLog(); if (ix.cfg && ix.cfg.configured && !ix.tabInit) { ix.tabInit = true; setXTab("pf"); } else if (ix.cfg && !ix.cfg.configured) setXTab("setup");
@@ -2094,10 +2093,10 @@
     $("xPreview").insertAdjacentHTML("beforeend", `<div class="confirm-box" id="xConfirm"><b>Konfirmasi order UANG ASLI</b><br>${ix.side === "buy" ? "BELI" : "JUAL"} ${esc(P.p.base.toUpperCase())} · ${P.lim ? `limit Rp ${fmtNum(P.px)}` : "market"} · ${ix.side === "buy" && !P.lim ? "Rp " + nf(0).format(P.amt) : nf(8).format(P.amt) + " " + esc(P.p.base.toUpperCase())} · ±Rp ${nf(0).format(P.value)}
       <br>Ketik <code>${esc(word)}</code> lalu tekan Kirim.<input id="xWord" autocomplete="off"><button class="run" id="xGo" style="background:var(--bad)">Kirim ke Indodax</button></div>`);
     $("xGo").onclick = async () => { if ($("xWord").value.trim() !== word) { toast("Teks konfirmasi tidak cocok."); return; }
-      const params = { pair: P.p.pair, type: ix.side, order_type: P.lim ? "limit" : "market" }; if (P.lim) params.price = String(P.px);
-      if (ix.side === "buy" && !P.lim) params.idr = String(Math.floor(P.amt)); else params[P.p.base] = String(P.amt);
+      const params = { symbol: P.p.base + "idr", side: ix.side.toUpperCase(), type: P.lim ? "LIMIT" : "MARKET" }; if (P.lim) params.price = String(P.px);
+      if (ix.side === "buy" && !P.lim) params.quoteOrderQty = String(Math.floor(P.amt)); else params.quantity = String(P.amt); params.order_type = P.lim ? "limit" : "market";
       $("xGo").disabled = true;
-      try { const j = await idxCall("trade", params, word); const ret = j.return || {}; ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, id: ret.order_id || "", ok: true });
+      try { const j = await idxCall("createOrder", params, word); const ret = { order_id: j.orderId || j.fullOrderId || "" }; ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, id: ret.order_id || "", ok: true });
         toast(`Indodax: order ${ix.side === "buy" ? "beli" : "jual"} ${P.p.base.toUpperCase()} terkirim${ret.order_id ? " (#" + ret.order_id + ")" : ""}`); }
       catch (e) { ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, ok: false, err: e.message }); toast("Indodax gagal: " + e.message); }
       saveSettings({ idxLog: ix.log.slice(0, 100) }); renderIdxLog(); idxPreview(); setTimeout(() => { if (ix.tab === "pf") idxBalance(); else if (ix.tab === "open") idxOpenOrders(); }, 1200); };
@@ -2112,7 +2111,7 @@
   const coinOf = (c) => (ix.pairs || []).find((p) => p.base === c);
   async function idxBalance() {
     $("xBalTable").innerHTML = '<tbody><tr><td class="status">Memuat saldo…</td></tr></tbody>';
-    try { await idxPairsLoad(); const j = await idxRead("getInfo"); const r = j.return || {}, bal = r.balance || {}, hold = r.balance_hold || {};
+    try { await idxPairsLoad(); const j = await idxRead("account"); const bal = {}, hold = {}; for (const x of j.balances || []) { const c = String(x.asset || "").toLowerCase(); bal[c] = +x.free || 0; hold[c] = +x.locked || 0; }
       const px = (c) => (c === "idr" ? 1 : (coinOf(c) || {}).last || 0);
       const rows = Object.keys(bal).map((c) => ({ c, b: +bal[c] || 0, h: +hold[c] || 0 })).filter((x) => x.b > 0 || x.h > 0).map((x) => ({ ...x, px: px(x.c), v: (x.b + x.h) * px(x.c), chg: x.c === "idr" ? 0 : (coinOf(x.c) || {}).chg24 })).sort((a, b) => b.v - a.v);
       const tot = rows.reduce((a, x) => a + x.v, 0), cash = rows.filter((x) => x.c === "idr").reduce((a, x) => a + x.v, 0), d24 = rows.reduce((a, x) => a + (isFinite(x.chg) && x.chg != null ? x.v - x.v / (1 + x.chg) : 0), 0);
@@ -2152,18 +2151,21 @@
   }
   async function idxHist(kind) {
     document.querySelectorAll("#xHistTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.h === kind)); const p = ix.pair, el = $("xHist");
-    if (kind !== "transHistory" && !p) { el.innerHTML = '<tbody><tr><td class="note">Pilih koin dulu (tiket order, tab Pasar, atau Portofolio).</td></tr></tbody>'; return; }
-    el.innerHTML = '<tbody><tr><td class="status">Memuat…</td></tr></tbody>'; const T = (s) => (s ? new Date(+s * 1000).toLocaleString("id-ID") : "");
-    try { const j = await idxRead(kind, kind === "transHistory" ? {} : { pair: p.pair, count: "100" }), r = j.return || {};
-      if (kind === "orderHistory") { const L = r.orders || []; el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Order</th><th>Sisa</th><th>Status</th><th>Selesai</th></tr></thead><tbody>` + L.map((o) => `<tr><td>${T(o.submit_time)}</td><td class="${o.type === "buy" ? "pos" : "neg"}">${esc(o.type)}</td><td>${fmtNum(+o.price)}</td>
-          <td class="txt">${esc(Object.entries(o).filter(([k]) => /^order_/.test(k) && k !== "order_id").map(([k, v]) => k.replace("order_", "") + " " + v).join(", "))}</td><td class="txt">${esc(Object.entries(o).filter(([k]) => /^remain_/.test(k)).map(([k, v]) => k.replace("remain_", "") + " " + v).join(", "))}</td><td>${esc(o.status || "")}</td><td>${T(o.finish_time)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada riwayat order.</td></tr></tbody>'; }
-      else if (kind === "tradeHistory") { const L = r.trades || []; let buyQ = 0, buyIdr = 0, sellQ = 0, sellIdr = 0, fee = 0; const b = p.base;
-        for (const t of L) { const q = +t[b] || 0, v = q * +t.price; fee += +t.fee || 0; if (t.type === "buy") { buyQ += q; buyIdr += v; } else { sellQ += q; sellIdr += v; } }
-        el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Jumlah</th><th>Nilai (Rp)</th><th>Fee</th></tr></thead><tbody>` + L.map((t) => `<tr><td>${T(t.trade_time)}</td><td class="${t.type === "buy" ? "pos" : "neg"}">${esc(t.type)}</td><td>${fmtNum(+t.price)}</td><td>${nf(8).format(+t[b] || 0)}</td><td>${nf(0).format((+t[b] || 0) * +t.price)}</td><td>${esc(String(t.fee || ""))}</td></tr>`).join("") +
-          `<tr><td colspan="6" class="note">Rata-rata beli ${buyQ ? "Rp " + fmtNum(buyIdr / buyQ) : "–"} (${nf(8).format(buyQ)}) · rata-rata jual ${sellQ ? "Rp " + fmtNum(sellIdr / sellQ) : "–"} (${nf(8).format(sellQ)})${buyQ && p.last ? ` · posisi bersih ${nf(8).format(buyQ - sellQ)} vs harga kini: <b class="${cls(p.last / (buyIdr / buyQ) - 1)}">${spct(p.last / (buyIdr / buyQ) - 1, 1)}</b>` : ""} · total fee ${nf(0).format(fee)}</td></tr></tbody>` : '<tbody><tr><td class="note">Belum ada trade untuk koin ini.</td></tr></tbody>'; }
-      else { const rows = []; for (const [kind2, byCoin] of [["deposit", r.deposit || {}], ["penarikan", r.withdraw || {}]]) for (const [c, L] of Object.entries(byCoin)) for (const x of (Array.isArray(L) ? L : [])) rows.push({ k: kind2, c, ...x });
-        rows.sort((a, b) => (+b.submit_time || 0) - (+a.submit_time || 0));
-        el.innerHTML = rows.length ? `<thead><tr><th>Waktu</th><th>Jenis</th><th>Aset</th><th>Jumlah</th><th>Fee</th><th>Status</th></tr></thead><tbody>` + rows.slice(0, 200).map((x) => `<tr><td>${T(x.submit_time)}</td><td class="${x.k === "deposit" ? "pos" : "neg"}">${x.k}</td><td>${esc(x.c.toUpperCase())}</td><td>${esc(String(x.amount ?? x[x.c] ?? ""))}</td><td>${esc(String(x.fee ?? ""))}</td><td>${esc(String(x.status ?? ""))}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada deposit/penarikan.</td></tr></tbody>'; }
+    if (!p) { el.innerHTML = '<tbody><tr><td class="note">Pilih koin dulu (tiket order, tab Pasar, atau Portofolio).</td></tr></tbody>'; return; }
+    el.innerHTML = '<tbody><tr><td class="status">Memuat…</td></tr></tbody>'; const T = (s) => (s ? new Date(+s).toLocaleString("id-ID") : ""), sym = p.base + "idr", B = p.base.toUpperCase();
+    try {
+      if (kind === "orderHistory") { const j = await idxRead("orderHistory", { symbol: sym }), L = Array.isArray(j) ? j : j.data || [];
+        el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Jenis</th><th>Harga</th><th>Jumlah</th><th>Terisi</th><th>Status</th></tr></thead><tbody>` + L.map((o) => `<tr><td>${T(o.submitTime || o.time)}</td><td class="${/BUY/i.test(o.side) ? "pos" : "neg"}">${esc(o.side)}</td><td>${esc(o.type || "")}</td><td>${fmtNum(+o.price)}</td><td>${esc(String(o.origQty ?? o.oriQty ?? ""))}</td><td>${esc(String(o.executedQty ?? ""))}</td><td>${esc(o.status || "")}</td></tr>`).join("") + "</tbody>"
+          : `<tbody><tr><td class="note">Tidak ada order ${B} dalam 7 hari terakhir (batas API Indodax v2).</td></tr></tbody>`; }
+      else if (kind === "tradeHistory") { const j = await idxRead("myTrades", { symbol: sym }), L = Array.isArray(j) ? j : j.data || []; let bq = 0, bi = 0, sq = 0, si = 0, fee = 0;
+        for (const t of L) { const q = +t.qty || 0, v = +t.quoteQty || q * +t.price; fee += +t.commission || 0; if (t.isBuyer) { bq += q; bi += v; } else { sq += q; si += v; } }
+        el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Jumlah</th><th>Nilai (Rp)</th><th>Fee</th></tr></thead><tbody>` + L.map((t) => `<tr><td>${T(t.time)}</td><td class="${t.isBuyer ? "pos" : "neg"}">${t.isBuyer ? "beli" : "jual"}</td><td>${fmtNum(+t.price)}</td><td>${nf(8).format(+t.qty || 0)}</td><td>${nf(0).format(+t.quoteQty || 0)}</td><td>${esc(String(t.commission ?? ""))} ${esc(String(t.commissionAsset || ""))}</td></tr>`).join("") +
+          `<tr><td colspan="6" class="note">Rata-rata beli ${bq ? "Rp " + fmtNum(bi / bq) : "–"} (${nf(8).format(bq)}) · rata-rata jual ${sq ? "Rp " + fmtNum(si / sq) : "–"} (${nf(8).format(sq)})${bq && p.last ? ` · harga kini vs rata-rata beli: <b class="${cls(p.last / (bi / bq) - 1)}">${spct(p.last / (bi / bq) - 1, 1)}</b>` : ""} · total fee ${nf(0).format(fee)}</td></tr></tbody>`
+          : `<tbody><tr><td class="note">Tidak ada trade ${B} dalam 7 hari terakhir (batas API Indodax v2).</td></tr></tbody>`; }
+      else { const [dp, wd] = await Promise.all([idxRead("deposits", { coin: B }).catch((e) => ({ err: e.message })), idxRead("withdrawals", { coin: B }).catch((e) => ({ err: e.message }))]);
+        const rows = [...(Array.isArray(dp) ? dp : []).map((x) => ({ k: "deposit", t: x.insertTime, amt: x.amount, fee: "", st: x.status })), ...(Array.isArray(wd) ? wd : []).map((x) => ({ k: "penarikan", t: x.applyTime, amt: x.amount, fee: x.transactionFee, st: x.status }))].sort((a, b) => (+b.t || 0) - (+a.t || 0));
+        el.innerHTML = rows.length ? `<thead><tr><th>Waktu</th><th>Jenis</th><th>Jumlah ${esc(B)}</th><th>Fee</th><th>Status</th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${T(x.t)}</td><td class="${x.k === "deposit" ? "pos" : "neg"}">${x.k}</td><td>${esc(String(x.amount ?? x.amt ?? ""))}</td><td>${esc(String(x.fee ?? ""))}</td><td>${esc(String(x.st ?? ""))}</td></tr>`).join("") + "</tbody>"
+          : `<tbody><tr><td class="note">Tidak ada deposit/penarikan ${B} dalam 90 hari.${dp.err || wd.err ? " " + esc(dp.err || wd.err) : ""}</td></tr></tbody>`; }
     } catch (e) { el.innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
   }
   function setXTab(t) { ix.tab = t; document.querySelectorAll("#xTabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.xt === t)); document.querySelectorAll("#idxPane .x-pane").forEach((p) => (p.hidden = p.dataset.xp !== t));
@@ -2182,13 +2184,13 @@
     setInterval(() => { if ($("idxPane").hidden || document.hidden || !isOwner()) return; if (ix.tab === "book") idxBook(); else if (ix.tab === "mkt") { idxPairsLoad(true).then(idxMarket); } }, 15000);
   }
   async function idxOpenOrders() {
-    try { const j = await idxRead("openOrders"); const o = j.return && j.return.orders ? j.return.orders : {}; const rows = [];
-      for (const [pair, L] of Object.entries(o)) for (const x of (Array.isArray(L) ? L : [])) rows.push({ pair, ...x });
-      $("xOpen").innerHTML = rows.length ? `<thead><tr><th>Pair</th><th>Sisi</th><th>Harga</th><th>Sisa</th><th>Waktu</th><th></th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(x.pair)}</td><td class="${x.type === "buy" ? "pos" : "neg"}">${esc(x.type)}</td><td>${fmtNum(+x.price)}</td>
-        <td class="txt">${esc(Object.entries(x).filter(([k]) => /^remain_/.test(k)).map(([k, v]) => k.replace("remain_", "") + " " + v).join(", "))}</td><td>${x.submit_time ? new Date(+x.submit_time * 1000).toLocaleString("id-ID") : ""}</td>
-        <td><button class="x-btn" data-xcancel="${esc(x.order_id)}" data-pair="${esc(x.pair)}" data-type="${esc(x.type)}">Batal</button></td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Tidak ada order terbuka.</td></tr></tbody>';
+    try { const L = await idxRead("openOrders"), rows = Array.isArray(L) ? L : [];
+      $("xOpen").innerHTML = rows.length ? `<thead><tr><th>Pair</th><th>Sisi</th><th>Jenis</th><th>Harga</th><th>Jumlah</th><th>Terisi</th><th>Waktu</th><th></th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(String(x.symbol).toUpperCase())}</td><td class="${/BUY/i.test(x.side) ? "pos" : "neg"}">${esc(x.side)}</td><td>${esc(x.type || "")}</td><td>${fmtNum(+x.price)}</td>
+        <td>${esc(String(x.origQty ?? ""))}</td><td>${esc(String(x.executedQty ?? ""))}</td><td>${x.time ? new Date(+x.time).toLocaleString("id-ID") : ""}</td>
+        <td><button class="x-btn" data-xcancel="${esc(String(x.orderId))}" data-sym="${esc(String(x.symbol).toLowerCase())}">Batal</button></td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Tidak ada order terbuka.</td></tr></tbody>';
     } catch (e) { $("xOpen").innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
   }
+
 
   // ---------- tiket order di dalam Analisis 1 aset ----------
   // Tiket yang sama dipindah antara F6 dan kartu Order di Analisis, jadi aturan & riwayatnya satu.
@@ -2239,7 +2241,7 @@
         $("dSym").value = sym; $("dType").value = "market"; $("dQty").value = kindOf(sym) === "idx" ? p.units / 100 : p.units; ppPreview(); $("dSym").scrollIntoView({ block: "center" }); return; }
       const dc = e.target.closest("[data-dcancel]"); if (dc) { pp.a.orders.splice(+dc.dataset.dcancel, 1); ppSave(); renderPaper(); return; }
       const db = e.target.closest("[data-dbrk]"); if (db) { const p = pp.a.pos[db.dataset.dbrk]; if (p) { delete p.brk; ppSave(); renderPaper(); } return; }
-      const xc = e.target.closest("[data-xcancel]"); if (xc) { idxCall("cancelOrder", { pair: xc.dataset.pair, order_id: xc.dataset.xcancel, type: xc.dataset.type }).then(() => { toast("Order Indodax dibatalkan."); idxOpenOrders(); }).catch((er) => toast("Gagal batal: " + er.message)); } });
+      const xc = e.target.closest("[data-xcancel]"); if (xc) { idxCall("cancelOrder", { symbol: xc.dataset.sym, orderId: xc.dataset.xcancel }).then(() => { toast("Order Indodax dibatalkan."); idxOpenOrders(); }).catch((er) => toast("Gagal batal: " + er.message)); } });
     // Indodax
     $("xSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; ix.side = b.dataset.s; document.querySelectorAll("#xSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); idxPreview(); });
     $("xPair").addEventListener("input", () => { const v = $("xPair").value.trim().toLowerCase(), ul = $("xSugg"); if (!v || !ix.pairs) { ul.hidden = true; return; }

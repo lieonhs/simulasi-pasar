@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029132508">
+<link rel="stylesheet" href="style.css?v=20261029132956">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -415,7 +415,7 @@
       <div class="card x-pane" data-xp="hist" hidden><div class="card-h"><h2>Riwayat <span class="tag" id="xHistPair">pilih koin</span></h2><div class="seg small" id="xHistTabs"><button class="seg-btn" data-h="orderHistory">Order</button><button class="seg-btn" data-h="tradeHistory">Trade</button><button class="seg-btn" data-h="transHistory">Deposit & tarik</button></div></div><div class="table-wrap x-scroll"><table id="xHist"></table></div></div>
       <div class="card x-pane" data-xp="log" hidden><h2>Log order dari web ini</h2><div class="table-wrap"><table id="xLog"></table></div></div>
       <div class="card x-pane" data-xp="setup" hidden><h2>Langkah menyambungkan Indodax</h2><ol class="readme" id="xSteps">
-        <li>Login ke indodax.com → menu <b>Trade API</b> (pengaturan akun) → buat API key baru. Pastikan akunmu sudah verifikasi identitas.</li>
+        <li>Login ke indodax.com → menu <b>Trade API</b> → buat <b>Trade API V2</b> key baru. Pastikan akunmu sudah verifikasi identitas.</li>
         <li>Centang izin <b>view</b> dan <b>trade</b> saja. <b>Jangan centang withdraw.</b> Web ini memang tidak punya fungsi tarik dana, jadi izin itu tidak dibutuhkan.</li>
         <li>Simpan <b>API key</b> dan <b>secret key</b> yang muncul. Jangan kirim lewat chat atau taruh di kode.</li>
         <li>Buka Supabase → project <b>my_pricess</b> → Edge Functions → <b>Secrets</b>. Tambahkan <code>INDODAX_KEY</code> dan <code>INDODAX_SECRET</code>.</li>
@@ -1060,8 +1060,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029132508";</script>
-<script src="engine.js?v=20261029132508"></script>
-<script src="app.js?v=20261029132508"></script>
+<script>window.APP_V = "20261029132956";</script>
+<script src="engine.js?v=20261029132956"></script>
+<script src="app.js?v=20261029132956"></script>
 </body>
 </html>
