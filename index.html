@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029142120">
+<link rel="stylesheet" href="style.css?v=20261029164132">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -157,6 +157,15 @@
     <div id="rdStatus" class="status"></div><div class="bar"><div id="rdBar"></div></div>
     <div id="rdSum" class="rd-sum"></div>
     <div class="table-wrap"><table id="rdTable"></table></div>
+  </section>
+  <section class="card gem-card" id="gemCard">
+    <div class="card-h"><h2>Hidden gems <span class="tag">mencari berlian di lumpur</span></h2>
+      <div class="rd-ctl"><select id="gmUni"><option value="idxs" selected>IDX menengah & kecil (~90)</option><option value="alt">Kripto altcoin (~30)</option><option value="usm">AS menengah (~30)</option><option value="wl">Watchlist saya</option></select>
+        <label class="toggle"><input type="checkbox" id="gmDeep" checked> Uji ML + deep learning 5 teratas</label><button id="gmRun" class="btn primary">Cari gems</button></div></div>
+    <div id="gmStatus" class="status"></div><div class="bar"><div id="gmBar"></div></div>
+    <div id="gmSum" class="rd-sum"></div>
+    <div class="table-wrap"><table id="gmTable"></table></div>
+    <p class="note keep" id="gmNote" hidden>Gems = sudah jatuh jauh dari puncak, mulai berbalik (di atas MA50, MA20 naik), ada akumulasi (OBV/CMF/volume naik), murah/berkualitas bila ada data fundamental, dan didukung model. <b>Kandidat kuat</b> hanya bila ada bukti teruji (pola gem pernah berhasil di aset itu, ML/deep learning teruji, atau setup A+). Saham kecil bisa sangat tidak likuid dan datanya kurang lengkap: ini titik awal riset, bukan sinyal beli.</p>
   </section>
   <section class="card">
     <h2>Watchlist</h2>
@@ -1060,8 +1069,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029142120";</script>
-<script src="engine.js?v=20261029142120"></script>
-<script src="app.js?v=20261029142120"></script>
+<script>window.APP_V = "20261029164132";</script>
+<script src="engine.js?v=20261029164132"></script>
+<script src="app.js?v=20261029164132"></script>
 </body>
 </html>

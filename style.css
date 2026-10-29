@@ -712,3 +712,10 @@ body.in-term #termView { min-height: calc(100vh - 100px); }
 @media (max-width: 900px) { .tm-keys { display: none; } }
 body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }
 .tm-grp { display: inline-flex; gap: 3px; overflow-x: auto; } .tm-grp a { border: 1px solid #333; white-space: nowrap; }
+/* hidden gems */
+#screenView > #gemCard { grid-column: 1 / -1; position: static; margin-bottom: 18px; }
+.gm-Kandidatkuat { border-color: var(--good); color: var(--good); font-weight: 700; } .gm-Pantau { border-color: var(--accent); color: var(--accent); } .gm-Spekulatif { border-color: #d9a400; color: #d9a400; } .gm-Lewati { color: var(--muted); }
+.gm-b { display: inline-block; width: 60px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; vertical-align: middle; } .gm-b > i { display: block; height: 100%; background: var(--good); }
+#gmTable td.num { text-align: right; font-family: var(--mono); white-space: nowrap; } .gm-th { font-size: 12px; color: var(--muted); min-width: 260px; }
+@media (max-width: 640px) { #gmTable th:nth-child(5), #gmTable td:nth-child(5), #gmTable th:nth-child(6), #gmTable td:nth-child(6), #gmTable th:nth-child(7), #gmTable td:nth-child(7), #gmTable th:nth-child(8), #gmTable td:nth-child(8) { display: none; } }
+#gmTable th, #gmTable td { text-align: left; } #gmTable th:nth-child(4), #gmTable th:nth-child(5), #gmTable th:nth-child(8), #gmTable th:nth-child(9) { text-align: right; }

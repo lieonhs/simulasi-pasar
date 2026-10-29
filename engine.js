@@ -1888,6 +1888,26 @@
     return { px, atr, vol: sig, ret1m: ret(21), ret3m: ret(63), conf: C ? { s: C.sNow, n: C.nNow, valid: C.valid, ic: C.ic, aplus: C.sel.active, best: C.sel.best, base: C.base, trend: C.facs.find((f) => f.k === "trend").now, week: C.facs.find((f) => f.k === "week").now } : null,
       bin: B ? { pUp: B.pUp, pDn: B.pDn, pNone: B.pNone, ev: B.pUp * 3 - B.pDn * 2, edge: B0 ? B.pUp - B0.pUp : 0, mu, tgt: px + 3 * atr, stp: px - 2 * atr } : null, ml: F, d: D.d[n - 1] };
   }
+  // ---------- Hidden gems: jatuh jauh + mulai berbalik + akumulasi diam-diam; polanya diuji di riwayat aset itu sendiri ----------
+  function gemAsset(D, o = {}) {
+    const n = D.n, c = D.c, v = D.v, h = D.h, l = D.l, F = o.F || 40, ma20 = T.sma(c, 20), ma50 = T.sma(c, 50), ma200 = T.sma(c, 200), hi = T.hh(h, 252), lo = T.ll(l, 252);
+    const hasV = v.filter((x) => x > 0).length > n * 0.8, obv = new Array(n).fill(0); for (let i = 1; i < n; i++) obv[i] = obv[i - 1] + (c[i] > c[i - 1] ? v[i] : c[i] < c[i - 1] ? -v[i] : 0);
+    const v20 = T.sma(v, 20), v120 = T.sma(v, 120), lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0)), s20 = T.std(lr, 20), s120 = T.std(lr, 120);
+    const mfv = c.map((x, i) => (h[i] > l[i] ? ((x - l[i]) - (h[i] - x)) / (h[i] - l[i]) * v[i] : 0)), cmf = T.sma(mfv, 20).map((x, i) => (v20[i] > 0 ? x / v20[i] : 0));
+    const feat = (t) => { if (t < 260 || hi[t] == null || ma200[t] == null) return null; const rng = hi[t] - lo[t], pos = rng > 0 ? (c[t] - lo[t]) / rng : 0.5, dd = 1 - c[t] / hi[t];
+      const near = pos < 0.45 && dd >= 0.25, cross = (() => { for (let k = 0; k <= 20; k++) { const a = t - k; if (ma20[a] != null && ma50[a] != null && ma20[a - 1] != null && ma50[a - 1] != null && ma20[a] > ma50[a] && ma20[a - 1] <= ma50[a - 1]) return true; } return false; })();
+      const turnS = (c[t] > ma50[t] ? 0.4 : 0) + (ma20[t] > ma20[t - 10] ? 0.3 : 0) + (cross || ma20[t] > ma50[t] ? 0.3 : 0);
+      const obvD = hasV && v20[t] > 0 ? (obv[t] - obv[t - 60]) / (v20[t] * 60) : 0, pr60 = c[t] / c[t - 60] - 1, accS = hasV ? Math.max(0, Math.min(1, (obvD > 0.05 && pr60 < 0.15 ? 0.5 : obvD > 0 ? 0.25 : 0) + (cmf[t] > 0.05 ? 0.3 : cmf[t] > 0 ? 0.15 : 0) + (v120[t] > 0 && v20[t] / v120[t] > 1.2 ? 0.2 : 0))) : 0;
+      const sq = s120[t] > 0 ? s20[t] / s120[t] : 1;
+      return { pos, dd, near, cross, turn: turnS, accum: accS, obvD, cmf: cmf[t], volUp: v120[t] > 0 ? v20[t] / v120[t] : NaN, squeeze: sq, gem: near && turnS >= 0.7 && (!hasV || accS >= 0.45) }; };
+    const now = feat(n - 1); if (!now) return null;
+    // uji historis pola gem di aset ini: return F hari setelah pola muncul vs semua hari
+    const pts = []; let ep = 0, lastG = -1e9; for (let t = 260; t < n - F; t++) { const f = feat(t); if (!f) continue; pts.push({ g: f.gem, r: c[t + F] / c[t] - 1 }); if (f.gem) { if (t - lastG > F) ep++; lastG = t; } }
+    const all = pts.length, G = pts.filter((p) => p.g), up = (L) => (L.length ? L.filter((p) => p.r > 0).length / L.length : NaN), avg = (L) => (L.length ? mean(L.map((p) => p.r)) : NaN);
+    const base = up(pts), gu = up(G), ne = Math.min(ep, Math.round(G.length / Math.max(1, F / 4))), z = ne > 0 && base > 0 && base < 1 ? (gu - base) / Math.sqrt(base * (1 - base) / ne) : NaN; // n efektif = jumlah episode terpisah
+    const liq = mean(c.slice(-20).map((x, i) => x * (v[n - 20 + i] || 0)));
+    return { ...now, liq, hasV, F, hist: { n: G.length, nEff: ne, up: gu, base, ret: avg(G), retBase: avg(pts), z, valid: ne >= 4 && z >= 1.65 && gu > base + 0.1, all } };
+  }
   // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
   function goalSim(o) {
     const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5, dep = Math.max(0, o.monthly || 0) * 12 / tpy;
@@ -1908,6 +1928,6 @@
     for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (P(m) >= conf) hi = m; else lo = m; } return hi; }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { gemAsset, binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

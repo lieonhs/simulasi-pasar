@@ -9,6 +9,7 @@ self.onmessage = (e) => {
     else if (type === "stratAll") res = MCEngine.runAllStrategies(cfg.D, cfg.o);
     else if (type === "ml") res = MCEngine.mlModel(cfg.D, { ...cfg.o, progress });
     else if (type === "radar") res = MCEngine.radarAsset(cfg.D, cfg.o);
+    else if (type === "gem") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), gem: MCEngine.gemAsset(cfg.D, cfg.o) };
     else if (type === "noise") res = MCEngine.noiseBand(cfg.bars, cfg.o);
     else if (type === "math") res = MCEngine.mathLab(cfg.px, cfg.o);
     else if (type === "qport") res = MCEngine.quantPortfolio(cfg.series, cfg.opt);

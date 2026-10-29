@@ -2449,6 +2449,7 @@
     ["checklist sebelum beli", "Checklist sebelum beli", "BELI & keyakinan ≥ 50% (lebih baik A+), RR ≥ 1,5, ≥ 3 sinyal searah, rezim tidak bergejolak, tidak ada aksi korporasi dekat, stop siap di sekuritas, rugi bila stop ≤ 1–2% modal, porsi aset ≤ 30%."],
     ["checklist sebelum jual", "Checklist sebelum jual", "Jual karena target/stop tersentuh atau rencana jadi JUAL — bukan panik satu candle merah. Target 1 tercapai: jual sebagian, geser stop ke harga masuk. Catat hasilnya."],
     ["obligasi durasi dv01 konveksitas sbn ori sr yield", "Obligasi", "Mode Yield obligasi: proyeksi yield (Vasicek/CIR) + durasi, DV01, konveksitas, titik impas. Kalkulator obligasi untuk SBN/ORI/SR: isi yield, kupon, tenor, nominal → harga, kupon bersih, skenario yield ±200bp."],
+    ["hidden gems berlian tersembunyi diamond murah", "Hidden gems", "F1 → Hidden gems (atau ketik <code>GEMS</code>). Mencari aset yang sudah jatuh jauh, mulai berbalik, ada akumulasi, murah/berkualitas, dan didukung model. ◆ = pola gem pernah berhasil di riwayat aset itu. Kandidat kuat hanya bila ada bukti teruji dan likuid."],
     ["radar scan semua aset perhatikan uji", "Radar", "F1 → Radar (atau ketik <code>RADAR</code>): memindai banyak aset sekaligus dengan konfluensi/A+, binomial (peluang target sebelum stop), nilai intrinsik, dan ML cepat; hasil: Perhatikan / Uji dulu / Abaikan. Klik baris untuk analisis lengkap."],
     ["konfluensi confluence faktor skor timeframe mtf mingguan jam", "Konfluensi & multi-timeframe", "Di kartu Rencana aksi (atau ketik <code>BBCA CONF</code>). Skor = jumlah 9 faktor teknikal (▲ +1, ▼ −1). Lihat apakah skor <b>teruji</b> di aset itu, dan apakah mingguan, harian, 4 jam, dan 1 jam searah."],
     ["keyakinan tinggi a+ setup selektif yakin", "Setup A+ (keyakinan tinggi)", "Keyakinan tinggi yang jujur hanya muncul saat setup A+ terpenuhi: skor konfluensi tinggi + tren harian & mingguan naik, dan kombinasi itu terbukti lebih sering benar di riwayat aset tersebut. Lebih jarang masuk, tapi lebih sering benar. Cari aset dengan <b>A+ aktif</b> di Watchlist → tab Sinyal."],
@@ -2625,10 +2626,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], RADAR: ["Radar: scan semua aset → mana yang diperhatikan", ""], CONF: ["Konfluensi 9 faktor (teruji historis) + multi-timeframe mingguan/harian/4 jam/1 jam", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], RADAR: ["Radar: scan semua aset → mana yang diperhatikan", ""], GEMS: ["Hidden gems: cari aset tersembunyi (nilai + pembalikan + akumulasi + ML/DL)", ""], CONF: ["Konfluensi 9 faktor (teruji historis) + multi-timeframe mingguan/harian/4 jam/1 jam", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", MTF: "CONF", SCAN: "RADAR", RDR: "RADAR", KONFLUENSI: "CONF", CHECK: "CONF", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", MTF: "CONF", SCAN: "RADAR", RDR: "RADAR", GEM: "GEMS", DIAMOND: "GEMS", HIDDEN: "GEMS", KONFLUENSI: "CONF", CHECK: "CONF", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2656,6 +2657,7 @@
     const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
     if (market[fn]) { closeFn(); setView("market"); if (fn === "MOST") { mk.mov = "value"; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.m === "value")); if (mk.at) renderMovers(); }
       setTimeout(() => { const el = $(market[fn]); (el.closest(".card") || el).scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el.closest(".card") || el); }, 400); return; }
+    if (fn === "GEMS") { closeFn(); setView("screen"); setTimeout(() => { $("gemCard").scrollIntoView({ behavior: "smooth", block: "start" }); if (!gm.rows.length) runGems(); }, 300); return; }
     if (fn === "RADAR") { closeFn(); setView("screen"); setTimeout(() => { $("radarCard").scrollIntoView({ behavior: "smooth", block: "start" }); if (!rd.rows.length) runRadar(); }, 300); return; }
     if (fn === "W" || fn === "EQS") { closeFn(); setView("screen"); if (fn === "EQS") setTimeout(() => { const t = document.querySelector('#wlCols .tab[data-c="sinyal"]'); if (t) t.click(); }, 300); return; }
     if (fn === "PORT") { closeFn(); setView("pf"); return; }
@@ -3391,6 +3393,71 @@
     const b = $("liveTicket"); if (b) b.onclick = () => { const p = L.p; setView("trade"); setTradeTab("idx"); setTimeout(() => { ix.pair = p; idxPick(p.base, "buy", { price: String(Math.round(P.entry * r)) });
       if (P.qty > 0) $("xAmt").value = (+P.qty).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); idxPreview(); }, 400); };
   }
+
+  // =====================================================================
+  // HIDDEN GEMS: screening nilai + pembalikan + akumulasi + model (ML/DL) + tesis RAM AI
+  // =====================================================================
+  const GM_UNI = {
+    idxs: ["ACES", "AKRA", "AUTO", "AVIA", "BBYB", "BFIN", "BIRD", "BJBR", "BJTM", "BMTR", "BNGA", "BNLI", "BRMS", "BSDE", "BTPS", "CLEO", "CMRY", "CTRA", "DEWA", "DMAS", "DOID", "DSNG", "ELSA", "ENRG", "ERAA", "ESSA",
+      "GJTL", "HEAL", "HMSP", "HRUM", "INDY", "INKP", "INTP", "ISAT", "JPFA", "JSMR", "KIJA", "LPKR", "LPPF", "LSIP", "MAPA", "MAPI", "MARK", "MBMA", "MEDC", "MIKA", "MNCN", "MPMX", "MTEL", "MYOR", "NCKL", "NISP",
+      "PGEO", "PNLF", "PTBA", "PTPP", "PWON", "RAJA", "SCMA", "SIDO", "SILO", "SMDR", "SMGR", "SMRA", "SMSM", "SRTG", "SSIA", "TAPG", "TBIG", "TINS", "TKIM", "TMAS", "TOWR", "WIKA", "ADMR", "AADI", "PTRO", "ARTO",
+      "BUKA", "EMTK", "KLBF", "CPIN", "ITMG", "INCO", "MDKA", "ANTM", "PGAS", "UNTR"].map((s) => s + ".JK"),
+    alt: ["LINK", "AVAX", "DOT", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ", "FIL", "ALGO", "HBAR", "VET", "AAVE", "UNI", "MKR", "LDO", "RNDR", "GRT", "SAND", "MANA", "AXS", "IMX", "XLM", "ETC", "LTC", "BCH", "TRX", "SUI", "SEI"].map((s) => s + "-USD"),
+    usm: ["PLTR", "CRWD", "SNOW", "DDOG", "NET", "ZS", "MDB", "SHOP", "SQ", "ROKU", "ETSY", "PINS", "SNAP", "U", "RBLX", "AFRM", "SOFI", "HOOD", "COIN", "DKNG", "ENPH", "FSLR", "RIVN", "LCID", "CELH", "DUOL", "TTD", "OKTA", "TWLO", "PATH"] };
+  const gm = { rows: [], busy: false };
+  function gmScore(r) {
+    const G = r.gem, V = r.val, F = r.F, ML = r.ml, C = r.conf, D = r.deep; let s = 0, max = 0; const pro = [], con = [];
+    if (V && V.methods && V.methods.length >= 2) { max += 25; if (V.agree >= 0.6 && V.upside > 0) { const k = Math.min(20, V.upside * 50); s += k; if (V.upside > 0.2) pro.push(`murah ${spct(V.upside, 0)} vs nilai wajar`); } if (F && F.priceToBook > 0 && F.priceToBook < 1 && F.roe > 0.08) { s += 5; pro.push(`P/BV ${nf(2).format(F.priceToBook)}`); } if (V.upside < -0.25 && V.agree >= 0.6) con.push(`mahal ${spct(V.upside, 0)}`); }
+    if (F && (F.roe != null || F.revenueGrowth != null)) { max += 15; if (F.roe > 0.15) { s += 8; pro.push(`ROE ${pct(F.roe, 0)}`); } else if (F.roe > 0.1) s += 5; else if (F.roe != null && F.roe < 0) con.push("rugi (ROE negatif)");
+      if (F.revenueGrowth > 0.1) { s += 4; pro.push(`pendapatan +${pct(F.revenueGrowth, 0)}`); } else if (F.revenueGrowth > 0) s += 2;
+      const de = F.totalDebt != null && F.bookValuePerShare && F.shares ? F.totalDebt / (F.bookValuePerShare * F.shares) : NaN; if (isFinite(de)) { if (de < 1) s += 3; else if (de > 2.5) con.push(`utang ${nf(1).format(de)}× ekuitas`); } }
+    if (G) { max += 40; s += G.turn * 14 + (G.near ? 6 : 0) + G.accum * 15 + (G.squeeze < 0.7 ? 5 : 0);
+      if (G.near) pro.push(`turun ${pct(G.dd, 0)} dari puncak`); if (G.turn >= 0.7) pro.push(G.cross ? "golden cross MA20/50 baru" : "mulai berbalik naik"); if (G.accum >= 0.45) pro.push(G.obvD > 0.05 ? "akumulasi diam-diam (OBV naik)" : "aliran dana masuk"); if (G.squeeze < 0.7) pro.push("volatilitas menyempit");
+      if (G.dd > 0.85 && G.turn < 0.7) { s -= 10; con.push("pisau jatuh (−85% dan belum berbalik)"); } }
+    max += 20; let m = 0; if (ML && ML.valid && ML.p > ML.base) { m += Math.min(10, (ML.p - ML.base) * 200); pro.push(`ML ${pct(ML.p, 0)} teruji`); } if (C && C.aplus) { m += 6; pro.push("setup A+"); } else if (C && C.valid && C.s >= 3) m += 4;
+    if (G && G.hist.valid) { m += 6; pro.push(`pola gem teruji (${pct(G.hist.up, 0)} naik ${G.F} hari)`); }
+    if (D && !D.err) { if (D.valid && D.p > D.base + 0.03) { m += 5; pro.push(`ML penuh ${pct(D.p, 0)}`); } if (D.dl && D.dl.valid && D.dl.p > D.dl.base + 0.03) { m += 5; pro.push(`deep learning ${pct(D.dl.p, 0)}`); } if (D.valid && D.p < D.base - 0.05) con.push("ML penuh condong turun"); }
+    s += Math.min(20, m);
+    const idx = /\.JK$/.test(r.s), liqIdr = G ? G.liq * (idx ? 1 : pp.fx || 16000) : NaN, illiq = isFinite(liqIdr) && liqIdr < (idx ? 3e8 : 1e9);
+    if (illiq) { s -= 15; con.push(`tidak likuid (±${big(liqIdr, "IDR")}/hari)`); } if (ML && !ML.valid) con.push("ML belum teruji");
+    const sc = max ? Math.max(0, (s / max) * 100) : 0, tested = (ML && ML.valid && ML.p > ML.base) || (C && C.aplus) || (G && G.hist.valid) || (D && (D.valid || (D.dl && D.dl.valid)));
+    const st = sc >= 55 && tested && !illiq ? "Kandidat kuat" : sc >= 40 && !illiq ? (tested ? "Pantau" : "Spekulatif") : sc >= 40 ? "Spekulatif" : "Lewati";
+    return { gs: sc, st, pro, con, liqIdr, tested };
+  }
+  function gmThesis(r) { const p = r.pro.slice(0, 4), c = r.con.slice(0, 2); return (p.length ? p.join(", ") : "belum ada alasan kuat") + (c.length ? `. Risiko: ${c.join(", ")}` : "") + "."; }
+  async function runGems() {
+    if (gm.busy) return; gm.busy = true; $("gmRun").disabled = true; $("gmNote").hidden = false;
+    const u = $("gmUni").value, syms = [...new Set(u === "wl" ? $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean) : GM_UNI[u])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0;
+    const tick = (m) => { done++; $("gmBar").style.width = Math.round((100 * done) / (N + (deep ? 5 : 0))) + "%"; $("gmStatus").textContent = m; };
+    gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
+    try {
+      await pool(syms, 4, async (s) => {
+        try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); const crypto = /-USD$/.test(s);
+          const R = await compute("gem", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10, F: 40 } }); let F = null, val = null;
+          if (!crypto) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(s)}`)).json(); val = valEnsemble(F, R.px, (d.currency || "") !== "IDR", null); } catch { /* */ } }
+          const row = { s, name: d.name, ...R, F, val }; Object.assign(row, gmScore(row)); gm.rows.push(row); tick(`${s} ✓`); drawGems(); }
+        catch (e) { gm.rows.push({ s, err: e.message, st: "Gagal", gs: -1, pro: [], con: [] }); tick(`${s} dilewati`); } });
+      if (deep) { const top = gm.rows.filter((r) => !r.err && r.st !== "Lewati").sort((a, b) => b.gs - a.gs).slice(0, 5);
+        for (const r of top) { $("gmStatus").textContent = `Uji mendalam ${r.s}: ML + deep learning…`;
+          try { const d = await fetchSymbol(r.s, "10y"); const M = await compute("ml", { D: buildD(d), o: { horizon: 10 } }); r.deep = { valid: M.valid, p: M.p, base: M.base, auc: M.auc, dl: M.dl && !M.dl.error ? { valid: M.dl.valid, p: M.dl.p, base: M.dl.base, auc: M.dl.auc } : null }; Object.assign(r, gmScore(r)); }
+          catch (e) { r.deep = { err: e.message }; } tick(`Uji mendalam ${r.s} ✓`); drawGems(); } }
+      const k = gm.rows.filter((r) => r.st === "Kandidat kuat").length; $("gmStatus").textContent = `Selesai: ${N} aset · ${k} kandidat kuat · ${gm.rows.filter((r) => r.st === "Pantau").length} pantau`;
+      try { localStorage.setItem("sp_gems_v1", JSON.stringify({ at: Date.now(), uni: u, rows: gm.rows.map((r) => ({ s: r.s, name: r.name, gs: r.gs, st: r.st, pro: r.pro, con: r.con, liqIdr: r.liqIdr, err: r.err, gem: r.gem ? { dd: r.gem.dd, turn: r.gem.turn, accum: r.gem.accum, hist: r.gem.hist, F: r.gem.F } : null, val: r.val ? { upside: r.val.upside, methods: r.val.methods.length } : null, ml: r.ml, deep: r.deep, ret3m: r.ret3m })) })); } catch { /* */ }
+    } finally { gm.busy = false; $("gmRun").disabled = false; $("gmBar").style.width = "100%"; }
+  }
+  function drawGems() {
+    const ord = { "Kandidat kuat": 0, Pantau: 1, Spekulatif: 2, Lewati: 3, Gagal: 4 }, R = gm.rows.slice().sort((a, b) => ord[a.st] - ord[b.st] || b.gs - a.gs), cnt = (k) => gm.rows.filter((r) => r.st === k).length;
+    $("gmSum").innerHTML = ["Kandidat kuat", "Pantau", "Spekulatif", "Lewati"].map((k) => `<span class="rd-pill gm-${k.replace(" ", "")}">${k} <b>${cnt(k)}</b></span>`).join("");
+    const bar = (v) => `<i class="gm-b"><i style="width:${Math.max(2, Math.min(100, v * 100)).toFixed(0)}%"></i></i>`;
+    $("gmTable").innerHTML = `<thead><tr><th>#</th><th>Aset</th><th>Status</th><th>Gem</th><th>Turun dari puncak</th><th>Berbalik</th><th>Akumulasi</th><th>Nilai</th><th>Model</th><th>Tesis RAM AI</th></tr></thead><tbody>` + R.filter((r) => r.st !== "Gagal").slice(0, 60).map((r, i) => {
+      const G = r.gem || {}, F = r.deep && !r.deep.err ? r.deep : r.ml, dl = r.deep && r.deep.dl;
+      return `<tr class="rd-row" data-s="${esc(r.s)}"><td>${i + 1}</td><td><b>${esc(r.s.replace(".JK", "").replace("-USD", ""))}</b><div class="note">${esc(String(r.name || "").slice(0, 22))}</div></td><td><span class="rd-pill gm-${r.st.replace(" ", "")}">${r.st}</span></td><td class="num"><b>${nf(0).format(r.gs)}</b></td>
+        <td class="num">${isFinite(G.dd) ? pct(G.dd, 0) : "–"}</td><td>${bar(G.turn || 0)}</td><td>${bar(G.accum || 0)}</td><td class="num">${r.val && r.val.methods && (r.val.methods.length || r.val.methods) ? `<span class="${r.val.upside > 0 ? "pos" : "neg"}">${spct(r.val.upside, 0)}</span>` : "–"}</td>
+        <td class="num">${F ? `<span class="${F.valid ? (F.p > F.base ? "pos" : "neg") : "note"}">${pct(F.p, 0)}${F.valid ? "" : "·x"}</span>` : "–"}${dl ? ` <span class="note">DL</span> <span class="${dl.valid ? (dl.p > dl.base ? "pos" : "neg") : "note"}">${pct(dl.p, 0)}</span>` : ""}${G.hist && G.hist.valid ? ' <b class="pos" title="pola gem teruji di aset ini">◆</b>' : ""}</td>
+        <td class="gm-th">${esc(gmThesis(r))}</td></tr>`; }).join("") + "</tbody>";
+  }
+  function bindGems() { $("gmRun").onclick = runGems; $("gmTable").addEventListener("click", (e) => { const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
+    try { const j = JSON.parse(localStorage.getItem("sp_gems_v1") || "null"); if (j && j.rows && Date.now() - j.at < 3 * 864e5) { gm.rows = j.rows; $("gmUni").value = j.uni || "idxs"; drawGems(); $("gmNote").hidden = false; $("gmStatus").textContent = `Hasil terakhir ${new Date(j.at).toLocaleString("id-ID")} · klik Cari gems untuk memperbarui`; } } catch { /* */ } }
   function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
     $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
   async function ensureHolidays() { // tahun di luar kalender bawaan (2027): ambil libur nasional otomatis (cuti bersama bursa belum termasuk)
@@ -3906,7 +3973,7 @@
     if (me.role === "admin") refreshAdminBadge();
     if (me._nodb && isOwner()) setTimeout(() => toast("Persetujuan admin belum aktif — ketik SETUP di baris perintah (atau buka PROFIL) untuk SQL siap salin + langkahnya."), 2500);
     if (booted) return; booted = true;
-    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade(); bindStrat(); bindChat(); bindAction(); bindTerm(); bindRadar();
+    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade(); bindStrat(); bindChat(); bindAction(); bindTerm(); bindRadar(); bindGems();
     const P = new URLSearchParams(location.search);
     if (P.get("s")) { setView("detail"); run(); } else if (!document.body.classList.contains("mode-simple") && !document.body.classList.contains("mode-quick")) setView("term"); else { setView("screen"); runWatchlist(); }
   }
