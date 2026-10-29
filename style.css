@@ -684,3 +684,30 @@ body.mode-pro .kpi .h { font-size: 10px; }
 .x-bar { position: relative; text-align: right; min-width: 80px; } .x-bar i { position: absolute; right: 0; top: 2px; bottom: 2px; opacity: .18; border-radius: 2px; } .x-bar i.pos { background: var(--good); } .x-bar i.neg { background: var(--bad); }
 @media (max-width: 640px) { .x-book { grid-template-columns: 1fr; } }
 .x-mini { width: 100%; font-family: var(--mono); font-size: 12px; } .x-mini td { padding: 2px 6px; } .x-mini td:not(:first-child) { text-align: right; }
+/* ===== UI v2: Terminal & navigasi ===== */
+.view-btn .lbl-s { display: none; }
+@media (max-width: 640px) {
+  .view-btn .lbl-l { display: none; } .view-btn .lbl-s { display: inline; }
+  .topbar .views { overflow-x: auto; scrollbar-width: none; } .topbar .view-btn { min-width: 0; font-size: 10.5px; padding: 10px 1px; letter-spacing: 0 !important; }
+  #themeBtn, #cmdLogout { font-size: 0 !important; padding: 5px 8px; } #themeBtn::before { content: "◐"; font-size: 13px; } #cmdLogout::before { content: "⏻"; font-size: 13px; }
+}
+/* header ringkas di Terminal */
+body.in-term .topbar .views { margin-bottom: 6px; } body.in-term .topbar .view-btn { padding: 6px 8px; font-size: 11.5px; }
+body.in-term #termView { min-height: calc(100vh - 100px); }
+/* Terminal: jam jadi strip di atas, panel lebih seimbang */
+#termView .tp-clk .tp-h { display: none; }
+#tmClk { display: flex; gap: 0; overflow-x: auto; padding: 0; scrollbar-width: thin; }
+#tmClk .ck { border-bottom: 0; border-right: 1px solid var(--tl); padding: 4px 12px; min-width: 150px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+#tmClk .ck .t { font-size: 17px; } #tmClk .ck .c { font-size: 10.5px; }
+.tm-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 46px 196px 262px 262px 320px;
+  grid-template-areas: "clk clk clk" "mont mont map" "mon mon foc" "mon mon sc" "gr mov mov"; }
+.tp-clk { overflow: hidden; }
+@media (max-width: 1500px) { .tm-t th:nth-child(3), .tm-t td:nth-child(3), .tm-t th:nth-child(5), .tm-t td:nth-child(5), .tm-t th:nth-child(9), .tm-t td:nth-child(9) { display: none; } .mt .v { font-size: 19px; } }
+@media (max-width: 1100px) { .tm-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: auto;
+  grid-template-areas: "clk clk" "mont mont" "map foc" "mon mon" "sc mov" "gr gr"; } .tm-grid > .tp:not(.tp-clk) { min-height: 240px; } .tp-clk { height: 50px; } .tp-mon { min-height: 300px; } }
+@media (max-width: 700px) { #tmClk { display: flex; } .tm-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "clk" "mont" "foc" "mon" "map" "mov" "sc" "gr"; }
+  .tm-t th:nth-child(6), .tm-t td:nth-child(6), .tm-t th:nth-child(7), .tm-t td:nth-child(7), .tm-t th:nth-child(11), .tm-t td:nth-child(11), .tm-t th:nth-child(13), .tm-t td:nth-child(13) { display: none; } }
+/* hint keyboard di bar terminal */
+.tm-keys { color: var(--dim); font-size: 10.5px; } .tm-keys kbd { border: 1px solid #333; padding: 0 4px; color: var(--amb); font: inherit; }
+@media (max-width: 900px) { .tm-keys { display: none; } }
+body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }

@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029132956">
+<link rel="stylesheet" href="style.css?v=20261029134139">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -131,7 +131,7 @@
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
 </svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="modeBtn" title="Mode tampilan">MODE: PRO</button><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Akun trading</button><button class="view-btn pro-only-v" data-v="term"><span class="fk">F7</span>Terminal</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span><span class="lbl-l">Watchlist</span><span class="lbl-s">Watch</span></button><button class="view-btn" data-v="quant"><span class="fk">F2</span><span class="lbl-l">Quant Lab</span><span class="lbl-s">Quant</span></button><button class="view-btn active" data-v="detail"><span class="fk">F3</span><span class="lbl-l">Analisis 1 aset</span><span class="lbl-s">Aset</span></button><button class="view-btn" data-v="market"><span class="fk">F4</span><span class="lbl-l">Pasar</span><span class="lbl-s">Pasar</span></button><button class="view-btn" data-v="pf"><span class="fk">F5</span><span class="lbl-l">Portofolio</span><span class="lbl-s">Porto</span></button><button class="view-btn" data-v="trade"><span class="fk">F6</span><span class="lbl-l">Akun trading</span><span class="lbl-s">Trade</span></button><button class="view-btn pro-only-v" data-v="term"><span class="fk">F7</span><span class="lbl-l">Terminal</span><span class="lbl-s">Term</span></button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
   <button class="fchip active" data-f="all">Semua</button>
@@ -216,7 +216,7 @@
 <section class="term-wrap" id="termView" hidden>
   <div class="tm-bar"><span class="tm-brand">RAM&nbsp;TERMINAL</span><span class="tm-k">LINK</span><span class="tm-link" id="tmLink">—</span>
     <span class="tm-k">UPD</span><span id="tmUpd">—</span><span class="tm-k">SRC</span><span>Yahoo · Binance · tertunda ±15 mnt (IDX)</span>
-    <span class="tm-sp"></span><button class="tm-btn" id="tmPanels">PANEL ▾</button><button class="tm-btn" id="tmRefresh">REFRESH ⟳</button><button class="tm-btn" id="tmDense">KERAPATAN</button></div>
+    <span class="tm-sp"></span><span class="tm-keys"><kbd>↑</kbd><kbd>↓</kbd> pilih · <kbd>Enter</kbd> analisis · <kbd>□</kbd> perbesar · <kbd>Esc</kbd> kecilkan</span><button class="tm-btn" id="tmPanels">PANEL ▾</button><button class="tm-btn" id="tmRefresh">REFRESH ⟳</button><button class="tm-btn" id="tmDense">KERAPATAN</button></div>
   <div class="tm-menu" id="tmMenu" hidden></div>
   <div class="tm-grid" id="tmGrid">
     <div class="tp tp-clk" data-tp="clk"><div class="tp-h"><b>1</b> WCLK <span>Jam dunia &amp; status bursa</span><i class="tp-max">□</i></div><div class="tp-b" id="tmClk"></div></div>
@@ -1060,8 +1060,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029132956";</script>
-<script src="engine.js?v=20261029132956"></script>
-<script src="app.js?v=20261029132956"></script>
+<script>window.APP_V = "20261029134139";</script>
+<script src="engine.js?v=20261029134139"></script>
+<script src="app.js?v=20261029134139"></script>
 </body>
 </html>

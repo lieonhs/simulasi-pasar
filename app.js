@@ -3636,6 +3636,13 @@
       $("tmUpd").textContent = new Date().toLocaleTimeString("id-ID", { hour12: false });
       tmDraw(); if (full || Object.keys(tm.h).length < all.length) { await tmLoadHist([tm.sel, ...all]); tmDraw(); } }
     finally { tm.busy = false; } }
+  // navigasi keyboard Terminal: ↑/↓ pilih baris monitor, Enter = analisis, Esc = kecilkan panel
+  document.addEventListener("keydown", (e) => { if ($("termView").hidden || e.target.closest("input, textarea, select")) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { const rows = [...document.querySelectorAll("#tmMon tr[data-tl]")]; if (!rows.length) return; e.preventDefault();
+      let i = rows.findIndex((r) => r.dataset.tl === tm.sel); i = Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1))); const s = rows[i].dataset.tl;
+      rows.forEach((r) => r.classList.toggle("sel", r === rows[i])); rows[i].scrollIntoView({ block: "nearest" }); tmSelect(s); }
+    else if (e.key === "Enter" && tm.sel) { e.preventDefault(); openDetail(tm.sel); }
+    else if (e.key === "Escape") { document.querySelectorAll("#termView .tp.max").forEach((p) => p.classList.remove("max")); } });
   function tmDraw() { tmClock(); tmMont(); tmMon(); tmMap(); tmGrid(); tmFocus(); tmScatter(); tmMovers(); $("tmLink").textContent = tm.sel || "—"; }
   function tmClock() { const now = new Date();
     $("tmClk").innerHTML = TM_CLK.map(([city, tz, o, c, mkt]) => { const f = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false }).formatToParts(now),
