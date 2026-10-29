@@ -3618,8 +3618,17 @@
   const TM_CLK = [["Jakarta", "Asia/Jakarta", 540, 960, "IDX"], ["Tokyo", "Asia/Tokyo", 540, 900], ["Hong Kong", "Asia/Hong_Kong", 570, 960], ["Singapura", "Asia/Singapore", 540, 1020],
     ["London", "Europe/London", 480, 990], ["New York", "America/New_York", 570, 960, "US"], ["Sydney", "Australia/Sydney", 600, 960]];
   const TM_PANELS = [["clk", "Jam dunia"], ["mont", "Montase kuotasi"], ["map", "Peta pasar"], ["mon", "Monitor"], ["foc", "Fokus"], ["sc", "Scatter risiko"], ["gr", "Grafik"], ["mov", "Penggerak"]];
-  const tmWatch = () => [...new Set($("wlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 30);
-  const tmName = (s) => { const m = TM_MONT.find((x) => x[0] === s); return m ? m[1] : s.replace(/\.JK$/, ""); };
+  // kelompok aset di monitor Terminal (tidak hanya IHSG)
+  const TM_GRP = { mix: ["Lintas aset", ["^JKSE", "^GSPC", "^IXIC", "^N225", "^HSI", "BBCA.JK", "BBRI.JK", "TLKM.JK", "AAPL", "NVDA", "MSFT", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "GC=F", "CL=F", "IDR=X", "^TNX"]],
+    wl: ["Watchlist", null], idx: ["IDX", null], us: ["AS", ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V", "LLY", "BRK-B", "NFLX", "AMD", "COST"]],
+    crypto: ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "LINK-USD", "TON11419-USD", "DOT-USD", "TRX-USD"]],
+    macro: ["Indeks · FX · Komoditas", ["^JKSE", "^GSPC", "^IXIC", "^DJI", "^N225", "^HSI", "^FTSE", "^GDAXI", "IDR=X", "EURUSD=X", "JPY=X", "SGDIDR=X", "GC=F", "SI=F", "CL=F", "BZ=F", "NG=F", "HG=F", "^TNX", "^VIX"]] };
+  const TM_NAMES = { "^JKSE": "IHSG", "^JKLQ45": "LQ45", "^GSPC": "S&P 500", "^IXIC": "Nasdaq", "^DJI": "Dow Jones", "^N225": "Nikkei", "^HSI": "Hang Seng", "^FTSE": "FTSE 100", "^GDAXI": "DAX", "IDR=X": "USD/IDR", "EURUSD=X": "EUR/USD", "JPY=X": "USD/JPY", "SGDIDR=X": "SGD/IDR",
+    "GC=F": "Emas", "SI=F": "Perak", "CL=F": "Minyak WTI", "BZ=F": "Brent", "NG=F": "Gas alam", "HG=F": "Tembaga", "^TNX": "US 10Y", "^VIX": "VIX", "TON11419-USD": "TON" };
+  try { tm.grp = localStorage.getItem("sp_tm_grp") || "mix"; } catch { tm.grp = "mix"; }
+  const tmWatch = () => { const g = tm.grp || "mix", list = g === "wl" ? $("wlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean) : g === "idx" ? MK.stocks.slice(0, 30) : (TM_GRP[g] || TM_GRP.mix)[1]; return [...new Set(list)].slice(0, 30); };
+  const tmName = (s) => TM_NAMES[s] || s.replace(/\.JK$/, "").replace(/-USD$/, "");
+  function tmGrpBar() { const el = $("tmGrp"); if (!el) return; el.innerHTML = Object.entries(TM_GRP).map(([k, [n]]) => `<a data-tg="${k}" class="${k === (tm.grp || "mix") ? "on" : ""}">${n}</a>`).join(""); }
   const fx2 = (v) => (v == null || !isFinite(v) ? "–" : Math.abs(v) >= 1000 ? nf(0).format(v) : Math.abs(v) >= 10 ? nf(2).format(v) : nf(4).format(v));
   function tmLine(arr, w = 300, h = 70, col) { if (!arr || arr.length < 2) return ""; const mn = Math.min(...arr), mx = Math.max(...arr), sx = w / (arr.length - 1), sy = mx > mn ? (h - 6) / (mx - mn) : 0;
     const pts = arr.map((v, i) => `${(i * sx).toFixed(1)},${(h - 3 - (v - mn) * sy).toFixed(1)}`).join(" "), c = col || (arr[arr.length - 1] >= arr[0] ? "#19c37d" : "#ff4d4f");
@@ -3645,7 +3654,7 @@
       rows.forEach((r) => r.classList.toggle("sel", r === rows[i])); rows[i].scrollIntoView({ block: "nearest" }); tmSelect(s); }
     else if (e.key === "Enter" && tm.sel) { e.preventDefault(); openDetail(tm.sel); }
     else if (e.key === "Escape") { document.querySelectorAll("#termView .tp.max").forEach((p) => p.classList.remove("max")); } });
-  function tmDraw() { tmClock(); tmMont(); tmMon(); tmMap(); tmGrid(); tmFocus(); tmScatter(); tmMovers(); $("tmLink").textContent = tm.sel || "—"; }
+  function tmDraw() { tmGrpBar(); tmClock(); tmMont(); tmMon(); tmMap(); tmGrid(); tmFocus(); tmScatter(); tmMovers(); $("tmLink").textContent = tm.sel || "—"; }
   function tmClock() { const now = new Date();
     $("tmClk").innerHTML = TM_CLK.map(([city, tz, o, c, mkt]) => { const f = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false }).formatToParts(now),
         g = (t) => (f.find((x) => x.type === t) || {}).value, hh = +g("hour") % 24, mm = +g("minute"), wd = g("weekday"), day = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now), min = hh * 60 + mm;
@@ -3674,7 +3683,8 @@
       if (w >= h) { x += th; w -= th; } else { y += th; h -= th; } rest = rest.slice(row.length); }
     return out; }
   function tmMap() { const el = $("tmMap"), W = el.clientWidth || 400, H = Math.max(180, el.clientHeight - 8);
-    const R = tmRows().filter((r) => isFinite(r.pc)).map((r) => ({ s: r.s, pc: r.pc, v: isFinite(r.val) && r.val > 0 ? r.val : 1 })).sort((a, b) => b.v - a.v);
+    const eq = ["mix", "macro"].includes(tm.grp), fxr = (s) => (/\.JK$/.test(s) ? 1 : pp.fx || 16000); // campuran aset & mata uang: luas sama rata
+    const R = tmRows().filter((r) => isFinite(r.pc)).map((r) => ({ s: r.s, pc: r.pc, v: eq ? 1 : isFinite(r.val) && r.val > 0 ? r.val * fxr(r.s) : 1 })).sort((a, b) => b.v - a.v);
     if (!R.length) { el.innerHTML = '<p class="tm-dim">Menunggu kuotasi…</p>'; return; } const sumV = R.reduce((a, b) => a + b.v, 0); R.forEach((r) => (r.v = Math.max(r.v, sumV * 0.01)));
     const col = (p) => { const k = Math.min(1, Math.abs(p) / 0.03); return p >= 0 ? `rgb(${Math.round(20 - 10 * k)},${Math.round(70 + 110 * k)},${Math.round(45 + 40 * k)})` : `rgb(${Math.round(80 + 150 * k)},${Math.round(30 - 10 * k)},${Math.round(35 - 10 * k)})`; };
     el.innerHTML = `<div class="tm-map" style="height:${H}px">${squarify(R, 0, 0, W - 8, H).map((b) => `<div data-tl="${b.s}" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;background:${col(b.pc)}">${b.w > 40 && b.h > 22 ? `<b>${esc(tmName(b.s))}</b>${spct(b.pc, 2)}` : ""}</div>`).join("")}</div>`; }
@@ -3717,6 +3727,7 @@
     tmRefresh(true); clearInterval(tm.timer); tm.timer = setInterval(() => { if ($("termView").hidden) { clearInterval(tm.timer); return; } tmRefresh(); }, 15000);
     clearInterval(tm.ck); tm.ck = setInterval(() => { if (!$("termView").hidden) tmClock(); }, 20000); }
   function bindTerm() {
+    $("tmGrp").addEventListener("click", (e) => { const g = e.target.closest("[data-tg]"); if (!g) return; tm.grp = g.dataset.tg; try { localStorage.setItem("sp_tm_grp", tm.grp); } catch { /* */ } tm.sel = tmWatch()[0]; tmGrpBar(); tmDraw(); tmRefresh(true); });
     $("termView").addEventListener("click", (e) => { const th = e.target.closest("th[data-ts]"); if (th) { const k = th.dataset.ts; if (tm.sort === k) tm.dir *= -1; else { tm.sort = k; tm.dir = -1; } tmMon(); return; }
       const mx = e.target.closest(".tp-max"); if (mx) { const p = mx.closest(".tp"); p.classList.toggle("max"); mx.textContent = p.classList.contains("max") ? "×" : "□"; if (p.dataset.tp === "map") setTimeout(tmMap, 30); return; }
       if (e.target.closest("[data-cmd]")) return; const t = e.target.closest("[data-tl]"); if (t) { e.preventDefault(); tmSelect(t.dataset.tl); } });

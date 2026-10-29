@@ -711,3 +711,4 @@ body.in-term #termView { min-height: calc(100vh - 100px); }
 .tm-keys { color: var(--dim); font-size: 10.5px; } .tm-keys kbd { border: 1px solid #333; padding: 0 4px; color: var(--amb); font: inherit; }
 @media (max-width: 900px) { .tm-keys { display: none; } }
 body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }
+.tm-grp { display: inline-flex; gap: 3px; overflow-x: auto; } .tm-grp a { border: 1px solid #333; white-space: nowrap; }
