@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029195551">
+<link rel="stylesheet" href="style.css?v=20261029200021">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -364,6 +364,7 @@
       <div class="grid">
         <div><label class="lbl" for="apTarget">Eksekusi di</label><select id="apTarget"><option value="demo" selected>Akun demo</option><option value="idx">Indodax (uang asli)</option></select></div>
         <div><label class="lbl" for="apThr">Keyakinan minimal</label><select id="apThr"><option value="0.75" selected>75%</option><option value="0.8">80%</option><option value="0.85">85%</option></select></div>
+        <div><label class="lbl" for="apScope">Cakupan</label><select id="apScope"><option value="list">Daftar pilihan (maks 8)</option><option value="all">Semua aset (simulasi penuh, demo)</option></select></div>
         <div><label class="lbl" for="apMode">Mode</label><select id="apMode"><option value="asset" selected>Per aset</option><option value="porto">Portofolio (rebalancing)</option></select></div>
         <div><label class="lbl" for="apBudget">Dana uji per run (maks Rp 1 miliar)</label><input id="apBudget" type="number" min="1000000" max="1000000000" step="1000000" value="1000000000"></div>
         <div class="ap-porto"><label class="lbl" for="apMaxW">Bobot maks per aset</label><select id="apMaxW"><option value="0.25">25%</option><option value="0.35" selected>35%</option><option value="0.5">50%</option></select></div>
@@ -1119,8 +1120,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029195551";</script>
-<script src="engine.js?v=20261029195551"></script>
-<script src="app.js?v=20261029195551"></script>
+<script>window.APP_V = "20261029200021";</script>
+<script src="engine.js?v=20261029200021"></script>
+<script src="app.js?v=20261029200021"></script>
 </body>
 </html>
