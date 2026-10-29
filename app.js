@@ -3710,7 +3710,9 @@
       T.week.dir > 0 && T.day.dir > 0 ? 1 : T.week.dir < 0 && T.day.dir < 0 ? -1 : 0, P.pr ? (P.pr.expR > 0.15 ? 1 : P.pr.expR <= 0 ? -1 : 0) : 0, N && N.shock ? 1 : 0];
     const AIL = aiTrain(), aiP = AIL.valid ? AIL.p(aic) : NaN, aiDir = AIL.valid ? (aiP >= 0.6 ? 1 : aiP <= 0.4 ? -1 : 0) : sc >= 2 ? 1 : sc <= -2 ? -1 : 0;
     const atr = (() => { const o = d.ohlc || [], n = o.length; if (n < 20) return NaN; let s = 0; for (let i = n - 14; i < n; i++) s += Math.max(o[i][2] - o[i][3], Math.abs(o[i][2] - o[i - 1][4]), Math.abs(o[i][3] - o[i - 1][4])); return s / 14; })();
-    const X0 = { T, cs: C ? C.sNow : 0, val, mcP, bnP, sgScore, atr, px: d.values[d.values.length - 1] };
+    const RB = rightBrain(d.values, P, crypto);
+    if (RB && RB.size < 1 && P.qty > 0) P.qty = idx ? Math.floor((P.qty * RB.size)) : +(P.qty * RB.size).toFixed(6); // otak kanan hanya boleh MENGECILKAN posisi, tidak pernah membesarkan
+    const X0 = { T, cs: C ? C.sNow : 0, val, mcP, bnP, sgScore, RB, atr, px: d.values[d.values.length - 1] };
     return { sym, d, P, M, C, N, ...X0, ml: dir(M), dl: dir(DLm), ai: aiDir, aic, aiP, aiLearned: AIL.valid, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
   }
   function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
@@ -3720,6 +3722,9 @@
     const E = c.exp ? apExpPredict(X) : null; X.exp = E;
     const okBuy = allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0;
     if (okBuy && X.val && !X.val.bad && X.val.n >= 2 && X.val.agree >= 0.6 && X.val.up < -0.3) return { act: "TUNGGU", why: `semua sepakat, tapi saham jauh terlalu mahal (nilai wajar ${spct(X.val.up, 0)})` };
+    if (okBuy && X.RB && X.RB.veto) return { act: "TUNGGU", why: `otak kanan: ${X.RB.veto}` };
+    const BR = c.exp ? brainPredict(X) : null; X.brain = BR;
+    if (okBuy && BR && BR.valid && BR.p < 0.55) return { act: "TUNGGU", why: `otak gabungan hanya ${pct(BR.p, 0)} pada pola seperti ini` };
     if (okBuy && X.mcP && X.bnP && X.mcP.ev < 0 && X.bnP.ev < 0) return { act: "TUNGGU", why: `semua sepakat, tapi Monte Carlo (${pct(X.mcP.p, 0)}) & binomial (${pct(X.bnP.p, 0)}) peluang target-dulu di bawah impas setelah biaya` };
     if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0 && E && E.valid && E.p < 0.55) return { act: "TUNGGU", why: `semua sepakat, tapi pengalaman demo hanya ${pct(E.p, 0)} untung pada pola seperti ini` };
     if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0) return { act: "BELI", why: `${use.map((u) => u[0]).join("+")} sepakat naik · keyakinan ${pct(P.confPct, 0)}` };
@@ -3784,13 +3789,13 @@
   const r3 = (v) => (isFinite(v) ? Math.round(v * 1000) / 1000 : null);
   function apFeat(X) { const P = X.P || {}; return [X.mlP, X.dlP, X.mlV ? 1 : 0, X.dlV ? 1 : 0, X.aiScore, P.confPct, P.pr ? P.pr.expR : NaN, X.cs, X.N ? X.N.neg : 0, X.T ? X.T.week.dir : 0, X.T ? X.T.day.dir : 0].map(r3); }
   function apRemember(X, V) { const M = apMem(), d = X.d, n = d.dates.length, day = d.dates[n - 1], f = apFeat(X);
-    const i = M.findIndex((m) => m.s === X.sym && m.d === day), rec = { s: X.sym, d: day, px: r3(d.values[n - 1]), f, c: X.aic ? X.aic.map(r3) : undefined, v: V.act, y: null, r: null };
+    const i = M.findIndex((m) => m.s === X.sym && m.d === day), rec = { s: X.sym, d: day, px: r3(d.values[n - 1]), f, c: X.aic ? X.aic.map(r3) : undefined, rb: X.RB ? [X.RB.pA, X.RB.medA, X.RB.tailA, X.RB.stressStop].map(r3) : undefined, v: V.act, y: null, r: null };
     if (i >= 0) { if (M[i].y == null) M[i] = rec; } else M.push(rec);
     // beri label rekaman lama simbol ini memakai harga aktual AP_H bar setelahnya
     const ix = new Map(d.dates.map((x, k) => [x, k])), cost = apCostRT(X.sym); let lab = 0;
     for (const m of M) if (m.s === X.sym && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } }
     if (M.length > AP_MEMCAP) M.splice(0, M.length - AP_MEMCAP);
-    if (lab) { ap.expModel = null; ap.aiModel = null; } saveSettings({ apMem: M }); }
+    if (lab) { ap.expModel = null; ap.aiModel = null; ap.brain = null; } saveSettings({ apMem: M }); }
 
   // ---- RAM AI yang belajar: bobot 6 aturannya dipelajari dari hasil keputusan autopilot (regresi logistik, ditarik ke bobot awal).
   //      Dipakai hanya bila lolos uji pada 30% catatan terbaru (AUC ≥ 0,55); kalau belum, memakai bobot tetap.
@@ -3821,6 +3826,45 @@
       out.auc = auc(te.map((m) => m1.p(row(m))), te.map((m) => m.y)); out.nTest = te.length; out.valid = te.length >= 12 && out.auc >= 0.55;
       const m2 = fit(L.map(row), L.map((m) => m.y)); out.model = m2; out.row = row; out.w = EXP_F.map((nm, j) => [nm, m2.w[j]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])); }
     ap.expModel = out; return out; }
+
+  // =====================================================================
+  // OTAK: kiri (analisis) + kanan (imajinasi berbasis data) + saraf penghubung (jaringan saraf kecil).
+  // Aturan keras: otak kanan tidak pernah memicu transaksi sendiri. Ia hanya membayangkan skenario dari data historis nyata,
+  // lalu boleh MEMVETO atau MENGECILKAN posisi. Tanpa cukup data, otak kanan diam.
+  // =====================================================================
+  function rightBrain(px, P, crypto) { const n = px.length; if (n < 400) return null; const W = 20, H = 10, lr = []; for (let i = 1; i < n; i++) lr.push(Math.log(px[i] / px[i - 1]));
+    const z = (a1) => { const m = a1.reduce((s, x) => s + x, 0) / a1.length, s2 = Math.sqrt(a1.reduce((s, x) => s + (x - m) ** 2, 0) / a1.length) || 1e-9; return a1.map((x) => (x - m) / s2); };
+    const cur = z(lr.slice(-W)), cand = [];
+    for (let e = W; e < lr.length - H - 5; e++) { const w = z(lr.slice(e - W, e)); let d2 = 0; for (let j = 0; j < W; j++) d2 += (w[j] - cur[j]) ** 2; cand.push([d2, e]); } // analog: 20 hari yang polanya mirip
+    cand.sort((x, y) => x[0] - y[0]); const K = Math.min(40, cand.length), top = cand.slice(0, K), sim = top.length ? Math.exp(-top[top.length - 1][0] / (2 * W)) : 0;
+    if (K < 20) return null; const fw = top.map(([, e]) => Math.exp(lr.slice(e, e + H).reduce((s, x) => s + x, 0)) - 1).sort((x, y) => x - y);
+    const pA = fw.filter((x) => x > 0).length / fw.length, medA = fw[Math.floor(fw.length / 2)], tailA = fw[Math.floor(fw.length * 0.1)];
+    // stres: volatilitas ×1,5 + satu hari terburuk historis disisipkan → peluang stop tersentuh dulu
+    let stressStop = NaN; if (P && P.entry > 0 && P.stop > 0 && P.t1 > P.entry) { const recent = lr.slice(-504), worst = Math.min(...recent), m0 = recent.reduce((s, x) => s + x, 0) / recent.length; let stp = 0, seed = 5; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      for (let k = 0; k < 1500; k++) { let v = P.entry; const shockAt = Math.floor(rnd() * 20); for (let t = 0; t < 20; t++) { const r0 = t === shockAt ? worst : m0 + (recent[Math.floor(rnd() * recent.length)] - m0) * 1.5; v *= Math.exp(r0); if (v <= P.stop) { stp++; break; } if (v >= P.t1) break; } }
+      stressStop = stp / 1500; }
+    const risk = P && P.entry > 0 && P.stop > 0 ? (P.entry - P.stop) / P.entry : 0.05; let veto = null, size = 1;
+    if (tailA < -2.5 * risk) veto = `di ${K} pola mirip, 10% terburuk turun ${spct(tailA, 1)} dalam ${H} hari (> 2,5× jarak stop)`;
+    else if (isFinite(stressStop) && stressStop > 0.7) veto = `skenario stres: stop tersentuh duluan di ${pct(stressStop, 0)} jalur`;
+    else { if (pA < 0.45) size *= 0.5; if (isFinite(stressStop) && stressStop > 0.5) size *= 0.75; }
+    return { pA, medA, tailA, stressStop, K, sim, veto, size: Math.max(0.25, size), H }; }
+  // saraf penghubung: jaringan saraf 1 lapis tersembunyi (8 neuron tanh) yang belajar menggabungkan otak kiri & kanan dari hasil nyata demo
+  const BR_F = ["ML p", "DL p", "ML teruji", "DL teruji", "skor AI", "keyakinan", "ekspektasi R", "konfluensi", "berita negatif", "tren minggu", "tren hari", "analog naik", "analog median", "analog terburuk", "stres stop"];
+  function brainRow(m) { const f = m.f || [], rb = m.rb || [], fill = [0.5, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0, 0], left = fill.map((v, j) => (f[j] == null || !isFinite(f[j]) ? v : f[j])), right = [0.5, 0, 0, 0.5].map((v, j) => (rb[j] == null || !isFinite(rb[j]) ? v : rb[j])); return [...left, ...right]; }
+  function brainTrain() { if (ap.brain) return ap.brain; const L = apMem().filter((m) => m.y != null && Array.isArray(m.rb)).sort((x, y) => (x.d < y.d ? -1 : 1)), n = L.length, out = { n, valid: false };
+    if (n < 60) { ap.brain = out; return out; }
+    const X = L.map(brainRow), Y = L.map((m) => m.y), k = X[0].length, H = 8, mu = Array(k).fill(0), sd = Array(k).fill(1);
+    for (let j = 0; j < k; j++) { const c = X.map((r) => r[j]); mu[j] = c.reduce((s, v) => s + v, 0) / c.length; sd[j] = Math.sqrt(c.reduce((s, v) => s + (v - mu[j]) ** 2, 0) / c.length) || 1; }
+    const Z = X.map((r) => r.map((v, j) => (v - mu[j]) / sd[j]));
+    const fit = (idx) => { let seed = 3; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296) - 0.5; const W1 = Array.from({ length: H }, () => Array.from({ length: k }, () => rnd() * 0.4)), b1 = Array(H).fill(0), W2 = Array.from({ length: H }, () => rnd() * 0.4); let b2 = 0; const lam = 0.01, lr = 0.05;
+      for (let ep = 0; ep < 150; ep++) for (const i of idx) { const h = W1.map((w, q) => Math.tanh(b1[q] + w.reduce((s, v, j) => s + v * Z[i][j], 0))), o = 1 / (1 + Math.exp(-(b2 + h.reduce((s, v, q) => s + v * W2[q], 0)))), e = o - Y[i];
+        for (let q = 0; q < H; q++) { const gh = e * W2[q] * (1 - h[q] * h[q]); W2[q] -= lr * (e * h[q] + lam * W2[q]); for (let j = 0; j < k; j++) W1[q][j] -= lr * (gh * Z[i][j] + lam * W1[q][j]); b1[q] -= lr * gh; } b2 -= lr * e; }
+      return (r) => { const zr = r.map((v, j) => (v - mu[j]) / sd[j]), h = W1.map((w, q) => Math.tanh(b1[q] + w.reduce((s, v, j) => s + v * zr[j], 0))); return 1 / (1 + Math.exp(-(b2 + h.reduce((s, v, q) => s + v * W2[q], 0)))); }; };
+    const auc = (ps, ys) => { let pos = 0, neg = 0, s = 0; ps.map((p, i) => [p, ys[i]]).sort((a1, b1) => a1[0] - b1[0]).forEach(([, y], i) => { if (y) { pos++; s += i + 1; } else neg++; }); return pos && neg ? (s - (pos * (pos + 1)) / 2) / (pos * neg) : NaN; };
+    const cut = Math.floor(n * 0.7), tr = [...Array(cut).keys()], te = [...Array(n - cut).keys()].map((i) => i + cut), f1 = fit(tr);
+    out.auc = auc(te.map((i) => f1(X[i])), te.map((i) => Y[i])); out.nTest = te.length; const E = apExpTrain(); out.aucExp = E.auc;
+    out.valid = te.length >= 18 && out.auc >= 0.55 && !(isFinite(E.auc) && E.valid && E.auc >= out.auc); out.p = fit([...Array(n).keys()]); ap.brain = out; return out; }
+  function brainPredict(X) { const B = brainTrain(); if (!B.p) return { valid: false, n: B.n }; return { valid: B.valid, p: B.p(brainRow({ f: apFeat(X), rb: X.RB ? [X.RB.pA, X.RB.medA, X.RB.tailA, X.RB.stressStop] : null })), n: B.n, auc: B.auc }; }
   function apExpPredict(X) { const E = apExpTrain(); if (!E.model) return { valid: false, n: E.n }; const p = E.model.p(E.row({ f: apFeat(X) })); return { valid: E.valid, p, n: E.n, auc: E.auc }; }
   function drawApLearn() { const E = apExpTrain(), M = apMem(), tr = pp.a.hist.filter((o) => o.ap && o.side === "sell" && o.pl != null), w = tr.filter((o) => o.pl > 0).length;
     $("apLearnN").textContent = `${M.length} keputusan tersimpan · ${E.n} sudah berlabel`;
@@ -3830,6 +3874,8 @@
       <div class="kpi"><div class="k">Transaksi autopilot demo</div><div class="v">${tr.length}</div><div class="h">${tr.length ? `${pct(w / tr.length, 0)} untung · ${big(tr.reduce((t, o) => t + o.pl, 0), "IDR")}` : "belum ada yang selesai"}</div></div>
       <div class="kpi"><div class="k">Peluang dasar untung ${AP_H} bar</div><div class="v">${isFinite(E.base) ? pct(E.base, 0) : "–"}</div><div class="h">setelah biaya</div></div></div>
       ${E.n ? `<div class="table-wrap"><table><thead><tr><th>Keputusan</th><th>Jumlah</th><th>Untung ${AP_H} bar</th><th>Rata-rata return</th></tr></thead><tbody><tr><td><b class="pos">BELI</b></td>${b("BELI")}</tr><tr><td>TUNGGU</td>${b("TUNGGU")}</tr><tr><td><b class="neg">JUAL</b></td>${b("JUAL")}</tr></tbody></table></div>` : ""}
+      ${(() => { const B = brainTrain(); return `<div class="subh">🧠 Otak gabungan (saraf penghubung) · ${B.valid ? '<span class="pos">aktif</span>' : B.n >= 60 ? "belum lebih baik dari model pengalaman" : `belajar setelah ${B.n}/60 catatan berlabel`}</div>
+        <p class="note keep">Otak kiri = ML, DL, RAM AI, konfluensi, rencana, berita. Otak kanan = imajinasi dari data: mencari 40 pola 20 hari paling mirip di riwayat aset lalu melihat apa yang terjadi sesudahnya, plus skenario stres (volatilitas ×1,5 + hari terburuk). Saraf penghubung = jaringan saraf 15→8→1 yang belajar dari hasil demomu. Otak kanan hanya boleh memveto atau mengecilkan posisi.${isFinite(B.auc) ? ` Uji ${B.nTest} catatan terbaru: AUC ${nf(2).format(B.auc)}${isFinite(B.aucExp) ? ` (model pengalaman ${nf(2).format(B.aucExp)})` : ""}.` : ""}</p>`; })()}
       ${(() => { const A = aiTrain(); return `<div class="subh">RAM AI · ${A.valid ? '<span class="pos">bobot dipelajari dari hasilmu</span>' : A.n >= 40 ? "bobot tetap (bobot dipelajari belum lebih baik)" : `bobot tetap · belajar setelah ${A.n}/40 catatan berlabel`}</div>
         <div class="table-wrap"><table><thead><tr><th>Aturan</th><th>Bobot awal</th><th>Bobot sekarang</th></tr></thead><tbody>${AI_F.map((nm, j) => `<tr><td>${esc(nm)}</td><td>${nf(2).format(AI_W0[j])}</td><td class="${A.w[j] > AI_W0[j] + 0.05 ? "pos" : A.w[j] < AI_W0[j] - 0.05 ? "neg" : ""}"><b>${nf(2).format(A.w[j])}</b></td></tr>`).join("")}</tbody></table></div>
         ${isFinite(A.auc) ? `<p class="note keep">Uji ${A.nTest} catatan terbaru: AUC bobot dipelajari ${nf(2).format(A.auc)} vs bobot tetap ${nf(2).format(A.aucFixed)}.</p>` : ""}`; })()}
@@ -3839,7 +3885,7 @@
     const M = apMem(), old = Date.now() - 6 * 864e5, S = [...new Set(M.filter((m) => m.y == null && Date.parse(m.d) < old).map((m) => m.s))].slice(0, 15); let lab = 0;
     for (const s of S) { try { const d = await fetchSymbol(s, "6mo"), ix = new Map(d.dates.map((x, k) => [x, k])), n = d.dates.length, cost = apCostRT(s);
         for (const m of M) if (m.s === s && m.y == null) { const k = ix.get(m.d); if (k != null && k + AP_H < n) { m.r = r3(d.values[k + AP_H] / d.values[k] - 1); m.y = m.r > cost ? 1 : 0; lab++; } } } catch { /* */ } }
-    if (lab) { ap.expModel = null; ap.aiModel = null; saveSettings({ apMem: M }); } }
+    if (lab) { ap.expModel = null; ap.aiModel = null; ap.brain = null; saveSettings({ apMem: M }); } }
   const AP_QUICK = ["BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", "ASII.JK", "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "AAPL", "NVDA", "MSFT"];
   async function apQuick() { if (ap.busy) { toast("Autopilot sedang memeriksa, tunggu sebentar."); return; } ap.busy = true; ap.scan = AP_QUICK.slice(); const btn = $("apQuick"); btn.disabled = true;
     try { for (const [i, s] of AP_QUICK.entries()) { btn.textContent = `Menguji ${i + 1}/${AP_QUICK.length}…`; const st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
@@ -4146,11 +4192,11 @@
   function drawAp() { if (!ap.cfg || !$("apTable")) return; const g = demoGate(), c = ap.cfg;
     $("apGate").innerHTML = (c.target === "idx" ? gateText(g) : `Eksekusi di <b>akun demo</b>. ${gateText(g)}`) + ` · Order baru hari ini ${c.nDay || 0}/${c.maxDay} · posisi autopilot ${apPositions().length}/${c.maxPos}`;
     const S = [...new Set([...apSyms(), ...(ap.scan || [])])], ar = (v, ok) => (ok === false ? '<span class="note" title="belum teruji">✗</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
-    $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Target dulu<br><span class="note">MC · binomial</span></th><th>Nilai wajar</th><th title="jumlah berita 24 jam · negatif">Berita</th><th title="model pengalaman demo">Peng.</th><th>Posisi swing</th><th>Posisi harian</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
+    $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Target dulu<br><span class="note">MC · binomial</span></th><th>Nilai wajar</th><th title="jumlah berita 24 jam · negatif">Berita</th><th title="model pengalaman demo">Peng.</th><th title="otak kanan: dari pola historis yang mirip, peluang naik 10 hari · 10% terburuk">Otak kanan</th><th>Posisi swing</th><th>Posisi harian</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
       const hasPos = pp.a.pos[s] && pp.a.pos[s].ap, hasPend = pp.a.orders.some((o) => o.ap && o.s === s && o.status === "terbuka");
       return `<tr><td><b>${esc(s)}</b></td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
         <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${X.aiLearned && isFinite(X.aiP) ? `<span title="AI belajar: peluang untung">${pct(X.aiP, 0)}</span>` : nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.mcP ? `<span class="${X.mcP.ev > 0 ? "pos" : "neg"}">${pct(X.mcP.p, 0)}</span> · <span class="${X.bnP && X.bnP.ev > 0 ? "pos" : "neg"}">${X.bnP ? pct(X.bnP.p, 0) : "–"}</span>` : '<span class="note">–</span>'}</td><td>${X && X.val ? (X.val.bad ? '<span class="note">? data</span>' : `<span class="${X.val.up > 0 ? "pos" : "neg"}">${spct(X.val.up, 0)}</span>`) : '<span class="note">–</span>'}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note" title="${X.N.n} berita 24 jam · ${X.N.neg} negatif">${X.N.n}·${X.N.neg}−</span>`) : "–"}</td><td>${X && X.exp && X.exp.p != null && isFinite(X.exp.p) ? `${pct(X.exp.p, 0)}${X.exp.valid ? "" : ' <span class="note">belum teruji</span>'}` : '<span class="note">–</span>'}</td>
-        <td>${posCell(s, "swing")}</td><td>${c.style !== "swing" ? posCell(s, "day") : '<span class="note">–</span>'}</td>
+        <td>${X && X.RB ? `<span title="${X.RB.K} pola mirip · median ${spct(X.RB.medA, 1)} · stres stop ${isFinite(X.RB.stressStop) ? pct(X.RB.stressStop, 0) : "–"}${X.RB.veto ? " · VETO: " + esc(X.RB.veto) : X.RB.size < 1 ? " · posisi ×" + nf(2).format(X.RB.size) : ""}" class="${X.RB.veto ? "neg" : X.RB.pA >= 0.55 ? "pos" : ""}">${pct(X.RB.pA, 0)} · ${spct(X.RB.tailA, 0)}${X.RB.veto ? " ⛔" : X.RB.size < 1 ? " ↓" : ""}</span>` : '<span class="note">–</span>'}</td><td>${posCell(s, "swing")}</td><td>${c.style !== "swing" ? posCell(s, "day") : '<span class="note">–</span>'}</td>
         <td class="note ap-st">${c.style === "adapt" ? `<b>${esc(apEngLabel(s).replace(" (belum terbukti di demo)", "").replace(" (keduanya rugi di demo)", " ✗"))}</b> · ` : ""}${(c.style === "both" || c.style === "adapt" || c.style === "day") && st.dnote ? `<span title="${esc(st.dnote)}">H: ${esc(apShort1(st.dnote))}</span>${c.style !== "day" ? " · " : ""}` : ""}${c.style !== "day" ? `<span title="${esc(st.note || (V ? V.why : ""))}">${c.style === "swing" ? "" : "S: "}${esc(apShort1(st.note || (V ? V.why : "")))}</span>` : ""}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
     $("apLog").innerHTML = ap.log.length ? "<tbody>" + ap.log.slice(0, 120).map((l) => `<tr><td class="note">${wib(l.t)}</td><td><b>${esc(l.s)}</b></td><td class="${l.k === "buy" ? "pos" : l.k === "sell" ? "neg" : l.k === "err" ? "neg" : ""}">${esc(l.m)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada aktivitas.</td></tr></tbody>';
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
@@ -4214,7 +4260,7 @@
     $("apWake").addEventListener("change", () => apWakeSync());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
-    if (location.hostname === "localhost") window.__ap = { aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    if (location.hostname === "localhost") window.__ap = { brainTrain, aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
