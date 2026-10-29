@@ -3678,24 +3678,28 @@
   const CORES = navigator.hardwareConcurrency || 4, AP_AUTO = Math.max(1, Math.min(5, CORES - 1)); let apPool = null, AP_PAR = AP_AUTO;
   function apSetBrains(n) { const want = Math.max(1, Math.min(5, n || AP_AUTO)); if (apPool && apPool.length !== want) { apPool.forEach((w) => w && w.terminate()); apPool = null; } AP_PAR = want; }
   const apWorker = (slot) => { if (!apPool) apPool = Array.from({ length: AP_PAR }, () => mkWorker()); return apPool[slot % AP_PAR] || null; };
-  async function apDecide(sym, slot = 0) { const t0 = performance.now(), W = apWorker(slot);
-    const d = await fetchSymbol(sym, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari");
+  async function apDecide(sym, slot = 0) { const t0 = performance.now(), W = apWorker(slot), tm = {}; let tk = t0; const lap = (k) => { const n = performance.now(); tm[k] = (tm[k] || 0) + n - tk; tk = n; };
+    const d = await fetchSymbol(sym, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); lap("data");
     const D = buildD(d), R = rawD(d), crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(sym), idx = /\.JK$/.test(sym), so = stratOpts();
-    const all = await compute("stratAll", { D, o: { ...so, short: false } }, undefined, W);
+    const sk = `${sym}|${D.d[D.n - 1]}|${so.costBps}`, sc0 = (ap.stc || (ap.stc = new Map())).get(sk); // 50 strategi juga cukup dihitung sekali per aset per hari bar
+    const all = sc0 || (await compute("stratAll", { D, o: { ...so, short: false } }, undefined, W)); if (!sc0) { ap.stc.set(sk, all); if (ap.stc.size > 80) ap.stc.delete(ap.stc.keys().next().value); } lap("strategi");
     let DM = D; try { const dl = await fetchSymbol(sym, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) DM = D2; } catch { /* */ }
     if (DM.n > 2600) { const k = DM.n - 2600; DM = { d: DM.d.slice(k), o: DM.o.slice(k), h: DM.h.slice(k), l: DM.l.slice(k), c: DM.c.slice(k), v: DM.v.slice(k), n: 2600 }; }
-    const ek = idx ? "idx" : crypto ? "c" : "us"; if (!ap.ext[ek]) ap.ext[ek] = await mlExt(sym).catch(() => []);
+    const ek = idx ? "idx" : crypto ? "c" : "us"; if (!ap.ext[ek]) ap.ext[ek] = await mlExt(sym).catch(() => []); lap("data");
     const mk = `${sym}|${DM.d[DM.n - 1]}`, mc = (ap.mlc || (ap.mlc = new Map())).get(mk); let M = null; // model ML/DL dilatih sekali per aset per hari bar; dalam hari yang sama dipakai ulang
-    const news = await newsHist(sym).catch(() => ({ map: null }));
+    const news = await newsHist(sym).catch(() => ({ map: null })); lap("berita");
     if (mc) M = mc; else { try { M = await compute("ml", { D: DM, o: { horizon: 5, costBps: so.costBps, ext: ap.ext[ek], news: news.map } }, undefined, W); if (M && !M.error) { ap.mlc.set(mk, M); if (ap.mlc.size > 60) ap.mlc.delete(ap.mlc.keys().next().value); } } catch (e) { M = { error: e.message }; } }
+lap("ml");
     const C = MCEngine.confluence(D, { H: 10, costBps: so.costBps, ppy: crypto ? 365 : 252 }), fx = (d.currency || "") === "IDR" ? 1 : pp.fx || 16000;
     const cap = ap.cfg.target === "demo" ? apRun().free : Math.max(0, parseFloat($("actCap").value) || 1e7), risk = ap.cfg.tgOn && ap.cfg.target === "demo" ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
     const SG = MCEngine.signalBacktest(d.dates, d.values, { ppy: crypto ? 365 : 252 }), sgScore = SG && SG.now ? SG.now.score : 0;
     const P = MCEngine.actionPlan(R, { isIdx: idx, crypto, strats: all.list, votes: all.votes, score: sgScore, capital: cap / fx, riskPct: risk, unit: idx ? 100 : 1, costBps: so.costBps, market: idx ? "IDX" : crypto ? null : "US", ml: M && !M.error ? M : null, sel: C && C.sel }); if (M && M.error) M = null;
+lap("rencana");
     // Valuasi (saham saja, sekali per hari): penyaring "jauh terlalu mahal"
     let val = null; const eqty = !crypto && !/^\^/.test(sym) && !/=/.test(sym), vk = `${sym}|${new Date().toISOString().slice(0, 10)}`;
     if (eqty) { const vc = (ap.valc || (ap.valc = new Map())).get(vk); if (vc !== undefined) val = vc; else { try { const F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(sym)}`)).json(); const V = valEnsemble(F, d.values[d.values.length - 1], (d.currency || "") !== "IDR", null);
           val = V && V.methods && V.methods.length ? { up: V.upside, n: V.methods.length, agree: V.agree, bad: !(V.upside <= 3 && V.upside >= -0.95) } : null; } catch { val = null; } ap.valc.set(vk, val); } }
+lap("valuasi");
     // Monte Carlo (bootstrap 2.000 jalur) & binomial: peluang kena target 1 sebelum stop dalam 20 bar
     let mcP = null, bnP = null; if (P.entry > 0 && P.stop > 0 && P.t1 > P.entry) { const px0 = P.entry, c0 = d.values, lr = []; for (let i = Math.max(1, c0.length - 504); i < c0.length; i++) lr.push(Math.log(c0[i] / c0[i - 1]));
       if (lr.length > 100) { const m0 = lr.reduce((s, x) => s + x, 0) / lr.length, L2 = lr.map((x) => x - m0 * 0.5); let hit = 0, stp = 0, seed = 11; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -3703,6 +3707,7 @@
         const p = hit / 2000, q = stp / 2000, cst = (so.costBps * 2) / 1e4 * px0; mcP = { p, q, ev: (p * (P.t1 - px0) - q * (px0 - P.stop) - cst) / px0 };
         const ppy = crypto ? 365 : 252, sig = Math.sqrt(lr.reduce((s, x) => s + (x - m0) ** 2, 0) / lr.length) * Math.sqrt(ppy), mu = Math.max(-0.3, Math.min(0.3, 0.5 * m0 * ppy));
         const B = MCEngine.binomialBarrier(px0, P.t1, P.stop, sig, mu, 20, ppy); bnP = { p: B.pUp, q: B.pDn, ev: (B.pUp * (P.t1 - px0) - B.pDn * (px0 - P.stop) - cst) / px0 }; } }
+lap("MC+binomial");
     // RAM AI (aturan ringkas, sama dengan kotak 3 kecerdasan tanpa berita/valuasi)
     let sc = 0; const why = []; if (P.nRobust) { const w = P.voteAction === "BELI" ? 2 : P.voteAction === "JUAL" ? -2 : 0; sc += w; if (w) why.push(`strategi ${P.voteAction}`); }
     if (C) { if (C.sel && C.sel.active) { sc += 3; why.push("A+"); } else if (C.valid) sc += C.sNow >= 3 ? 1.5 : C.sNow <= -3 ? -1.5 : 0; else sc += C.sNow >= 4 ? 0.5 : C.sNow <= -4 ? -0.5 : 0; }
@@ -3714,10 +3719,12 @@
       T.week.dir > 0 && T.day.dir > 0 ? 1 : T.week.dir < 0 && T.day.dir < 0 ? -1 : 0, P.pr ? (P.pr.expR > 0.15 ? 1 : P.pr.expR <= 0 ? -1 : 0) : 0, N && N.shock ? 1 : 0];
     const AIL = aiTrain(), aiP = AIL.valid ? AIL.p(aic) : NaN, aiDir = AIL.valid ? (aiP >= 0.6 ? 1 : aiP <= 0.4 ? -1 : 0) : sc >= 2 ? 1 : sc <= -2 ? -1 : 0;
     const atr = (() => { const o = d.ohlc || [], n = o.length; if (n < 20) return NaN; let s = 0; for (let i = n - 14; i < n; i++) s += Math.max(o[i][2] - o[i][3], Math.abs(o[i][2] - o[i - 1][4]), Math.abs(o[i][3] - o[i - 1][4])); return s / 14; })();
-    const RB = rightBrain(d.values, P, crypto);
+lap("berita");
+    const RB = rightBrain(d.values, P, crypto); lap("otak kanan");
     if (RB && RB.size < 1 && P.qty > 0) P.qty = idx ? Math.floor((P.qty * RB.size)) : +(P.qty * RB.size).toFixed(6); // otak kanan hanya boleh MENGECILKAN posisi, tidak pernah membesarkan
     const X0 = { T, cs: C ? C.sNow : 0, val, mcP, bnP, sgScore, RB, atr, px: d.values[d.values.length - 1] };
-    return { sym, d, P, M, C, N, ...X0, ms: performance.now() - t0, cached: !!mc, ml: dir(M), dl: dir(DLm), ai: aiDir, aic, aiP, aiLearned: AIL.valid, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
+    lap("lain");
+    return { sym, d, P, M, C, N, ...X0, tm, ms: performance.now() - t0, cached: !!mc, ml: dir(M), dl: dir(DLm), ai: aiDir, aic, aiP, aiLearned: AIL.valid, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
   }
   function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
     if (c.news && X.N && X.N.shock) return { act: "JUAL", why: `berita kejutan "${X.N.shock.word}"` };
@@ -4152,6 +4159,8 @@
     if (onBat && lvl < 0.2) { pause = true; why.push(`baterai ${Math.round(lvl * 100)}% tanpa cas: analisis berat dijeda (stop & berita tetap jalan)`); }
     else if (onBat) { brains = 1; minEvery = 15; rest = 600; why.push("pakai baterai: 1 otak, periksa ≥ 15 menit"); }
     if (dev.mem && dev.mem <= 4) { brains = Math.min(brains, 2); why.push(`RAM ${dev.mem} GB: maks 2 otak`); }
+    if (!$("detailView").hidden && act && act.mlProg) { pause = true; why.push("mengalah: kamu sedang menjalankan analisis di F3"); }
+    else if (!$("detailView").hidden || !$("quantView").hidden) { brains = 1; rest = Math.max(rest, 400); why.push("kamu sedang di halaman analisis: autopilot pakai 1 otak supaya layar tetap ringan"); }
     if (dev.lag > 400) { brains = Math.max(1, brains - 1); rest = Math.max(rest, 1500); why.push(`perangkat mulai berat (jeda ${Math.round(dev.lag)} ms): otak dikurangi & diberi jeda`); }
     if (document.hidden && onBat) { pause = true; why.push("tab di latar & pakai baterai: dijeda"); }
     return { brains, minEvery, rest, pause, why }; }
@@ -4231,7 +4240,7 @@
       return `<tr><td><b>${esc(s)}</b></td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
         <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${X.aiLearned && isFinite(X.aiP) ? `<span title="AI belajar: peluang untung">${pct(X.aiP, 0)}</span>` : nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.mcP ? `<span class="${X.mcP.ev > 0 ? "pos" : "neg"}">${pct(X.mcP.p, 0)}</span> · <span class="${X.bnP && X.bnP.ev > 0 ? "pos" : "neg"}">${X.bnP ? pct(X.bnP.p, 0) : "–"}</span>` : '<span class="note">–</span>'}</td><td>${X && X.val ? (X.val.bad ? '<span class="note">? data</span>' : `<span class="${X.val.up > 0 ? "pos" : "neg"}">${spct(X.val.up, 0)}</span>`) : '<span class="note">–</span>'}</td><td>${X && X.N ? (X.N.shock ? `<b class="${X.N.shockOff ? "note" : "neg"}" title="${esc(X.N.shock.title)}${X.N.shockOff ? " (jual darurat berita dimatikan)" : ""}">⚠ ${esc(X.N.shock.word)}</b>` : X.N.eye && X.N.n ? `<span class="${X.N.eye.recent > 0.15 ? "pos" : X.N.eye.recent < -0.15 ? "neg" : "note"}" title="${X.N.n} berita 24 jam · ${X.N.pos || 0} positif · ${X.N.neg} negatif&#10;${(X.N.items || []).map((x) => "• " + esc(x.title)).join("&#10;")}">${X.N.eye.recent > 0.15 ? "▲" : X.N.eye.recent < -0.15 ? "▼" : "•"} ${X.N.n}</span>` : '<span class="note">0</span>') : "–"}</td><td>${X && X.exp && X.exp.p != null && isFinite(X.exp.p) ? `${pct(X.exp.p, 0)}${X.exp.valid ? "" : ' <span class="note">belum teruji</span>'}` : '<span class="note">–</span>'}</td>
         <td>${X && X.RB ? `<span title="${X.RB.K} pola mirip · median ${spct(X.RB.medA, 1)} · stres stop ${isFinite(X.RB.stressStop) ? pct(X.RB.stressStop, 0) : "–"}${X.RB.veto ? " · VETO: " + esc(X.RB.veto) : X.RB.size < 1 ? " · posisi ×" + nf(2).format(X.RB.size) : ""}" class="${X.RB.veto ? "neg" : X.RB.pA >= 0.55 ? "pos" : ""}">${pct(X.RB.pA, 0)} · ${spct(X.RB.tailA, 0)}${X.RB.veto ? " ⛔" : X.RB.size < 1 ? " ↓" : ""}</span>` : '<span class="note">–</span>'}</td><td>${posCell(s, "swing")}</td><td>${c.style !== "swing" ? posCell(s, "day") : '<span class="note">–</span>'}</td>
-        <td class="note ap-st">${c.style === "adapt" ? `<b>${esc(apEngLabel(s).replace(" (belum terbukti di demo)", "").replace(" (keduanya rugi di demo)", " ✗"))}</b> · ` : ""}${(c.style === "both" || c.style === "adapt" || c.style === "day") && st.dnote ? `<span title="${esc(st.dnote)}">H: ${esc(apShort1(st.dnote))}</span>${c.style !== "day" ? " · " : ""}` : ""}${c.style !== "day" ? `<span title="${esc(st.note || (V ? V.why : ""))}">${c.style === "swing" ? "" : "S: "}${esc(apShort1(st.note || (V ? V.why : "")))}</span>` : ""}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}${X && isFinite(X.ms) ? `<br><span title="${X.cached ? "model ML/DL dipakai ulang (sudah dilatih hari ini)" : "melatih ML/DL baru"}">⏱ ${nf(1).format(X.ms / 1000)} dtk${X.cached ? "" : " ★"}</span>` : ""}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
+        <td class="note ap-st">${c.style === "adapt" ? `<b>${esc(apEngLabel(s).replace(" (belum terbukti di demo)", "").replace(" (keduanya rugi di demo)", " ✗"))}</b> · ` : ""}${(c.style === "both" || c.style === "adapt" || c.style === "day") && st.dnote ? `<span title="${esc(st.dnote)}">H: ${esc(apShort1(st.dnote))}</span>${c.style !== "day" ? " · " : ""}` : ""}${c.style !== "day" ? `<span title="${esc(st.note || (V ? V.why : ""))}">${c.style === "swing" ? "" : "S: "}${esc(apShort1(st.note || (V ? V.why : "")))}</span>` : ""}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}${X && isFinite(X.ms) ? `<br><span title="${X.cached ? "model ML/DL dipakai ulang (sudah dilatih hari ini)" : "melatih ML/DL baru"}${X.tm ? "&#10;" + Object.entries(X.tm).sort((p, q) => q[1] - p[1]).map(([k, v]) => `${k}: ${nf(1).format(v / 1000)} dtk`).join("&#10;") : ""}">⏱ ${nf(1).format(X.ms / 1000)} dtk${X.cached ? "" : " ★"}</span>` : ""}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
     $("apLog").innerHTML = ap.log.length ? "<tbody>" + ap.log.slice(0, 120).map((l) => `<tr><td class="note">${wib(l.t)}</td><td><b>${esc(l.s)}</b></td><td class="${l.k === "buy" ? "pos" : l.k === "sell" ? "neg" : l.k === "err" ? "neg" : ""}">${esc(l.m)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada aktivitas.</td></tr></tbody>';
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
@@ -4295,7 +4304,7 @@
     $("apWake").addEventListener("change", () => apWakeSync());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
-    if (location.hostname === "localhost") window.__ap = { brainTrain, aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    if (location.hostname === "localhost") window.__ap = { devPolicy, brainTrain, aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
