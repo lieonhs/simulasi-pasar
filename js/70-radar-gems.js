@@ -151,7 +151,8 @@
     if (u === "wl") uni = $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean);
     if (u === "idxc") { await idxPairsLoad(); uni = (ix.pairs || []).filter((p) => p.base !== "usdt" && p.base !== "usdc" && !p.suspended && p.volIdr > 5e7).slice(0, 150).map((p) => p.base.toUpperCase() + "-USDT"); }
     if (u === "ctop" || u === "cmid") { $("gmStatus").textContent = "Mengambil daftar semua koin…"; uni = await allCrypto(u === "cmid" ? [30, 180] : [0, 150]); }
-    if ($("gmIdxOnly").checked && u !== "idxs" && u !== "usm" && u !== "wl") { await idxPairsLoad(); uni = (uni || []).filter((s) => !/-USDT?$/.test(s) || idxPairFor(s)); }
+    if ($("gmIdxOnly").checked && u !== "idxs" && u !== "usm" && u !== "wl") { await idxPairsLoad(); if ((ix.pairs || []).length) uni = (uni || []).filter((s) => !/-USDT?$/.test(s) || idxPairFor(s)); else toast("Daftar koin Indodax gagal dimuat" + (ix.pairsErr ? ` (${ix.pairsErr})` : "") + ". Filter Indodax dimatikan sementara."); }
+    if (u === "idxc" && !(uni || []).length) { $("gmStatus").textContent = "Daftar koin Indodax gagal dimuat: " + (ix.pairsErr || "tidak ada data") + ". Coba lagi sebentar lagi."; gm.busy = false; $("gmRun").disabled = false; return; }
     const syms = [...new Set(uni || [])].slice(0, 150), N = syms.length, deep = $("gmDeep").checked; let done = 0; if (!N) { $("gmStatus").textContent = "Tidak ada koin di daftar ini yang listing di Indodax."; gm.busy = false; $("gmRun").disabled = false; return; }
     const tick = (m) => { done++; $("gmBar").style.width = Math.round((100 * done) / (N + (deep ? 5 : 0))) + "%"; $("gmStatus").textContent = m; };
     gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); try { await idxPairsLoad(); } catch { /* */ } if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }

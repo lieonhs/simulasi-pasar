@@ -249,7 +249,7 @@
     $("sqlCheck").onclick = async () => { $("sqlCheck").disabled = true; try { me = await fetchMe(session); } catch (e) { toast(e.message || String(e)); }
       $("sqlCheck").disabled = false; const okk = me && !me._nodb;
       $("sqlState").innerHTML = okk ? `<span class="pos">aktif</span> · peranmu: ${me.role === "admin" ? "ADMIN" : esc(me.role)}` : '<span class="neg">belum aktif</span> — cek lagi apakah Run berhasil tanpa error merah';
-      if (okk) { $("cmdUser").textContent = (me.name || (session.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); if (me.role === "admin") refreshAdminBadge(); toast("Persetujuan admin aktif."); } };
+      if (okk) { $("cmdUser").innerHTML = `<span class="pn">${esc((me.name || (session.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""))}</span>`; if (me.role === "admin") refreshAdminBadge(); toast("Persetujuan admin aktif."); } };
   }
 
   // ---------- TradingView: grafik resmi (embed) dengan data dari TradingView ----------
@@ -598,7 +598,7 @@
   }
   async function enterApp(s) {
     $("authGate").hidden = true; $("userBox").hidden = false; $("userEmail").textContent = s.user.email || "";
-    $("cmdUser").textContent = (me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : "");
+    $("cmdUser").innerHTML = `<span class="pn">${esc((me.name || (s.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""))}</span>`;
     if (me.role === "admin") refreshAdminBadge();
     if (me._nodb && isOwner()) setTimeout(() => toast("Persetujuan admin belum aktif — ketik SETUP di baris perintah (atau buka PROFIL) untuk SQL siap salin + langkahnya."), 2500);
     if (booted) return; booted = true;

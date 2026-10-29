@@ -209,8 +209,17 @@
       <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "BELI" : "JUAL"}</td><td>${o.type}</td><td>${o.price ? fmtNum(o.price) : "market"}</td><td>${nf(8).format(o.amt)}</td><td>Rp ${nf(0).format(o.value)}</td><td class="txt">${o.ok ? `terkirim ${esc(String(o.id))}` : `<span class="neg">${esc(o.err || "")}</span>`}</td></tr>`).join("") + "</tbody>"
       : '<tbody><tr><td class="note">Belum ada order dari web ini.</td></tr></tbody>';
   }
-  async function idxPairsLoad(force = false) { if (ix.pairs && ix.pairsAt && !force && Date.now() - ix.pairsAt < 60e3) return ix.pairs;
-    try { let j = await (await apiFetch(`${API_IDX}?action=pairs`)).json().catch(() => ({})); if (!j.pairs) j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); if (j.pairs) { ix.pairs = j.pairs; ix.pairsAt = Date.now(); if (ix.pair) ix.pair = ix.pairs.find((p) => p.pair === ix.pair.pair) || ix.pair; } } catch { ix.pairs = ix.pairs || []; } return ix.pairs; }
+  // daftar koin Indodax: fungsi indodax-menu → market-data → langsung dari indodax.com (bila server diblokir). Error disimpan supaya tampil di layar.
+  async function idxPairsLoad(force = false) { if (ix.pairs && ix.pairs.length && ix.pairsAt && !force && Date.now() - ix.pairsAt < 60e3) return ix.pairs;
+    const errs = [], ok = (j) => j && Array.isArray(j.pairs) && j.pairs.length;
+    let j = null; try { j = await (await apiFetch(`${API_IDX}?action=pairs`)).json(); if (!ok(j)) errs.push("indodax-menu: " + ((j && j.error) || "kosong")); } catch (e) { errs.push("indodax-menu: " + e.message); }
+    if (!ok(j)) { try { j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); if (!ok(j)) errs.push("market-data: " + ((j && j.error) || "kosong")); } catch (e) { errs.push("market-data: " + e.message); } }
+    if (!ok(j)) { try { const [P, S] = await Promise.all([fetch("https://indodax.com/api/pairs").then((r) => r.json()), fetch("https://indodax.com/api/summaries").then((r) => r.json()).catch(() => ({}))]), T = (S && S.tickers) || {};
+        const L = (Array.isArray(P) ? P : []).filter((p) => String(p.id || p.ticker_id || "").endsWith("idr")).map((p) => { const id = String(p.id || p.ticker_id), base = String(p.traded_currency || id.replace(/idr$/, "")).toLowerCase(), t = T[`${base}_idr`] || {}, last = +t.last || null;
+          return { id, pair: `${base}_idr`, base, name: p.description || base.toUpperCase(), last, high: +t.high || null, low: +t.low || null, volIdr: +t.vol_idr || 0, chg24: null, chg7: null, volPrec: +(p.volume_precision ?? 8), suspended: !!p.is_maintenance }; }).sort((x, y) => y.volIdr - x.volIdr);
+        if (L.length) j = { pairs: L }; else errs.push("indodax.com: kosong"); } catch (e) { errs.push("indodax.com: " + e.message); } }
+    if (ok(j)) { ix.pairs = j.pairs; ix.pairsAt = Date.now(); ix.pairsErr = null; if (ix.pair) ix.pair = ix.pairs.find((p) => p.pair === ix.pair.pair) || ix.pair; } else { ix.pairs = ix.pairs || []; ix.pairsErr = errs.join(" · "); }
+    return ix.pairs; }
   const coinOf = (c) => (ix.pairs || []).find((p) => p.base === c);
   async function idxBalance() {
     $("xBalTable").innerHTML = '<tbody><tr><td class="status">Memuat saldo…</td></tr></tbody>';

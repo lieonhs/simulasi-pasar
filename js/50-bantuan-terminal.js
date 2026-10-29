@@ -389,7 +389,7 @@
       if (e.target.id === "hpCsv") return hpCsv();
       const ts = e.target.closest("[data-theme-set]"); if (ts) { applyTheme(ts.dataset.themeSet); showProfile(); return; }
       if (e.target.id === "profOut") { $("cmdLogout").click(); return; }
-      if (e.target.id === "profSave") { sb.rpc("sp_update_profile", { p_name: $("profName").value }).then(({ data }) => { if (data) me = { ...me, ...data }; $("cmdUser").textContent = (me.name || "").toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); toast("Nama disimpan"); }); return; }
+      if (e.target.id === "profSave") { sb.rpc("sp_update_profile", { p_name: $("profName").value }).then(({ data }) => { if (data) me = { ...me, ...data }; $("cmdUser").innerHTML = `<span class="pn">${esc((me.name || "").toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""))}</span>`; toast("Nama disimpan"); }); return; }
       const mb = e.target.closest("[data-mem]"); if (mb) { const args = { p_user: mb.dataset.mem, p_status: mb.dataset.st || "approved", p_role: mb.dataset.role || null };
         sb.rpc("sp_admin_decide", args).then(({ error }) => { if (error) toast("Gagal: " + error.message); showProfile(); refreshAdminBadge(); }); return; }
       if (e.target.id === "alAdd") return alAdd();

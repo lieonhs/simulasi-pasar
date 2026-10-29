@@ -759,3 +759,15 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 .re-modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 9999; } .re-card { background: var(--panel, #111); border: 1px solid var(--line); border-radius: 10px; padding: 16px; width: min(360px, 92vw); display: grid; gap: 8px; }
 .ap-adv { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; } .ap-adv > summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 0; }
 .ap-adv[open] > summary { margin-bottom: 6px; }
+/* Trading: tab rapi, tidak tumpang tindih */
+.trade-head .card-h { flex-wrap: wrap; gap: 10px; } .trade-head { padding-bottom: 10px; }
+.seg.seg4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(640px, 100%); }
+.seg.seg4 .seg-btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#trTabs .lbl-s { display: none; }
+@media (max-width: 760px) { #trTabs { width: 100%; } #trTabs .lbl-l { display: none; } #trTabs .lbl-s { display: inline; } .trade-head h2 { width: 100%; } }
+@media (max-width: 640px) { .chat-btn { padding: 0; width: 40px; height: 40px; border-radius: 50%; font-size: 0; } .chat-btn::before { content: "?"; font-size: 17px; } }
+.ap-rules { margin: 4px 0 0; }
+#apPane .table-wrap { overflow-x: auto; }
+.prof-btn { overflow: visible; display: inline-flex; align-items: center; } .prof-btn .pn { display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.prof-btn.hot::after { flex: none; }
+@media (max-width: 760px) { .prof-btn { max-width: none; } .prof-btn .pn { max-width: 70px; } }

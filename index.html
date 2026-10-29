@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com https://indodax.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="app-v" content="4b4280efc8">
 <script src="boot.js?v=4f05a39fd3"></script>
@@ -27,7 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/katex/katex.min.css?v=d0d6077daa">
-<link rel="stylesheet" href="style.css?v=3b7d708a05">
+<link rel="stylesheet" href="style.css?v=56fdd137e2">
 <script src="vendor/chart.umd.min.js?v=283d65ad75"></script>
 <script src="vendor/supabase.js?v=43b205e2c6"></script>
 <script defer src="vendor/katex/katex.min.js?v=f4e1ebdc2d"></script>
@@ -321,7 +321,7 @@
 
 <section class="wrap" id="tradeView" hidden>
   <div class="card trade-head"><div class="card-h"><h2>Trading</h2>
-    <div class="seg small seg3" id="trTabs"><button class="seg-btn active" data-t="demo">Akun demo</button><button class="seg-btn" data-t="strat">Strategi (50)</button><button class="seg-btn" data-t="idx" id="trTabIdx">Indodax (uang asli)</button><button class="seg-btn" data-t="ap">Autopilot</button></div></div>
+    <div class="seg small seg4" id="trTabs"><button class="seg-btn active" data-t="demo"><span class="lbl-l">Akun demo</span><span class="lbl-s">Demo</span></button><button class="seg-btn" data-t="strat"><span class="lbl-l">Strategi (50)</span><span class="lbl-s">Strategi</span></button><button class="seg-btn" data-t="idx" id="trTabIdx"><span class="lbl-l">Indodax (uang asli)</span><span class="lbl-s">Indodax</span></button><button class="seg-btn" data-t="ap"><span class="lbl-l">Autopilot</span><span class="lbl-s">Auto</span></button></div></div>
     <p class="note" style="margin:0" id="trHeadNote">Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu.</p></div>
 
   <div id="demoPane" class="trade-grid">
@@ -420,7 +420,9 @@
       </div>
       </details>
       <div id="apGate" class="verdict"></div>
-      <p class="note keep">Aturan: <b>beli</b> hanya bila Rencana aksi = BELI, keyakinan ≥ ambang, ekspektasi &gt; 0, dan <b>semua kecerdasan yang dicentang</b> mendukung naik (ML/DL harus <i>teruji</i> dan peluang naik ≥ ambang; RAM AI skor ≥ +2). Model dengan keyakinan di bawah 75% tidak pernah dipakai untuk eksekusi. Stop & target dipasang otomatis. <b>Jual</b> posisi autopilot bila semua kecerdasan yang dicentang condong turun atau rencana berubah JUAL. <b>Berita kejutan</b> (diretas, bangkrut, delisting, suspensi, gugatan, sanksi, depeg, dll., atau ≥ 3 berita negatif dalam 24 jam) langsung menjual posisi autopilot tanpa menunggu kecerdasan lain dan memblok beli 24 jam; berita diperiksa tiap 5 menit. <b>Batas rugi harian 5%</b>: bila nilai run turun ≥ 5% dalam sehari, beli baru diblok sampai besok. Tidak menyentuh posisi manualmu. <b>Mode portofolio:</b> dana dibagi ke aset yang lolos sesuai keyakinan × ekspektasi, lalu hanya dipindah bila keuntungan yang diharapkan melebihi biaya jual + beli + spread + margin 0,5%. Jeda 24 jam per aset setelah keluar. <b>Run demo</b>: dana uji maks Rp 1 miliar; bila nilai run turun ke 50% (mis. 1 miliar tinggal 500 juta), autopilot dianggap <b>gagal memprediksi</b>, dimatikan, dan posisinya ditutup. Saham IDX hanya diproses saat jam bursa. Hanya berjalan selama web ini terbuka.</p>
+      <details class="ap-adv"><summary>📘 Aturan autopilot</summary>
+      <p class="note keep ap-rules">Aturan: <b>beli</b> hanya bila Rencana aksi = BELI, keyakinan ≥ ambang, ekspektasi &gt; 0, dan <b>semua kecerdasan yang dicentang</b> mendukung naik (ML/DL harus <i>teruji</i> dan peluang naik ≥ ambang; RAM AI skor ≥ +2). Model dengan keyakinan di bawah 75% tidak pernah dipakai untuk eksekusi. Stop & target dipasang otomatis. <b>Jual</b> posisi autopilot bila semua kecerdasan yang dicentang condong turun atau rencana berubah JUAL. <b>Berita kejutan</b> (diretas, bangkrut, delisting, suspensi, gugatan, sanksi, depeg, dll., atau ≥ 3 berita negatif dalam 24 jam) langsung menjual posisi autopilot tanpa menunggu kecerdasan lain dan memblok beli 24 jam; berita diperiksa tiap 5 menit. <b>Batas rugi harian 5%</b>: bila nilai run turun ≥ 5% dalam sehari, beli baru diblok sampai besok. Tidak menyentuh posisi manualmu. <b>Mode portofolio:</b> dana dibagi ke aset yang lolos sesuai keyakinan × ekspektasi, lalu hanya dipindah bila keuntungan yang diharapkan melebihi biaya jual + beli + spread + margin 0,5%. Jeda 24 jam per aset setelah keluar. <b>Run demo</b>: dana uji maks Rp 1 miliar; bila nilai run turun ke 50% (mis. 1 miliar tinggal 500 juta), autopilot dianggap <b>gagal memprediksi</b>, dimatikan, dan posisinya ditutup. Saham IDX hanya diproses saat jam bursa. Hanya berjalan selama web ini terbuka.</p>
+      </details>
     </section>
     <div><div class="card" id="apPosCard"><div class="card-h"><h2>Posisi terbuka · 2 strategi</h2><span class="note" id="apPosN"></span></div>
       <div class="subh">📈 Swing (model)</div><div class="table-wrap"><table id="apPosS"></table></div>
@@ -1168,11 +1170,11 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/10-analisis.js?v=3ba1fc4963"></script>
 <script src="js/20-watchlist-pasar.js?v=7b77f178ad"></script>
 <script src="js/30-portofolio.js?v=4219b116f7"></script>
-<script src="js/40-trading-strategi.js?v=9585f5eb3a"></script>
-<script src="js/50-bantuan-terminal.js?v=09656aed94"></script>
+<script src="js/40-trading-strategi.js?v=41ce119e11"></script>
+<script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=2a8b5eaf27"></script>
-<script src="js/70-radar-gems.js?v=a96db8fa0f"></script>
-<script src="js/80-autopilot.js?v=9bc06a3133"></script>
-<script src="js/90-aset-terminal-boot.js?v=e4d4ecf34b"></script>
+<script src="js/70-radar-gems.js?v=67c42b6a9f"></script>
+<script src="js/80-autopilot.js?v=58fa6989f4"></script>
+<script src="js/90-aset-terminal-boot.js?v=7cc13e6ef5"></script>
 </body>
 </html>

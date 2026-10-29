@@ -787,15 +787,15 @@ lap("berita");
     const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s), RC = ap.rdc ? apRdPick(ap.rdc.rows) : [];
     return [...new Set([...apPositions(), ...apWatch(), ...AP_GROUPS.flatMap((g) => g[1]), ...RC, ...G])].slice(0, 40); }
   async function apWideRefresh(force) { const sc = ap.cfg.scope; if (!["cmid", "ctop", "cidx"].includes(sc)) return; const W = ap.wide || (ap.wide = {}), at = ap.wideAt || (ap.wideAt = {});
-    if (!force && W[sc] && Date.now() - (at[sc] || 0) < 6 * 3600e3) return;
-    if (sc === "cidx") { await idxPairsLoad(); W[sc] = (ix.pairs || []).filter((p) => !["usdt", "usdc"].includes(p.base) && !p.suspended && p.volIdr > 5e7).sort((x, y) => y.volIdr - x.volIdr).slice(0, 120).map((p) => p.base.toUpperCase() + "-USDT"); }
+    if (!force && W[sc] && W[sc].length && Date.now() - (at[sc] || 0) < 6 * 3600e3) return;
+    if (sc === "cidx") { await idxPairsLoad(true); W[sc] = (ix.pairs || []).filter((p) => !["usdt", "usdc"].includes(p.base) && !p.suspended && p.volIdr > 5e7).sort((x, y) => y.volIdr - x.volIdr).slice(0, 120).map((p) => p.base.toUpperCase() + "-USDT"); }
     else W[sc] = await allCrypto(sc === "cmid" ? [30, 150] : [0, 120]); at[sc] = Date.now(); }
   const apWatch = () => [...new Set((($("wlQ") && $("wlQ").value) || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
   function apSetList(L) { $("apList").value = [...new Set(L)].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); }
   function drawApChips() { const L = apList(), held = apPositions(), lab = (s) => s.replace(/\.JK$/, "").replace(/-USD$/, "").replace("GC=F", "EMAS").replace("^JKSE", "IHSG");
     const wide = isWide(); ["apFind", "apPick"].forEach((id) => { const el = $(id); if (el) (id === "apFind" ? el.parentElement : el).hidden = wide; }); document.querySelectorAll(".ap-pickonly").forEach((el) => (el.hidden = wide));
     if (wide) { const A = apAll(), lab = { all: "Semua aset", cmid: "Semua kripto · peringkat 30–150", ctop: "Semua kripto · 120 teratas", cidx: "Semua koin Indodax" }[ap.cfg.scope];
-      $("apChips").innerHTML = `<span class="ap-chip held">${lab} · ${A.length}</span><span class="note">${ap.cfg.scope === "all" ? "watchlist + tombol cepat + kripto Radar + Hidden gems" : A.length ? "diperbarui tiap 6 jam dari volume 24 jam" : "memuat daftar koin…"}. Ganti Cakupan untuk memilih sendiri.</span>`; }
+      $("apChips").innerHTML = `<span class="ap-chip held">${lab} · ${A.length}</span><span class="note">${ap.cfg.scope === "all" ? "watchlist + tombol cepat + kripto Radar + Hidden gems" : A.length ? "diperbarui tiap 6 jam dari volume 24 jam" : ap.cfg.scope === "cidx" && ix.pairsErr ? `<span class="neg">daftar Indodax gagal dimuat: ${esc(ix.pairsErr)}</span>` : "memuat daftar koin…"}. Ganti Cakupan untuk memilih sendiri.</span>`; }
     else $("apChips").innerHTML = L.length ? L.map((s) => `<span class="ap-chip${held.includes(s) ? " held" : ""}" title="${esc(s)}">${esc(lab(s))}${held.includes(s) ? " •" : ""}<button data-apdel="${esc(s)}" title="Hapus">✕</button></span>`).join("") + `<span class="note">${L.length}/8</span>` : '<span class="note">Belum ada aset. Klik aset di bawah atau cari.</span>';
     const W = apWatch(), RC = apRdPick([...((rd.rows || []).filter((r) => !r.err && /-USDT?$/.test(r.s))), ...((ap.rdc && ap.rdc.rows) || [])]);
     let groups = [...(RC.length ? [["Radar kripto · Uji dulu", [...new Set(RC)].slice(0, 16)]] : []), ...(W.length ? [["Watchlist saya", W.slice(0, 20)]] : []), ...AP_GROUPS]; if (ap.cfg.target === "idx" && ix.pairs) groups = [["Indodax (volume ≥ Rp 1 M)", ix.pairs.filter((p) => p.volIdr >= 1e9).sort((a, b) => b.volIdr - a.volIdr).slice(0, 16).map((p) => p.base.toUpperCase() + "-USD")]];
@@ -816,7 +816,7 @@ lap("berita");
       if (/^tg/.test(id)) ap.tgOdds = null;
       if (id === "apPickSrc" && ap.cfg.autoPick) { ap.cfg.pickAt = 0; setTimeout(() => apAutoPick(true), 300); }
       if (id === "apAutoPick" && ap.cfg.autoPick) { ap.cfg.pickAt = 0; setTimeout(() => apAutoPick(true), 300); }
-      if (id === "apOn" && ap.cfg.on) { if (!apSyms().length && !ap.cfg.autoPick) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
+      if (id === "apOn" && ap.cfg.on) { if (!apSyms().length && !ap.cfg.autoPick && !isWide()) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
       if (id === "apOn" && !ap.cfg.on) apLogAdd("—", "Autopilot dimatikan");
       apSave(); drawAp(); }));
     $("apAddCur").onclick = () => { if (!state.data) return; const L = apList(); if (!L.includes(state.data.symbol)) { $("apList").value = [...L, state.data.symbol].join(", "); apRead(); apSave(); drawAp(); } };
