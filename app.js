@@ -4034,6 +4034,24 @@
     let q = NaN; try { const o = await idxCall("getOrder", { symbol: p.base + "idr", orderId: String(j.orderId || "") }); q = +o.executedQty; } catch { /* */ } if (!(q > 0)) q = floorTo((v / p.last) * 0.997, vp);
     const x = { id: Date.now().toString(36), ap: true, day: true, sym: s, base: p.base, symbol: p.base + "idr", pair: p.pair, entry: p.last, qty: q, filled: q, vp, st: "harian", created: Date.now(), sells: [], log: [], buyId: String(j.orderId || "") };
     auLog(x, `HARIAN beli market Rp ${nf(0).format(v)} → ${q}`); au.list.unshift(x); auSave(); c.nDay++; apLogAdd(s, `DAY BELI (Indodax) Rp ${nf(0).format(v)} market · ${q} ${p.base.toUpperCase()}`, "buy"); st.dnote = "day trade Indodax dibuka"; }
+
+  // ---- Posisi terbuka dikelompokkan per strategi (swing vs harian), demo dan Indodax
+  function drawApPos() { const S = [], D = [], lastOf = (s) => (pp.q[s] ? pp.q[s].price : NaN);
+    for (const [s, p] of Object.entries(pp.a.pos || {})) if (p.ap) { const q = lastOf(s), fx = fxOf(s), v = isFinite(q) ? p.units * q * fx : NaN, b = p.brk || {};
+      S.push({ s, where: "Demo", side: "LONG", qty: p.units, entry: p.cost / p.units / fx, px: q, pl: v - p.cost, base: p.cost, stop: b.stop, t: b.t1 ? `${fmtNum(b.t1)} · ${fmtNum(b.t2)}` : "", since: b.at, close: `pos:${s}` }); }
+    for (const o of pp.a.orders || []) if (o.ap && o.status === "terbuka" && o.side === "buy") S.push({ s: o.s, where: "Demo", side: "order menunggu", qty: o.units, entry: o.limit, px: lastOf(o.s), pl: NaN, stop: o.brk && o.brk.stop, t: o.brk ? `${fmtNum(o.brk.t1)} · ${fmtNum(o.brk.t2)}` : "", since: o.t, wait: true });
+    for (const f of futList()) if (f.ap) { const q = lastOf(f.s), pl = isFinite(q) ? Math.max(-f.margin, futPnl(f, q)) : NaN, b = f.brk || {}, n = ap.st[f.s] && ap.st[f.s].day;
+      (f.day ? D : S).push({ s: f.s, where: f.spot ? "Demo" : `Demo futures ${f.lev}x`, side: f.dir > 0 ? "LONG" : "SHORT", qty: f.units, entry: f.entry, px: q, pl, base: f.margin, stop: f.day && n ? (f.dir > 0 ? Math.max(n.up, n.vwap) : Math.min(n.lo, n.vwap)) : b.stop, t: f.day ? (daySession(f.s).label.split(": ")[1] || "") : b.t1 ? `${fmtNum(b.t1)} · ${fmtNum(b.t2)}` : "", since: f.t, liq: f.spot ? null : futLiq(f), close: `fut:${f.id}` }); }
+    for (const x of au.list) if (x.ap && ["menunggu", "terisi", "harian"].includes(x.st)) { const pr = x.last || (coinOf(x.base) || {}).last, q = x.filled || x.qty, pl = x.st !== "menunggu" && pr ? (pr - x.entry) * q : NaN;
+      (x.st === "harian" ? D : S).push({ s: x.sym, where: "Indodax", side: x.st === "menunggu" ? "order menunggu" : "LONG", qty: q, entry: x.entry, px: pr, pl, base: x.entry * q, stop: x.stop, t: x.st === "harian" ? "tutup 23.50" : x.t1 ? `${fmtNum(x.t1)} · ${fmtNum(x.t2)}` : "", since: x.created, wait: x.st === "menunggu", idr: true }); }
+    const T = (t) => (t ? wib(typeof t === "number" ? new Date(t).toISOString() : t) : "–");
+    const tbl = (L) => L.length ? `<thead><tr><th>Aset</th><th>Di</th><th>Arah</th><th>Jumlah</th><th>Masuk</th><th>Kini</th><th>Untung/rugi</th><th>Stop</th><th>Target / tutup</th><th>Sejak</th><th></th></tr></thead><tbody>` + L.map((r) => `<tr${r.wait ? ' class="ap-pend"' : ""}><td><b>${esc(r.s)}</b></td><td class="note">${esc(r.where)}</td>
+      <td class="${r.side === "LONG" ? "pos" : r.side === "SHORT" ? "neg" : ""}"><b>${esc(r.side)}</b></td><td>${nf(r.qty < 1 ? 6 : r.qty < 100 ? 2 : 0).format(r.qty)}</td><td>${r.idr ? "Rp " : ""}${fmtNum(r.entry)}</td><td>${isFinite(r.px) ? (r.idr ? "Rp " : "") + fmtNum(r.px) : "–"}</td>
+      <td>${isFinite(r.pl) ? `<span class="${cls(r.pl)}">${r.pl >= 0 ? "+" : "−"}${big(Math.abs(r.pl), "IDR")}${r.base ? ` (${spct(r.pl / r.base, 1)})` : ""}</span>` : '<span class="note">–</span>'}</td>
+      <td class="neg">${r.stop ? fmtNum(r.stop) : "–"}${r.liq ? `<br><span class="note">likuidasi ${fmtNum(r.liq)}</span>` : ""}</td><td class="note">${esc(r.t || "–")}</td><td class="note">${T(r.since)}</td><td>${r.close ? `<button class="x-btn" data-apclose="${esc(r.close)}">Tutup</button>` : ""}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Tidak ada posisi.</td></tr></tbody>';
+    $("apPosS").innerHTML = tbl(S); $("apPosD").innerHTML = tbl(D);
+    const sum = (L) => L.reduce((t, r) => t + (isFinite(r.pl) ? r.pl : 0), 0), sS = sum(S), sD = sum(D);
+    $("apPosN").innerHTML = `swing ${S.length} · <span class="${cls(sS)}">${sS >= 0 ? "+" : "−"}${big(Math.abs(sS), "IDR")}</span> &nbsp;|&nbsp; harian ${D.length} · <span class="${cls(sD)}">${sD >= 0 ? "+" : "−"}${big(Math.abs(sD), "IDR")}</span>`; }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits(); ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
@@ -4100,7 +4118,7 @@
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
-    drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp();
+    drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
     { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
@@ -4148,14 +4166,18 @@
     $("tgStart").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const c = ap.cfg; c.tgOn = true; $("tgOn").checked = true; c.budget = 1e6; $("apBudget").value = 1e6; c.target = "demo"; $("apTarget").value = "demo"; c.mode = "asset"; $("apMode").value = "asset";
       const n = ((c.run && c.run.n) || 0) + 1; c.run = { start: new Date().toISOString(), cap: 1e6, n }; ap.tgOdds = null; apLogAdd("—", `Run #${n} TARGET dimulai: Rp 1 jt → ${fmtIdr(c.tgAmt)} · agresif ${pct(c.tgAgg, 0)}/transaksi, hati-hati ${pct(c.tgSafe, 2)}, rem ${pct(c.tgBrake, 0)}`); apSave(); drawAp(); };
     $("apFutCard").addEventListener("click", async (e) => { const x = e.target.closest("[data-futx]"); if (!x) return; const f = futList().find((y) => y.id === x.dataset.futx); if (!f) return; await ppQuotes([f.s]); const q = pp.q[f.s]; if (!q) return; const pl = futClose(f, q.price, "manual"); apLogAdd(f.s, `Futures ditutup manual @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`); ppSnap(); ppSave(); renderPaper(); drawAp(); });
+    $("apPosCard").addEventListener("click", async (e) => { const b = e.target.closest("[data-apclose]"); if (!b) return; const [k, id] = b.dataset.apclose.split(":");
+      if (k === "fut") { const f = futList().find((y) => y.id === id); if (!f) return; await ppQuotes([f.s]); const q = pp.q[f.s]; if (!q) return; const pl = futClose(f, q.price, "manual"); apLogAdd(f.s, `Ditutup manual @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`, "sell"); }
+      else if (k === "pos") { const m = await apSell({ sym: id }, 1, "swing"); apLogAdd(id, `Swing ditutup manual · ${m || "–"}`, "sell"); }
+      ppSnap(); ppSave(); renderPaper(); apSave(); drawAp(); });
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
     $("apWake").addEventListener("change", () => apWakeSync());
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
-    if (location.hostname === "localhost") window.__ap = { apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
-    clearInterval(ap.timer); ap.timer = setInterval(() => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) drawAp(); }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+    if (location.hostname === "localhost") window.__ap = { futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
   // =====================================================================
   // MANAJEMEN ASET: semua yang kamu pegang dalam satu layar (uang asli dan demo dipisah)
