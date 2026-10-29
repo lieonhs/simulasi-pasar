@@ -644,7 +644,7 @@ body.mode-simple .pro-only-v, body.mode-quick .pro-only-v { display: none !impor
 .dl-att { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin-top: 8px; } .dl-att i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
 .dl-att-l { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 .ask-gem { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
-@media (max-width: 640px) { .br { grid-template-columns: 1fr 1fr; } .br-f { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .br { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; } .br-f { grid-column: 1 / -1; } .br-c { padding: 6px 8px; } .br-c .v { font-size: 15px; } .br-c .h { font-size: 10px; } }
 /* radar */
 .rd-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .rd-ctl select { width: auto; }
 .rd-sum { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
@@ -659,3 +659,17 @@ body.mode-pro .kpi .h { font-size: 10px; }
 #actBody .act-top { grid-template-columns: 1fr !important; } #actBody .act-top > .sig-verdict { display: none; }
 #screenView > #radarCard { grid-column: 1 / -1; position: static; margin-bottom: 18px; }
 @media (max-width: 640px) { #rdTable th:nth-child(5), #rdTable td:nth-child(5), #rdTable th:nth-child(7), #rdTable td:nth-child(7), #rdTable th:nth-child(8), #rdTable td:nth-child(8), #rdTable th:nth-child(9), #rdTable td:nth-child(9) { display: none; } .rd-ctl { width: 100%; } }
+/* hero keputusan + tab rencana */
+.act-card #actBrain { position: relative; }
+.br-line { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.br-line > div:not(.br-act) { display: flex; flex-direction: column; } .br-line > div > span { font-size: 11px; color: var(--muted); } .br-line b { font-family: var(--mono); font-size: 15px; }
+.br-act { margin-left: auto; display: flex; gap: 6px; }
+.act-tabs { margin: 6px 0 12px; overflow-x: auto; flex-wrap: nowrap; } .act-tabs .tab { white-space: nowrap; }
+.act-inputs2 { grid-template-columns: repeat(2, minmax(0, 220px)) !important; margin: 0 0 10px !important; } .act-inputs1 { grid-template-columns: minmax(0, 260px) !important; margin: 0 0 10px !important; }
+.act-pane[hidden] { display: none !important; }
+@media (max-width: 640px) {
+  .topbar { position: static !important; } #focusBar { display: none !important; }
+  .br-line { gap: 6px 12px; } .br-line b { font-size: 13px; } .br-act { margin-left: 0; width: 100%; } .br-act .btn { flex: 1; }
+  .act-inputs2 { grid-template-columns: 1fr 1fr !important; }
+  .act-tiles { grid-template-columns: 1fr 1fr !important; }
+}

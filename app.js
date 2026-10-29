@@ -2602,7 +2602,7 @@
     if (need) { setFocus(focus); await openDetail(sym); } else { setView("detail"); }
     setFocus(focus);
     if (fn === "GIP") { const t = document.querySelector('#tfTabs .tab[data-tf="5m"]'); if (t) t.click(); }
-    else if (fn === "CONF") { let k = 0; const go = () => { const el = $("actConf"); if (el && el.innerHTML) { el.scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el); } else if (k++ < 40) setTimeout(go, 500); }; go(); }
+    else if (fn === "CONF") { setActTab("conf"); let k = 0; const go = () => { const el = $("actConf"); if (el && el.innerHTML) { el.scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el); } else if (k++ < 40) setTimeout(go, 500); }; go(); }
     else if (fn === "GP" && isIntra()) { const t = document.querySelector('#tfTabs .tab[data-tf="D"]'); if (t) t.click(); }
   }
   function flashCard(el) { if (!el) return; el.classList.remove("flash-card"); void el.offsetWidth; el.classList.add("flash-card"); }
@@ -2907,6 +2907,10 @@
     try { const B = brain(); if (B && B.why && act.plan.action === "BELI") { act.plan.action = "TAHAN"; act.plan.basis += "; " + B.why; } } catch { /* */ }
     drawAction(); renderTcPos();
   }
+  const CORE_T = ["Keyakinan keputusan", "Peluang kena target 1", "Risk : Reward", "Ekspektasi / transaksi", "Ukuran posisi", "Risiko optimal (¼ Kelly)", "Horizon", "Prediksi harga"];
+  const isCore = (t) => CORE_T.some((c) => String(t[0]).startsWith(c));
+  const tileH = ([k, v, h, c]) => `<div class="kpi ${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`;
+  function setActTab(t) { document.querySelectorAll("#actTabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.at === t)); document.querySelectorAll("#actCard .act-pane").forEach((p) => (p.hidden = p.dataset.ap !== t)); try { localStorage.setItem("sp_act_tab", t); } catch { /* */ } }
   function kellyCap(P) { const tested = P.nRobust > 0 || (P.ml && P.ml.valid) || !!P.fuse || !!P.sel; return tested ? 0.02 : 0.005; }
   function kellyTile(P) { const K = P.kelly, cap = kellyCap(P);
     if (P.action !== "BELI") return ["Risiko optimal (¼ Kelly)", "–", "hanya dihitung saat BELI", ""];
@@ -2955,15 +2959,15 @@
     if (ml && !ml.valid) warn.push(`Model ML belum lolos uji untuk aset ini (AUC ${nf(2).format(ml.auc)}), jadi hanya jadi informasi dan tidak mengubah keputusan.`);
     if (pr && pr.expR <= 0) warn.push("Ekspektasi per transaksi ≤ 0 setelah biaya: secara historis rencana harga ini tidak menghasilkan untung.");
     $("actBody").innerHTML = `<div class="act-top"><div class="sig-verdict ${vcls}"><div class="note">Yang sebaiknya dilakukan</div><div class="big">${P.action}</div><div class="note">keyakinan ${P.conf}</div></div>
-        <div class="act-tiles">${tiles.map(([k, v, h, c]) => `<div class="kpi ${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("")}</div></div>
+        <div class="act-tiles">${tiles.filter(isCore).map(tileH).join("")}</div></div>
       ${P.action !== "BELI" ? `<p class="note" style="margin:10px 0 0">Peluang, RR, ekspektasi & ukuran posisi di atas dihitung untuk skenario <b>tetap beli di ${fmtNum(P.entry)}</b> (stop ${fmtNum(P.stop)}, target ${fmtNum(P.t1)} / ${fmtNum(P.t2)}) — berguna kalau kamu tetap ingin masuk.</p>` : ""}
-      <p class="note" style="margin:10px 0 0">Dasar: ${esc(P.basis)}.${acc && isFinite(acc.p) ? ` Keyakinan teruji = ${esc(acc.rule)} pada ${nf(0).format(acc.n)} hari dengan keputusan yang sama.` : ""}</p>
       ${probBar}
       <div class="act-grid"><div><table class="act-ladder">${ladder}</table><p class="note">Order mulai: ${P.when}. ATR ${fmtNum(P.atr)} (gerak harian wajar). Stop memakai harga tutup supaya tidak kena “sapuan” sesaat. Tanggal sudah melewati akhir pekan & libur bursa.${act.holNote ? " " + esc(act.holNote) : ""}</p></div>
         <div style="display:grid;gap:10px"><div class="act-col"><h4>Kalau belum punya</h4><ol>${steps[0].map((x) => `<li>${x}</li>`).join("")}</ol></div><div class="act-col"><h4>Kalau sudah punya</h4><ol>${steps[1].map((x) => `<li>${x}</li>`).join("")}</ol></div></div></div>
-      ${warn.length ? `<div class="verdict">${warn.join(" ")}</div>` : ""}
-      <div class="trk" id="actTrack"></div>
       <div class="act-btns">${P.action === "JUAL" && pp.a && pp.a.pos[state.data.symbol] ? `<button class="btn" id="actSell">Isi tiket demo: jual posisi demo</button>` : ""}${P.action === "BELI" && P.qty > 0 ? `<button class="btn primary" id="actDemo">Isi tiket demo: beli ${idx ? nf(0).format(P.qty) : nf(4).format(P.qty)} ${unitW} @ ${fmtNum(P.entry)}</button>` : ""}<button class="btn" data-cmd="${esc(state.data.symbol)} STRAT">Lihat 50 strategi</button></div>`;
+    $("actEvid").innerHTML = `<div class="act-tiles">${tiles.filter((t) => !isCore(t)).map(tileH).join("")}</div>
+      ${warn.length ? `<div class="verdict">${warn.join(" ")}</div>` : ""}
+      <p class="note keep" style="margin:10px 0 0"><b>Dasar keputusan:</b> ${esc(P.basis)}.${acc && isFinite(acc.p) ? ` Keyakinan teruji = ${esc(acc.rule)} pada ${nf(0).format(acc.n)} hari dengan keputusan yang sama.` : ""}</p>`;
     const dm = $("actDemo"); if (dm) dm.onclick = actToDemo;
     const ds = $("actSell"); if (ds) ds.onclick = () => { const sym = state.data.symbol, p = pp.a.pos[sym]; if (!p) return; openTrade(sym, "sell");
       setTimeout(() => { $("dType").value = "market"; $("dQty").value = isIdx() ? Math.floor(p.units / 100) : p.units; ppPreview(); }, 350); };
@@ -3167,8 +3171,8 @@
     const mErr = act.ml && act.ml.error ? "data kurang" : null, dErr = mErr || (M && (!M.dl || M.dl.error) ? "data kurang" : null);
     const parts = [{ k: "ML", dir: dirP(M), p: M ? M.p : NaN, valid: !!(M && M.valid), auc: M ? M.auc : NaN, err: mErr }, { k: "DL", dir: dirP(DL), p: DL ? DL.p : NaN, valid: !!(DL && DL.valid), auc: DL ? DL.auc : NaN, err: dErr },
       { k: "AI", dir: aiDir, score, valid: true }];
-    const want = action === "BELI" ? 1 : action === "JUAL" ? -1 : 0, agree = parts.filter((x) => x.dir === want && (x.valid || x.k === "AI")).length;
-    return { action, why, conf: P.confPct, confSrc: P.confSrc, parts, agree, score, reasons: R.filter((r) => r.w).sort((a, b) => Math.abs(b.w) - Math.abs(a.w)), risk };
+    const want = action === "BELI" ? 1 : action === "JUAL" ? -1 : 0, live = parts.filter((x) => x.valid), agree = live.filter((x) => x.dir === want).length;
+    return { action, why, conf: P.confPct, confSrc: P.confSrc, parts, agree, nLive: live.length, score, reasons: R.filter((r) => r.w).sort((a, b) => Math.abs(b.w) - Math.abs(a.w)), risk };
   }
   function drawBrain() {
     const el = $("actBrain"); if (!el) return; const B = brain(); if (!B) { el.innerHTML = ""; return; } act.brain = B;
@@ -3176,9 +3180,15 @@
     const cell = (x) => x.k === "AI" ? `<div class="br-c"><div class="k">AI lokal</div><div class="v">${arrow(x.dir)} ${x.score > 0 ? "+" : ""}${nf(1).format(x.score)}</div><div class="h">aturan</div></div>`
       : `<div class="br-c ${x.valid ? "ok" : "off"}"><div class="k">${x.k === "ML" ? "Machine learning" : "Deep learning"}</div><div class="v">${isFinite(x.p) ? `${arrow(x.dir)} ${pct(x.p, 0)}` : x.err ? "–" : "…"}</div><div class="h">${isFinite(x.auc) ? `AUC ${nf(2).format(x.auc)} · ${x.valid ? "teruji" : "abaikan"}` : x.err || "melatih…"}</div></div>`;
     const vc = B.action === "BELI" ? "buy" : B.action === "JUAL" ? "sell" : "hold";
-    el.innerHTML = `<div class="br"><div class="br-f ${vc}"><div class="k">Kesimpulan 3 kecerdasan</div><div class="v">${B.action}</div><div class="h">${isFinite(B.conf) ? pct(B.conf, 0) : "–"} · ${B.agree}/3 searah${act.plan && act.plan.fuse ? " · fusi teruji" : ""}</div></div>${B.parts.map(cell).join("")}</div>
+    const P = act.plan, f = fmtNum, idx = isIdx();
+    const line = B.action === "BELI" ? [["Antre beli", f(P.entry)], ["Stop", `<span class="neg">${f(P.stop)}</span>`], ["Target", `<span class="pos">${f(P.t1)} / ${f(P.t2)}</span>`], ["RR", `1:${nf(1).format(P.rr1)}`], ["Jumlah", P.qty > 0 ? (idx ? nf(0).format(P.qty) + " lot" : nf(4).format(P.qty)) : "–"], ["Sampai", fmtDay(P.expire)]]
+      : B.action === "JUAL" ? [["Jual di", f(P.entryHi)], ["Sisa jual bila tutup <", `<span class="neg">${f(P.trail)}</span>`], ["Beli lagi bila tutup >", f(P.trigUp)], ["Paling lambat", fmtDay(P.expire)]]
+      : [["Beli bila tutup >", f(P.trigUp)], ...(P.pull ? [["Atau antre di", f(P.pull)]] : []), ["Pemegang jual bila tutup <", `<span class="neg">${f(P.trail)}</span>`], ["Evaluasi", fmtDay(P.review)]];
+    el.innerHTML = `<div class="br"><div class="br-f ${vc}"><div class="k">Kesimpulan 3 kecerdasan</div><div class="v">${B.action}</div><div class="h">keyakinan ${isFinite(B.conf) ? `<b>${pct(B.conf, 0)}</b>` : "–"} · ${B.agree}/${B.nLive} teruji mendukung${act.plan && act.plan.fuse ? " · fusi" : ""}</div></div>${B.parts.map(cell).join("")}</div>
+      <div class="br-line">${line.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}<div class="br-act">${B.action === "BELI" && P.qty > 0 ? '<button class="btn primary" id="brDemo">Isi tiket demo</button>' : ""}<button class="btn" data-goat="ask">Tanya AI</button></div></div>
       <div class="br-why">${B.reasons.slice(0, 4).map((r) => `<span class="${r.w > 0 ? "pos" : "neg"}">${r.w > 0 ? "+" : "−"} ${esc(r.txt)}</span>`).join("")}${B.risk.slice(0, 3).map((r) => `<span class="warn">! ${esc(r)}</span>`).join("")}${B.why ? `<span class="neg">${esc(B.why)}</span>` : ""}</div>`;
   }
+  document.addEventListener("click", (e) => { if (e.target && e.target.id === "brDemo") actToDemo(); });
   // tanya-jawab lokal: niat pertanyaan → jawaban dari angka di halaman; selain itu cari di Buku Panduan
   function localAnswer(q, dataOnly = false) {
     const P = act.plan, B = act.brain || brain(), s = String(q).toLowerCase(), M = act.ml && !act.ml.error ? act.ml : null, DL = M && M.dl && !M.dl.error ? M.dl : null, C = act.conf, idx = isIdx();
@@ -3269,6 +3279,8 @@
     const yNeed = new Date(Date.now() + 90 * 864e5).getUTCFullYear(); for (let y = 2028; y <= yNeed; y++) {
       try { const j = await (await apiFetch(`${API}?action=holidays&year=${y}&country=ID`)).json(); if (j && j.days) { MCEngine.addHolidays("IDX", j.days.map((x) => x.date)); act.holNote = `Libur ${y} diambil otomatis dari ${j.source}.`; } } catch { /* */ } } }
   function bindAction() { ensureHolidays(); bindChartSrc();
+    $("actTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-at]"); if (b) setActTab(b.dataset.at); });
+    $("actBrain").addEventListener("click", (e) => { const b = e.target.closest("[data-goat]"); if (b) { setActTab(b.dataset.goat); if (b.dataset.goat === "ask") setTimeout(() => $("actAsk").focus(), 50); } });
     ["actCap", "actRisk", "actGoal"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(act.t); act.t = setTimeout(() => { if (act.all) renderAction(); }, 300); }));
     $("actAiRun").onclick = () => runBrief(false);
     $("actAskF").addEventListener("submit", (e) => { e.preventDefault(); const q = $("actAsk").value.trim(); if (q) { askAi(q); $("actAsk").value = ""; } });

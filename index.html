@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029124512">
+<link rel="stylesheet" href="style.css?v=20261029125918">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -599,19 +599,28 @@
     <div class="card price-only act-card" id="actCard" hidden>
       <div class="card-h"><h2>Rencana aksi <span class="tag" id="actTag">beli · jual · tahan</span></h2><span class="note" id="actAsOf"></span></div>
       <div id="actBrain"></div>
-      <div id="actBody"><p class="note">Menyiapkan rencana…</p></div>
-      <div id="actConf" class="act-conf"></div>
-      <div class="act-inputs">
+      <div class="tabs act-tabs" id="actTabs"><button class="tab active" data-at="plan">Rencana</button><button class="tab" data-at="evid">Bukti</button><button class="tab" data-at="conf">Konfluensi</button><button class="tab" data-at="track">Rekam jejak</button><button class="tab" data-at="goal">Target uang</button><button class="tab" data-at="ask">Tanya AI</button></div>
+      <div class="act-pane" data-ap="plan">
+        <div class="act-inputs act-inputs2">
         <div><label class="lbl" for="actCap">Modal kamu (Rp)</label><input id="actCap" type="number" min="0" step="1000000" value="10000000"></div>
         <div><label class="lbl" for="actRisk">Risiko per transaksi</label><select id="actRisk"><option value="0.005">0,5% modal</option><option value="0.01" selected>1% modal</option><option value="0.02">2% modal</option><option value="0.05">5% modal (agresif)</option></select></div>
-        <div><label class="lbl" for="actGoal">Target uang (Rp)</label><input id="actGoal" type="number" min="0" step="1000000" value="100000000"></div>
+        </div>
+        <div id="actBody"><p class="note">Menyiapkan rencana…</p></div>
       </div>
-      <div id="actGoalOut" class="act-goal"></div>
+      <div class="act-pane" data-ap="evid" hidden><div id="actEvid"></div></div>
+      <div class="act-pane" data-ap="conf" hidden><div id="actConf" class="act-conf"></div></div>
+      <div class="act-pane" data-ap="track" hidden><div class="trk" id="actTrack"></div></div>
+      <div class="act-pane" data-ap="goal" hidden>
+        <div class="act-inputs act-inputs1"><div><label class="lbl" for="actGoal">Target uang (Rp)</label><input id="actGoal" type="number" min="0" step="1000000" value="100000000"></div></div>
+        <div id="actGoalOut" class="act-goal"></div>
+      </div>
+      <div class="act-pane" data-ap="ask" hidden>
       <div class="act-ai">
         <div class="act-ai-h"><b>Tanya RAM AI</b> <span class="note" id="actAiNote">AI lokal menjawab dari angka di halaman + Buku Panduan. Gemini opsional.</span><button class="btn" id="actAiRun">Pendapat Gemini</button></div>
         <div id="actAi"></div>
         <form id="actAskF" class="act-ask"><input id="actAsk" maxlength="400" placeholder="mis. harus beli? stop di mana? kenapa? deep learning bilang apa?"><label class="note ask-gem"><input type="checkbox" id="actAskGem"> + Gemini</label><button class="btn" id="actAskB">Tanya</button></form>
         <div id="actQa" class="act-qa"></div>
+      </div>
       </div>
       <details class="formula"><summary>Cara rencana ini dihitung</summary><div class="fx">
         <p><b>Keputusan.</b> 50 strategi diuji di aset ini. Strategi <i>lolos</i> bila DSR ≥ 90%, konsisten di ≥ 3 dari 5 potongan waktu, mengalahkan beli-dan-tahan di seluruh data dan out-of-sample, dan ≥ 5 transaksi. BELI bila ≥ 50% bobot strategi lolos sedang beli, JUAL bila &lt; 25%, selain itu TAHAN. Bila tidak ada yang lolos: suara 50 strategi (BELI ≥ 55%, JUAL ≤ 40%).</p>
@@ -1044,8 +1053,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029124512";</script>
-<script src="engine.js?v=20261029124512"></script>
-<script src="app.js?v=20261029124512"></script>
+<script>window.APP_V = "20261029125918";</script>
+<script src="engine.js?v=20261029125918"></script>
+<script src="app.js?v=20261029125918"></script>
 </body>
 </html>

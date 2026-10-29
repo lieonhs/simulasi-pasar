@@ -1516,20 +1516,23 @@
     const labD = lab.filter(ok); if (labD.length < 400) return null;
     const Dt = X[labD[0]].length, net = makeDL(Dt), stat = (tr) => { const mu = new Array(Dt).fill(0), sd = new Array(Dt).fill(0); for (const t of tr) X[t].forEach((v, j) => (mu[j] += v / tr.length)); for (const t of tr) X[t].forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / tr.length)); return { mu, sd: sd.map((v) => Math.sqrt(v) || 1) }; };
     const zOf = (M, t) => Float64Array.from(X[t], (v, j) => Math.max(-5, Math.min(5, (v - M.mu[j]) / M.sd[j])));
-    const fit = (tr, P0, ep) => { const tr2 = tr.slice(-1500), M = stat(tr2); const P = net.train(P0 || net.init(11), tr2.map(seq), tr2.map((t) => zOf(M, t)), tr2.map((t) => y[t]), { epochs: ep, seed: tr2.length }); return { P, M }; };
+    const BAG = Math.max(1, o.dlBag ?? 3), seeds = [11, 23, 37, 53, 71].slice(0, BAG); // ensemble beberapa jaringan (inisialisasi berbeda) → varians lebih kecil
+    const fit = (tr, P0, ep) => { const tr2 = tr.slice(-1500), M = stat(tr2), XS = tr2.map(seq), ZS = tr2.map((t) => zOf(M, t)), Y = tr2.map((t) => y[t]);
+      const Ps = seeds.map((sd, b) => net.train(P0 ? P0[b] : net.init(sd), XS, ZS, Y, { epochs: ep, seed: tr2.length + sd })); return { P: Ps, M }; };
+    const fwdB = (F, x, z) => { let s = 0, al = null; for (const P of F.P) { const r = net.fwd(P, x, z); s += r.p; if (!al) al = Float64Array.from(r.al); else for (let i = 0; i < al.length; i++) al[i] += r.al[i]; } for (let i = 0; i < al.length; i++) al[i] /= F.P.length; return { p: s / F.P.length, al }; };
     const s0 = Math.max(labD[0] + 300, labD[Math.floor(labD.length * 0.4)]), oos = [], step = 252; let prevP = null;
     for (let a = s0; a < n; a += step) { const tr = labD.filter((t) => t < a - H); if (tr.length < 300) continue; const F = fit(tr, prevP, prevP ? 6 : 14); prevP = F.P;
-      for (let t = a; t < Math.min(n, a + step); t++) if (ok(t)) oos.push({ t, p: net.fwd(F.P, seq(t), zOf(F.M, t)).p, y: y[t] }); }
+      for (let t = a; t < Math.min(n, a + step); t++) if (ok(t)) oos.push({ t, p: fwdB(F, seq(t), zOf(F.M, t)).p, y: y[t] }); }
     const ev = oos.filter((r) => r.y != null); if (ev.length < 150) return null;
     const P = ev.map((r) => r.p), Y = ev.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p));
     const bss = 1 - mean(cal.map((p, i) => (p - Y[i]) ** 2)) / (base * (1 - base));
     const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
     const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / Math.max(1, n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
     const tNow = n - 1; let pNow = NaN, att = null;
-    if (ok(tNow)) { const F = fit(labD, prevP, 6), r = net.fwd(F.P, seq(tNow), zOf(F.M, tNow)); pNow = applyPlatt(platt, r.p);
+    if (ok(tNow)) { const F = fit(labD, prevP, 6), r = fwdB(F, seq(tNow), zOf(F.M, tNow)); pNow = applyPlatt(platt, r.p);
       const L2 = r.al.length; att = Array.from(r.al, (w, i) => ({ d: D.d[tNow - L2 + 1 + i], w })); } // perhatian pada 18 hari terakhir (lapisan konvolusi memakan 6 hari awal)
     return { p: pNow, auc, aucP, base, bss, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nOos: ev.length, nEff: Math.round(ev.length / H), att, oosP: oos.map((r) => ({ d: D.d[r.t], p: applyPlatt(platt, r.p) })),
-      arch: "Conv1D 6→6 (k3) → Conv1D 6→6 (k3, dilasi 2) → attention + langkah terakhir ⊕ " + Dt + " fitur → Dense 12 tanh → sigmoid", nParam: net.N, channels: DL_CH };
+      arch: `${BAG}× jaringan (ensemble): Conv1D 6→6 (k3) → Conv1D 6→6 (k3, dilasi 2) → attention + langkah terakhir ⊕ ${Dt} fitur → Dense 12 tanh → sigmoid`, nParam: net.N * BAG, bag: BAG, channels: DL_CH };
   }
   function mlModel(D, o = {}) {
     const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, c = D.c;
