@@ -3666,7 +3666,7 @@
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
   const apSave = () => saveSettings({ autopilot: ap.cfg, apLog: ap.log.slice(0, 200) });
-  const apSyms = () => [...new Set(ap.cfg.list.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean))].slice(0, 8);
+  const apSyms = () => [...new Set(ap.cfg.list.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 8); // simbol sudah lengkap (dari klik/saran)
   function apLogAdd(sym, msg, kind = "") { ap.log.unshift({ t: new Date().toISOString(), s: sym, m: msg, k: kind }); ap.log.length = Math.min(ap.log.length, 200); }
   const idxOpen = () => { const n = new Date(Date.now() + 7 * 3600e3), d = n.getUTCDay(), m = n.getUTCHours() * 60 + n.getUTCMinutes(), day = n.toISOString().slice(0, 10); return d >= 1 && d <= 5 && !MCEngine.isHoliday(day, "IDX") && m >= 9 * 60 + 5 && m <= 15 * 60 + 45; };
   // keputusan tanpa membuka halaman analisis: 50 strategi + ML/DL + konfluensi/A+ + rencana harga + aturan RAM AI
@@ -3874,10 +3874,19 @@
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
-    drawApLearn();
+    drawApLearn(); drawApChips();
     $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
-  function bindAp() { apLoad(); attachAC($("apList"));
-    $("apList").addEventListener("blur", () => setTimeout(() => { const L = apSyms(); if (L.length) { $("apList").value = L.join(", "); apRead(); apSave(); drawAp(); } }, 250)); setTimeout(() => apLabelSweep(), 20e3);
+  const AP_GROUPS = [["Saham IDX", ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", "ASII.JK", "ANTM.JK", "GOTO.JK"]], ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD", "ADA-USD"]], ["Saham AS", ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN"]], ["Lainnya", ["GC=F", "^JKSE"]]];
+  function apSetList(L) { $("apList").value = [...new Set(L)].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); }
+  function drawApChips() { const L = apSyms(), held = apPositions(), lab = (s) => s.replace(/\.JK$/, "").replace(/-USD$/, "").replace("GC=F", "EMAS").replace("^JKSE", "IHSG");
+    $("apChips").innerHTML = L.length ? L.map((s) => `<span class="ap-chip${held.includes(s) ? " held" : ""}" title="${esc(s)}">${esc(lab(s))}${held.includes(s) ? " •" : ""}<button data-apdel="${esc(s)}" title="Hapus">✕</button></span>`).join("") + `<span class="note">${L.length}/8</span>` : '<span class="note">Belum ada aset. Klik aset di bawah atau cari.</span>';
+    let groups = AP_GROUPS; if (ap.cfg.target === "idx" && ix.pairs) groups = [["Indodax (volume ≥ Rp 1 M)", ix.pairs.filter((p) => p.volIdr >= 1e9).sort((a, b) => b.volIdr - a.volIdr).slice(0, 16).map((p) => p.base.toUpperCase() + "-USD")]];
+    $("apPick").innerHTML = groups.map(([g, S]) => `<div class="ap-pg"><span class="note">${esc(g)}</span>${S.map((s) => `<button class="ap-add${L.includes(s) ? " on" : ""}" data-apadd="${esc(s)}">${L.includes(s) ? "✓ " : "+ "}${esc(lab(s))}</button>`).join("")}</div>`).join(""); }
+  function bindAp() { apLoad();
+    attachAC($("apFind"), { onPick: (sym) => { const L = apSyms(); if (L.length >= 8) { toast("Maksimal 8 aset."); return; } apSetList([...L, String(sym).toUpperCase()]); } });
+    $("apChips").addEventListener("click", (e) => { const d = e.target.closest("[data-apdel]"); if (d) apSetList(apSyms().filter((s) => s !== d.dataset.apdel)); });
+    $("apPick").addEventListener("click", (e) => { const b = e.target.closest("[data-apadd]"); if (!b) return; const s = b.dataset.apadd, L = apSyms();
+      if (L.includes(s)) apSetList(L.filter((x) => x !== s)); else if (L.length >= 8) toast("Maksimal 8 aset. Hapus satu dulu."); else apSetList([...L, s]); }); setTimeout(() => apLabelSweep(), 20e3);
     ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews", "apUseExp", "apAutoPick"].forEach((id) => $(id).addEventListener("change", () => {
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }

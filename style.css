@@ -738,3 +738,8 @@ body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }
 .am-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; margin: 10px 0 12px; } .am-ch { height: 220px; }
 @media (max-width: 760px) { .am-grid { grid-template-columns: minmax(0, 1fr); } .am-ch { height: 190px; } }
 .am-w { display: inline-block; width: 46px; height: 6px; border-radius: 3px; background: var(--grid); margin-right: 6px; vertical-align: middle; overflow: hidden; } .am-w i { display: block; height: 100%; background: var(--accent); }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; min-height: 30px; }
+.ap-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--accent); font-weight: 600; font-size: 13px; }
+.ap-chip.held { border-color: var(--good); } .ap-chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 999px; } .ap-chip button:hover { color: var(--bad); }
+.ap-pick { display: grid; gap: 6px; margin: 4px 0 10px; } .ap-pg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .ap-pg > .note { min-width: 74px; }
+.ap-add { border: 1px solid var(--grid); background: transparent; color: var(--ink); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; } .ap-add:hover { border-color: var(--accent); } .ap-add.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
