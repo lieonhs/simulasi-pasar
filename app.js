@@ -1987,8 +1987,8 @@
     const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
     if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
       a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee;
-      if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; }
-    else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; }
+      if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; if (o.ap) p.ap = true; }
+    else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; } if (p.ap) o.ap = true;
       const fee = gross * fs, costPart = p.cost * (o.units / p.units); o.pl = gross - fee - costPart; a.cash += gross - fee; p.units -= o.units; p.cost -= costPart; o.fee = fee;
       if (p.units < 1e-9) delete a.pos[o.s]; }
     o.status = "terisi"; o.fillPx = px; o.fillAt = new Date().toISOString(); a.hist.unshift(o); return true;
@@ -2061,7 +2061,7 @@
       $("dSend").textContent = side === "buy" ? "Kirim order beli demo" : "Kirim order jual demo"; $("tradeCard").scrollIntoView({ behavior: "smooth", block: "center" }); flashCard($("tradeCard")); return; }
     setView("trade"); setTradeTab("demo"); pp.side = side; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side));
     $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); }
-  function setTradeTab(t) { document.querySelectorAll("#trTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.t === t)); $("demoPane").hidden = t !== "demo"; $("idxPane").hidden = t !== "idx"; $("stratPane").hidden = t !== "strat";
+  function setTradeTab(t) { document.querySelectorAll("#trTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.t === t)); $("demoPane").hidden = t !== "demo"; $("idxPane").hidden = t !== "idx"; $("stratPane").hidden = t !== "strat"; $("apPane").hidden = t !== "ap"; if (t === "ap") { drawAp(); $("trHeadNote").innerHTML = "Autopilot memasang bid & offer sendiri berdasarkan ML, deep learning & RAM AI. Hanya berjalan selama web terbuka."; return; }
     if (t === "strat" && !$("sSym").value) $("sSym").value = state.data ? state.data.symbol : state.symbol;
     if (t === "strat") { $("trHeadNote").innerHTML = "Uji 50 strategi harian dan noise band intraday pada data historis. Hasil masa lalu tidak menjamin hasil ke depan."; return; }
     $("trHeadNote").innerHTML = t === "demo" ? "Akun demo memakai uang virtual dan harga live (saham IDX tertunda ±10–15 menit). Semua order tercatat di akunmu." : "<b>Uang asli.</b> Order dikirim ke akun Indodax milikmu. Hanya kripto berpasangan rupiah.";
@@ -2255,7 +2255,7 @@
       if (!$("xPrice").value) $("xPrice").value = ix.pair.last || ""; idxPreview(); });
     $("xPair").addEventListener("blur", () => setTimeout(() => ($("xSugg").hidden = true), 150));
     ["xType", "xPrice", "xAmt"].forEach((id) => $(id).addEventListener("input", idxPreview));
-    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu(); bindAuto();
+    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu(); bindAuto(); bindAp();
     $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
       openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
     pp.timer = setInterval(() => { if (!document.hidden && (pp.a.orders.length || hasBrk())) refreshPaper(); }, 60000);
@@ -2630,10 +2630,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], RADAR: ["Radar: scan semua aset → mana yang diperhatikan", ""], GEMS: ["Hidden gems: cari aset tersembunyi (nilai + pembalikan + akumulasi + ML/DL)", ""], CONF: ["Konfluensi 9 faktor (teruji historis) + multi-timeframe mingguan/harian/4 jam/1 jam", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], RADAR: ["Radar: scan semua aset → mana yang diperhatikan", ""], AUTO: ["Autopilot: bid & offer otomatis (ML + DL + AI)", ""], GEMS: ["Hidden gems: cari aset tersembunyi (nilai + pembalikan + akumulasi + ML/DL)", ""], CONF: ["Konfluensi 9 faktor (teruji historis) + multi-timeframe mingguan/harian/4 jam/1 jam", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", MTF: "CONF", SCAN: "RADAR", RDR: "RADAR", GEM: "GEMS", DIAMOND: "GEMS", HIDDEN: "GEMS", KONFLUENSI: "CONF", CHECK: "CONF", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", MTF: "CONF", SCAN: "RADAR", RDR: "RADAR", GEM: "GEMS", AUTOPILOT: "AUTO", BOT: "AUTO", DIAMOND: "GEMS", HIDDEN: "GEMS", KONFLUENSI: "CONF", CHECK: "CONF", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2661,6 +2661,7 @@
     const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
     if (market[fn]) { closeFn(); setView("market"); if (fn === "MOST") { mk.mov = "value"; document.querySelectorAll("#mkMovTabs .tab").forEach((x) => x.classList.toggle("active", x.dataset.m === "value")); if (mk.at) renderMovers(); }
       setTimeout(() => { const el = $(market[fn]); (el.closest(".card") || el).scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el.closest(".card") || el); }, 400); return; }
+    if (fn === "AUTO") { closeFn(); setView("trade"); setTradeTab("ap"); return; }
     if (fn === "GEMS") { closeFn(); setView("screen"); setTimeout(() => { $("gemCard").scrollIntoView({ behavior: "smooth", block: "start" }); if (!gm.rows.length) runGems(); }, 300); return; }
     if (fn === "RADAR") { closeFn(); setView("screen"); setTimeout(() => { $("radarCard").scrollIntoView({ behavior: "smooth", block: "start" }); if (!rd.rows.length) runRadar(); }, 300); return; }
     if (fn === "W" || fn === "EQS") { closeFn(); setView("screen"); if (fn === "EQS") setTimeout(() => { const t = document.querySelector('#wlCols .tab[data-c="sinyal"]'); if (t) t.click(); }, 300); return; }
@@ -3273,7 +3274,8 @@
   }
   document.addEventListener("click", (e) => { const t = e.target; if (!t || !t.closest) return; if (t.id === "brDemo") actToDemo();
     const m = t.closest("[data-qm]"); if (m) { qk.mode = m.dataset.qm; qk.arm = null; if (qk.mode === "idx" && !ix.bal) idxBalance().then(drawQuick).catch(() => {}); drawQuick(); return; }
-    if (t.closest("#qkIn")) qkGo("in"); else if (t.closest("#qkOut")) qkGo("out"); });
+    if (t.closest("#qkIn")) qkGo("in"); else if (t.closest("#qkOut")) qkGo("out");
+    if (t.closest("#qkAp")) { e.preventDefault(); const L = apSyms(); if (state.data && !L.includes(state.data.symbol)) { $("apList").value = [...L, state.data.symbol].slice(0, 8).join(", "); apRead(); apSave(); } setView("trade"); setTradeTab("ap"); } });
   // tanya-jawab lokal: niat pertanyaan → jawaban dari angka di halaman; selain itu cari di Buku Panduan
   function localAnswer(q, dataOnly = false) {
     const P = act.plan, B = act.brain || brain(), s = String(q).toLowerCase(), M = act.ml && !act.ml.error ? act.ml : null, DL = M && M.dl && !M.dl.error ? M.dl : null, C = act.conf, idx = isIdx();
@@ -3502,7 +3504,7 @@
       <button class="qk-in ${qk.arm === "in" ? "arm" : ""} ${P.action !== "BELI" ? "weak" : ""}" id="qkIn" ${qIn > 0 && !lockIn ? "" : "disabled"}>${qk.arm === "in" ? "KLIK LAGI: BELI" : "IN · BELI"}<small>${lockIn ? "terkunci: buktikan dulu di demo" : qIn > 0 ? `${fq(qIn)} ${unitW} @ ${cur}${fmtNum(pxIn)} (limit) · ±Rp ${big(valIn)}${P.action !== "BELI" ? ` · rencana: ${P.action}, tidak disarankan` : ""}` : "modal terlalu kecil"}</small></button>
       <button class="qk-out ${qk.arm === "out" ? "arm" : ""}" id="qkOut" ${held > 0 ? "" : "disabled"}>${qk.arm === "out" ? "KLIK LAGI: JUAL" : "OUT · JUAL"}<small>${held > 0 ? `${fq(held)} ${unitW} @ market ±${cur}${fmtNum(last)} · ±Rp ${big(valOut)}` : I ? "tidak ada saldo koin ini" : "belum punya posisi demo"}</small></button>
       <div class="qk-info">Stop <b class="neg">${cur}${fmtNum(I ? P.stop * k : P.stop)}</b> · T1 <b class="pos">${cur}${fmtNum(I ? P.t1 * k : P.t1)}</b> · T2 <b class="pos">${cur}${fmtNum(I ? P.t2 * k : P.t2)}</b>${!I ? " · stop & target otomatis ikut dipasang" : ""}</div>
-      ${C.idxOk ? `<div class="qk-gate">${gateText(gate)}</div>` : ""}</div>`;
+      ${C.idxOk ? `<div class="qk-gate">${gateText(gate)}</div>` : ""}<div class="qk-info"><a href="#" id="qkAp">+ Pantau aset ini dengan Autopilot</a></div></div>`;
   }
   function qkArm(which) { if (qk.arm !== which) { qk.arm = which; clearTimeout(qk.t); qk.t = setTimeout(() => { qk.arm = null; drawQuick(); }, 4000); drawQuick(); return false; } qk.arm = null; clearTimeout(qk.t); return true; }
   async function qkGo(which) {
@@ -3596,6 +3598,170 @@
     $("auKill").onclick = async () => { if (!auActive().length) return; for (const x of auActive()) await auCancel(x); toast("Semua order otomatis dimatikan."); };
     $("auTable").addEventListener("click", (e) => { const b = e.target.closest("[data-aucancel]"); if (b) { const x = au.list.find((y) => y.id === b.dataset.aucancel); if (x) auCancel(x); } });
     setInterval(() => { if (!document.hidden) auLoop(); }, 15000); setTimeout(auLoop, 4000); }
+
+  // =====================================================================
+  // AUTOPILOT: bid & offer otomatis dari ML + deep learning + RAM AI (centang mana yang wajib sepakat)
+  // =====================================================================
+  const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
+  const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, news: true, maxW: 0.35, maxPos: 3, maxDay: 4, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
+  function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apUseNews").checked = c.news !== false; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+  function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = +$("apMaxDay").value; c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.news = $("apUseNews").checked; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
+  const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
+  const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
+  const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
+  const apSave = () => saveSettings({ autopilot: ap.cfg, apLog: ap.log.slice(0, 200) });
+  const apSyms = () => [...new Set(ap.cfg.list.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean))].slice(0, 8);
+  function apLogAdd(sym, msg, kind = "") { ap.log.unshift({ t: new Date().toISOString(), s: sym, m: msg, k: kind }); ap.log.length = Math.min(ap.log.length, 200); }
+  const idxOpen = () => { const n = new Date(Date.now() + 7 * 3600e3), d = n.getUTCDay(), m = n.getUTCHours() * 60 + n.getUTCMinutes(), day = n.toISOString().slice(0, 10); return d >= 1 && d <= 5 && !MCEngine.isHoliday(day, "IDX") && m >= 9 * 60 + 5 && m <= 15 * 60 + 45; };
+  // keputusan tanpa membuka halaman analisis: 50 strategi + ML/DL + konfluensi/A+ + rencana harga + aturan RAM AI
+  async function apDecide(sym) {
+    const d = await fetchSymbol(sym, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari");
+    const D = buildD(d), R = rawD(d), crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(sym), idx = /\.JK$/.test(sym), so = stratOpts();
+    const all = await compute("stratAll", { D, o: { ...so, short: false } });
+    let DM = D; try { const dl = await fetchSymbol(sym, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) DM = D2; } catch { /* */ }
+    if (DM.n > 2600) { const k = DM.n - 2600; DM = { d: DM.d.slice(k), o: DM.o.slice(k), h: DM.h.slice(k), l: DM.l.slice(k), c: DM.c.slice(k), v: DM.v.slice(k), n: 2600 }; }
+    const ek = idx ? "idx" : crypto ? "c" : "us"; if (!ap.ext[ek]) ap.ext[ek] = await mlExt(sym).catch(() => []);
+    let M = null; try { M = await compute("ml", { D: DM, o: { horizon: 5, costBps: so.costBps, ext: ap.ext[ek] } }); } catch (e) { M = { error: e.message }; }
+    const C = MCEngine.confluence(D, { H: 10, costBps: so.costBps, ppy: crypto ? 365 : 252 }), fx = (d.currency || "") === "IDR" ? 1 : pp.fx || 16000;
+    const cap = ap.cfg.target === "demo" ? apRun().free : Math.max(0, parseFloat($("actCap").value) || 1e7), risk = parseFloat($("actRisk").value) || 0.01;
+    const P = MCEngine.actionPlan(R, { isIdx: idx, crypto, strats: all.list, votes: all.votes, capital: cap / fx, riskPct: risk, unit: idx ? 100 : 1, costBps: so.costBps, market: idx ? "IDX" : crypto ? null : "US", ml: M && !M.error ? M : null, sel: C && C.sel }); if (M && M.error) M = null;
+    // RAM AI (aturan ringkas, sama dengan kotak 3 kecerdasan tanpa berita/valuasi)
+    let sc = 0; const why = []; if (P.nRobust) { const w = P.voteAction === "BELI" ? 2 : P.voteAction === "JUAL" ? -2 : 0; sc += w; if (w) why.push(`strategi ${P.voteAction}`); }
+    if (C) { if (C.sel && C.sel.active) { sc += 3; why.push("A+"); } else if (C.valid) sc += C.sNow >= 3 ? 1.5 : C.sNow <= -3 ? -1.5 : 0; else sc += C.sNow >= 4 ? 0.5 : C.sNow <= -4 ? -0.5 : 0; }
+    const T = MCEngine.mtfDaily(D); if (T.week.dir > 0 && T.day.dir > 0) sc += 1; if (T.week.dir < 0 && T.day.dir < 0) sc -= 1;
+    if (P.pr) { if (P.pr.expR > 0.15) sc += 1; else if (P.pr.expR <= 0) sc -= 2; }
+    const thr = Math.max(AP_MIN, ap.cfg.thr), dir = (m) => (!m || !isFinite(m.p) || !m.valid ? 0 : m.p >= thr ? 1 : m.p <= 1 - thr ? -1 : 0), DLm = M && M.dl && !M.dl.error ? M.dl : null;
+    const N = ap.cfg.news ? await apNews(sym, d) : null; if (N && N.shock) { sc -= 3; why.push("berita kejutan"); }
+    return { sym, d, P, M, C, N, ml: dir(M), dl: dir(DLm), ai: sc >= 2 ? 1 : sc <= -2 ? -1 : 0, aiScore: sc, mlP: M ? M.p : NaN, dlP: DLm ? DLm.p : NaN, mlV: !!(M && M.valid), dlV: !!(DLm && DLm.valid), at: Date.now(), crypto, idx, fx };
+  }
+  function apVerdict(X) { const c = ap.cfg, use = [["ML", c.ml, X.ml], ["DL", c.dl, X.dl], ["AI", c.ai, X.ai]].filter((u) => u[1]);
+    if (X.N && X.N.shock) return { act: "JUAL", why: `berita kejutan "${X.N.shock.word}"` };
+    if (!use.length) return { act: "–", why: "tidak ada kecerdasan dicentang" };
+    const allUp = use.every((u) => u[2] > 0), allDn = use.every((u) => u[2] < 0), P = X.P;
+    if (allUp && P.action === "BELI" && isFinite(P.confPct) && P.confPct >= c.thr && P.pr && P.pr.expR > 0) return { act: "BELI", why: `${use.map((u) => u[0]).join("+")} sepakat naik · keyakinan ${pct(P.confPct, 0)}` };
+    if (allDn || P.action === "JUAL") return { act: "JUAL", why: allDn ? `${use.map((u) => u[0]).join("+")} sepakat turun` : "rencana berubah JUAL" };
+    const miss = use.filter((u) => u[2] <= 0).map((u) => `${u[0]} ${u[2] < 0 ? "turun" : u[0] === "AI" ? "netral" : "belum teruji/< ambang"}`); if (P.action !== "BELI") miss.push(`rencana ${P.action}`); if (!(P.confPct >= c.thr)) miss.push(`keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}`);
+    return { act: "TUNGGU", why: miss.join(", ") }; }
+  const apPositions = () => { const demo = Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi")).map((x) => x.sym); return [...new Set([...demo, ...live])]; };
+  async function apBuy(X, valIdr) {
+    const c = ap.cfg, P = X.P; if (!valIdr && !(P.qty > 0)) throw new Error("modal terlalu kecil untuk 1 lot/unit");
+    if (c.target === "idx") { if (!demoGate().pass) throw new Error("Indodax terkunci (syarat demo belum terpenuhi)"); await idxPairsLoad(); const p = idxPairFor(X.sym); if (!p) throw new Error("tidak listing di Indodax");
+      const usd = X.d.values[X.d.values.length - 1], k = p.last / usd, pd = Math.min(8, decOf(p.last)), vp = isFinite(p.volPrec) ? p.volPrec : 8, max = (ix.cfg && ix.cfg.maxIdr) || 2e6, v = Math.min(valIdr || c.val, max);
+      const L = { entry: floorTo(P.entry * k, pd), stop: roundTo(P.stop * k, pd), t1: roundTo(P.t1 * k, pd), t2: roundTo(P.t2 * k, pd) }, q = floorTo(v / L.entry, vp); if (!(q > 0)) throw new Error("jumlah terlalu kecil");
+      const j = await idxCall("createOrder", { symbol: p.base + "idr", side: "BUY", type: "LIMIT", price: String(L.entry), quantity: String(q) }, `buy ${p.pair}`);
+      const x = { id: Date.now().toString(36), ap: true, sym: X.sym, base: p.base, symbol: p.base + "idr", pair: p.pair, ...L, qty: q, vp, pd, st: "menunggu", created: Date.now(), expire: Date.now() + 2 * 864e5, sells: [], log: [], buyId: String(j.orderId || "") };
+      auLog(x, `AUTOPILOT beli limit ${q} @ ${fmtNum(L.entry)} (#${x.buyId})`); au.list.unshift(x); auSave(); return `Indodax: beli limit ${q} ${p.base.toUpperCase()} @ Rp ${fmtNum(L.entry)}`; }
+    const s = X.sym, unit = X.idx ? 100 : 1, fxs = fxOf(s), units = valIdr ? (X.idx ? Math.floor(valIdr / fxs / P.entry / 100) * 100 : +(valIdr / fxs / P.entry).toFixed(6)) : X.idx ? Math.floor(P.qty) * 100 : P.qty, lim = X.idx ? MCEngine.roundTick(P.entry, true, -1) : P.entry;
+    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "buy", type: "limit", units, limit: lim, status: "terbuka", brk: { stop: P.stop, t1: P.t1, t2: P.t2 }, ap: true };
+    if (!(units > 0)) throw new Error("dana terlalu kecil untuk 1 lot/unit"); pp.a.orders.push(o); await ppQuotes([s]); checkLimits(); ppSnap(); ppSave(); renderPaper(); return `Demo: beli limit ${X.idx ? units / unit + " lot" : nf(6).format(units)} ${s} @ ${fmtNum(lim)} (stop ${fmtNum(P.stop)}, target ${fmtNum(P.t1)}/${fmtNum(P.t2)})`; }
+  async function apSell(X, frac = 1) {
+    const s = X.sym, out = []; const pos = pp.a.pos[s]; if (pos && pos.ap) { await ppQuotes([s]); const q = pp.q[s]; const u = frac >= 0.999 ? pos.units : /\.JK$/.test(s) ? Math.floor(pos.units * frac / 100) * 100 : +(pos.units * frac).toFixed(6); if (q && u > 0) { const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "sell", type: "autopilot", units: u, limit: null, status: "terbuka" }; if (ppFill(o, q.price)) out.push(`Demo: jual ${s} @ ${fmtNum(q.price)}`); ppSnap(); ppSave(); renderPaper(); } }
+    if (frac < 0.999) { if (out.length) auSave(); return out.join(" · "); }
+    pp.a.orders = pp.a.orders.filter((o) => !(o.ap && o.s === s && o.status === "terbuka"));
+    for (const x of au.list.filter((y) => y.ap && y.sym === s && (y.st === "menunggu" || y.st === "terisi"))) {
+      if (x.st === "menunggu") { try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: x.buyId }); } catch { /* */ } x.st = "batal"; auLog(x, "AUTOPILOT: sinyal turun → beli dibatalkan"); out.push(`Indodax: beli ${x.base.toUpperCase()} dibatalkan`); continue; }
+      let sold = 0; for (const sx of x.sells) { if (sx.done) { sold += sx.q; continue; } try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: sx.id }); } catch { /* */ } }
+      const rem = floorTo((x.filled || x.qty) - sold, x.vp); if (rem > 0) { await idxCall("createOrder", { symbol: x.symbol, side: "SELL", type: "MARKET", quantity: String(rem) }, `sell ${x.pair}`); }
+      x.st = "keluar"; auLog(x, `AUTOPILOT: sinyal turun → jual market ${rem}`); out.push(`Indodax: jual ${rem} ${x.base.toUpperCase()} market`); }
+    if (out.length) auSave(); return out.join(" · "); }
+  // akuntansi run demo: modal awal + untung/rugi terealisasi transaksi autopilot + untung/rugi berjalan posisi autopilot
+  function apRun() { const c = ap.cfg; if (!c.run) c.run = { start: new Date().toISOString(), cap: c.budget, n: 1 };
+    const r = c.run; let real = 0, used = 0, unreal = 0; for (const o of pp.a.hist) if (o.ap && o.side === "sell" && o.fillAt >= r.start) real += o.pl || 0;
+    for (const [s, p] of Object.entries(pp.a.pos)) if (p.ap) { const q = pp.q[s], v = q ? p.units * q.price * fxOf(s) : p.cost; used += p.cost; unreal += v - p.cost; }
+    for (const o of pp.a.orders) if (o.ap && o.side === "buy" && o.status === "terbuka") used += o.units * o.limit * fxOf(o.s);
+    const eq = r.cap + real + unreal; return { ...r, real, unreal, eq, used, free: Math.max(0, Math.min(r.cap + real - used, pp.a.cash)), ratio: eq / r.cap }; }
+  async function apFailCheck() { const c = ap.cfg; if (c.target !== "demo" || !c.on) return false; const R = apRun(); if (R.ratio > AP_FAIL) return false;
+    c.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { await apSell({ sym: s }); } catch { /* */ } }
+    c.run.failed = new Date().toISOString(); apLogAdd("—", `RUN #${c.run.n} GAGAL: dana uji ${fmtIdr(c.run.cap)} tinggal ${fmtIdr(R.eq)} (≤ ${pct(AP_FAIL, 0)}). Autopilot dianggap tidak bisa memprediksi, dimatikan & posisi ditutup.`, "err"); toast("Autopilot gagal: run turun 50%, dimatikan."); return true; }
+  // ---- Berita kejutan: judul berbahaya dalam 24 jam → jual posisi autopilot & blok beli 24 jam
+  const SHOCK = ["hack", "hacked", "diretas", "peretasan", "exploit", "dibobol", "bangkrut", "pailit", "pkpu", "bankrupt", "bankruptcy", "insolven", "insolvency", "gagal bayar", "default", "delisting", "delist", "suspensi", "suspended", "suspend", "fraud", "penipuan", "manipulasi", "korupsi", "ditangkap", "tersangka", "investigasi", "investigation", "sec sues", "charged", "lawsuit", "gugatan", "sanksi", "sanction", "dilarang", "larangan", "ban ", "banned", "rug pull", "rugpull", "depeg", "de-peg", "halt", "dibekukan", "freeze", "frozen", "withdrawals paused", "crash", "ambruk", "anjlok", "arb", "auto reject bawah", "profit warning", "restatement", "resign", "mundur"];
+  const apNewsCache = new Map();
+  async function apNews(sym, d) { const c = apNewsCache.get(sym); if (c && Date.now() - c.at < 5 * 60e3) return c.v;
+    const code = sym.replace(/\.JK$/i, "").replace(/^\^/, "").replace(/-USDT?$/, ""), q = /\.JK$/i.test(sym) ? `saham ${code}` : d && d.name ? d.name.replace(/ USD$/i, "") : code;
+    let v = { n: 0, neg: 0, shock: null, items: [] };
+    try { const j = await (await apiFetch(`${API}?action=news&symbol=${encodeURIComponent(sym)}&q=${encodeURIComponent(q)}`)).json(); const now = Date.now() / 1000;
+      const it = (j.items || []).filter((x) => x.title && (!x.time || now - x.time < 86400));
+      let net = 0; for (const x of it) { const t = " " + (x.title + " " + (x.summary || "")).toLowerCase() + " ", s = sentiment(x.title + " " + (x.summary || "")); net += s.score; if (s.label === "neg") v.neg++;
+        const hit = SHOCK.find((w) => t.includes(w.length <= 4 ? " " + w.trim() + " " : w)); if (hit && s.score <= 0 && !v.shock) v.shock = { word: hit.trim(), title: x.title, link: x.link, time: x.time }; }
+      v.n = it.length; v.net = net; if (!v.shock && v.neg >= 3 && net <= -4) v.shock = { word: `${v.neg} berita negatif`, title: it.find((x) => sentiment(x.title).label === "neg").title };
+      v.items = it.slice(0, 3); } catch { /* berita gagal: tidak memicu apa-apa */ }
+    apNewsCache.set(sym, { at: Date.now(), v }); return v; }
+  async function apNewsGuard() { const c = ap.cfg; if (!c.news) return;
+    for (const s of apPositions()) { const N = await apNews(s, (ap.st[s] && ap.st[s].X && ap.st[s].X.d) || null); if (!N.shock) continue;
+      const st = ap.st[s] || (ap.st[s] = {}); if (st.shockAt && Date.now() - st.shockAt < 3600e3) continue; st.shockAt = Date.now();
+      try { const m = await apSell({ sym: s }); c.cool[s] = Date.now(); st.note = "dijual: berita kejutan"; apLogAdd(s, `JUAL DARURAT · berita kejutan "${N.shock.word}": ${N.shock.title} · ${m || "–"}`, "sell"); toast(`Autopilot: berita kejutan ${s}, posisi dijual.`); } catch (e) { apLogAdd(s, "gagal jual darurat: " + e.message, "err"); } } }
+  async function apCycle(force = false) {
+    if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
+    try { if (c.target === "demo") { await ppQuotes(apPositions()); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
+      if (c.on) await apNewsGuard();
+      if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
+      for (const s of apSyms()) {
+      const st = ap.st[s] || (ap.st[s] = {}); if (!force && st.at && Date.now() - st.at < c.every * 60e3) continue;
+      if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
+      st.note = "menganalisis…"; drawAp();
+      try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); const held = apPositions().includes(s);
+        if (!c.on) { st.note = "simulasi (autopilot mati)"; }
+        else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
+        else if (V.act === "BELI" && !held) {
+          if (c.dayHalt) st.note = "rugi harian ≥ 5%: beli baru diblok sampai besok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
+          else { const m = await apBuy(X); c.nDay++; st.note = "order beli dipasang"; apLogAdd(s, `BELI · ${V.why} · ${m}`, "buy"); toast(`Autopilot: ${m}`); } }
+        else if (V.act === "JUAL" && held) { const m = await apSell(X); c.cool[s] = Date.now(); st.note = "posisi dijual"; apLogAdd(s, `JUAL · ${V.why} · ${m || "tidak ada yang dijual"}`, "sell"); if (m) toast(`Autopilot: ${m}`); }
+        else apLogAdd(s, `${V.act} · ${V.why}`); }
+      catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
+      drawAp(); }
+      if (c.on && c.mode === "porto") await apPorto(); if (c.target === "demo") await apFailCheck(); }
+    finally { ap.busy = false; apSave(); drawAp(); } }
+  // ---- Mode portofolio: bobot target dari keyakinan × ekspektasi, pindah hanya bila untung bersih > biaya
+  const apCostRT = (s) => { const [fb, fs] = FEE[kindOf(s)]; return fb + fs + (/-USDT?$/.test(s) ? 0.002 : 0.001); }; // fee beli+jual + spread kira-kira
+  const apEdge = (X) => { const P = X && X.P; if (!P || !P.pr || !(P.entry > 0)) return 0; return Math.max(0, P.pr.expR) * Math.abs(P.entry - P.stop) / P.entry; }; // ekspektasi % per trade
+  async function apPorto() {
+    const c = ap.cfg, S = apSyms(), B = c.target === "demo" ? apRun().eq : c.budget;
+    await ppQuotes(S); const cur = {}; for (const s of S) { const p = pp.a.pos[s], q = pp.q[s]; cur[s] = p && p.ap && q ? p.units * q.price * fxOf(s) : 0; }
+    for (const x of au.list.filter((y) => y.ap && (y.st === "menunggu" || y.st === "terisi"))) cur[x.sym] = (cur[x.sym] || 0) + x.qty * x.entry;
+    const R = S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V, e = apEdge(X), net = e - apCostRT(s); return { s, X, V, e, net, w: 0, cur: cur[s] || 0 }; });
+    const ok = R.filter((r) => r.V && r.V.act === "BELI" && r.net > 0), tot = ok.reduce((t, r) => t + r.net * r.X.P.confPct, 0);
+    ok.forEach((r) => (r.w = tot > 0 ? Math.min(c.maxW, (0.9 * r.net * r.X.P.confPct) / tot) : 0)); // 10% kas penyangga
+    ok.sort((x, y) => y.net - x.net).slice(c.maxPos).forEach((r) => (r.w = 0));
+    // posisi yang ditahan tapi tidak lagi BELI: jual hanya bila sinyal turun/JUAL, atau bila ada kandidat yang jauh lebih baik setelah biaya
+    const best = ok.length ? Math.max(...ok.map((r) => r.net)) : 0;
+    for (const r of R) { if (r.cur <= 0 || (r.V && r.V.act === "BELI")) continue;
+      if (r.V && r.V.act === "JUAL") r.w = 0; else if (best - apCostRT(r.s) > Math.max(0, r.net) + 0.005) { r.w = 0; r.swap = true; } else r.w = r.cur / B; }
+    for (const r of R) { const tgt = r.w * B, diff = tgt - r.cur;
+      if (tgt > 0 && Math.abs(diff) < Math.max(0.05 * B, 1e5)) continue; // pita 5% (keluar penuh selalu dijalankan): hindari bolak-balik yang menggerus biaya
+      if (diff < 0 && r.cur > 0) { const frac = tgt <= 0 ? 1 : -diff / r.cur; try { const m = await apSell({ sym: r.s }, frac); if (frac >= 0.999) c.cool[r.s] = Date.now(); apLogAdd(r.s, `PORTOFOLIO kurangi ke ${pct(r.w, 0)} · ${r.swap ? "pindah ke kandidat lebih kuat (untung bersih > biaya)" : r.V ? r.V.why : ""} · ${m || "–"}`, "sell"); } catch (e) { apLogAdd(r.s, "gagal kurangi: " + e.message, "err"); } } }
+    for (const r of R) { const tgt = r.w * B, diff = tgt - r.cur;
+      if (!(diff >= Math.max(0.05 * B, 1e5))) continue; if (c.dayHalt) { apLogAdd(r.s, "PORTOFOLIO: rugi harian ≥ 5%, beli baru diblok"); break; } if (c.nDay >= c.maxDay) { apLogAdd(r.s, "PORTOFOLIO: maks order harian tercapai"); break; }
+      if (c.cool[r.s] && Date.now() - c.cool[r.s] < 864e5) continue; if (c.target === "idx" && r.cur > 0) continue; // Indodax: tidak menambah posisi yang sudah ada
+      if (diff * apCostRT(r.s) > diff * r.net) continue;
+      try { const m = await apBuy(r.X, diff); c.nDay++; apLogAdd(r.s, `PORTOFOLIO tambah ke ${pct(r.w, 0)} · ekspektasi ${pct(r.e, 1)} − biaya ${pct(apCostRT(r.s), 1)} · ${m}`, "buy"); toast(`Autopilot: ${m}`); } catch (e) { apLogAdd(r.s, "gagal tambah: " + e.message, "err"); } }
+    ap.porto = R.map((r) => ({ s: r.s, w: r.w, cur: r.cur / B, net: r.net })); }
+  function drawAp() { if (!ap.cfg || !$("apTable")) return; const g = demoGate(), c = ap.cfg;
+    $("apGate").innerHTML = (c.target === "idx" ? gateText(g) : `Eksekusi di <b>akun demo</b>. ${gateText(g)}`) + ` · Order baru hari ini ${c.nDay || 0}/${c.maxDay} · posisi autopilot ${apPositions().length}/${c.maxPos}`;
+    const S = apSyms(), ar = (v, ok) => (ok === false ? '<span class="note">belum teruji</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
+    $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Berita 24j</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
+      return `<tr><td><b>${esc(s)}</b>${apPositions().includes(s) ? ' <span class="pill pos">posisi</span>' : ""}</td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
+        <td>${X ? `${ar(X.ml, X.mlV)} ${pct(X.mlP, 0)}` : "–"}</td><td>${X ? `${ar(X.dl, X.dlV)} ${isFinite(X.dlP) ? pct(X.dlP, 0) : ""}` : "–"}</td><td>${X ? `${ar(X.ai)} ${nf(1).format(X.aiScore)}` : "–"}</td><td>${X && X.N ? (X.N.shock ? `<b class="neg" title="${esc(X.N.shock.title)}">⚠ ${esc(X.N.shock.word)}</b>` : `<span class="note">${X.N.n} berita · ${X.N.neg} negatif</span>`) : "–"}</td>
+        <td class="note">${esc(st.note || (V ? V.why : ""))}</td><td class="note">${st.at ? new Date(st.at).toLocaleTimeString("id-ID") : "–"}</td></tr>`; }).join("") + "</tbody>" : '<tbody><tr><td class="note">Tambahkan aset di kotak kiri.</td></tr></tbody>';
+    $("apLog").innerHTML = ap.log.length ? "<tbody>" + ap.log.slice(0, 120).map((l) => `<tr><td class="note">${wib(l.t)}</td><td><b>${esc(l.s)}</b></td><td class="${l.k === "buy" ? "pos" : l.k === "sell" ? "neg" : l.k === "err" ? "neg" : ""}">${esc(l.m)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada aktivitas.</td></tr></tbody>';
+    if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
+    document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
+    if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
+    $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
+  function bindAp() { apLoad();
+    ["apOn", "apUseML", "apUseDL", "apUseAI", "apTarget", "apThr", "apMaxPos", "apMaxDay", "apVal", "apEvery", "apList", "apMode", "apBudget", "apMaxW", "apUseNews"].forEach((id) => $(id).addEventListener("change", () => {
+      apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
+      if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
+      if (id === "apOn" && ap.cfg.on) { if (!apSyms().length) { toast("Isi dulu aset yang dipantau."); ap.cfg.on = false; $("apOn").checked = false; } else { apLogAdd("—", `Autopilot DIAKTIFKAN (${ap.cfg.target === "idx" ? "Indodax" : "demo"}, ${[ap.cfg.ml && "ML", ap.cfg.dl && "DL", ap.cfg.ai && "AI"].filter(Boolean).join("+")}, ambang ${pct(ap.cfg.thr, 0)})`); setTimeout(() => apCycle(true), 300); } }
+      if (id === "apOn" && !ap.cfg.on) apLogAdd("—", "Autopilot dimatikan");
+      apSave(); drawAp(); }));
+    $("apAddCur").onclick = () => { if (!state.data) return; const L = apSyms(); if (!L.includes(state.data.symbol)) { $("apList").value = [...L, state.data.symbol].join(", "); apRead(); apSave(); drawAp(); } };
+    $("apAddGems").onclick = () => { const G = gm.rows.filter((r) => r.st === "Kandidat kuat").map((r) => r.s); if (!G.length) { toast("Belum ada Kandidat kuat di Hidden gems."); return; } $("apList").value = [...new Set([...apSyms(), ...G])].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); };
+    $("apNow").onclick = () => apCycle(true);
+    $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
+    $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
+    if (location.hostname === "localhost") window.__ap = { apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
+    clearInterval(ap.timer); ap.timer = setInterval(() => apCycle(false), 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
   function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
     $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
   async function ensureHolidays() { // tahun di luar kalender bawaan (2027): ambil libur nasional otomatis (cuti bersama bursa belum termasuk)

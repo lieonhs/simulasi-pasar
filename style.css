@@ -729,3 +729,7 @@ body.in-term .chat-btn { padding: 7px 12px; font-size: 12px; opacity: .85; }
 .qk-in:disabled, .qk-out:disabled { opacity: .45; cursor: not-allowed; }
 .qk-info, .qk-gate { grid-column: 1 / -1; font-size: 12px; color: var(--muted); } .qk-info b { font-family: var(--mono); }
 .qk-in.weak { background: #2d5a45; }
+/* autopilot */
+.ap-main { font-size: 15px; margin: 6px 0 10px; } .ap-chk { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.ap-BELI { border-color: var(--good); color: var(--good); font-weight: 700; } .ap-JUAL { border-color: var(--bad); color: var(--bad); font-weight: 700; } .ap-TUNGGU { color: var(--muted); }
+#apPane .row { flex-wrap: wrap; gap: 6px; }
