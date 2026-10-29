@@ -2002,7 +2002,10 @@
     $("dPreview").innerHTML = lines.join("<br>");
     return { s, k, px, units, fx, fee, gross, lim, brk, bad };
   }
+  // slippage + spread demo (lebih jujur): order selain limit terisi sedikit lebih buruk dari harga kutipan
+  const slipOf = (s) => (/-USDT?$/.test(s) ? 0.001 : /\.JK$/.test(s) ? 0.0015 : 0.0005);
   function ppFill(o, px) {
+    if (o.type !== "limit" && isFinite(px)) { px = px * (1 + (o.side === "buy" ? 1 : -1) * slipOf(o.s)); o.slip = slipOf(o.s); }
     const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
     if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
       a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee;
@@ -3542,11 +3545,27 @@
   // =====================================================================
   // SYARAT INDODAX: buka beli otomatis / quick IN Indodax hanya setelah terbukti di demo
   // =====================================================================
-  const GATE = { n: 20, wr: 0.8 };
-  function demoGate() { const H = (pp.a && pp.a.hist) || [], done = H.filter((o) => o.side === "sell" && o.pl != null), n = done.length, w = done.filter((o) => o.pl > 0).length, pl = done.reduce((s, o) => s + o.pl, 0), wr = n ? w / n : 0;
-    return { n, w, wr, pl, pass: n >= GATE.n && wr >= GATE.wr && pl > 0 }; }
-  function gateText(g = demoGate()) { return g.pass ? `<span class="pos">Syarat terpenuhi</span>: ${g.n} transaksi demo, ${pct(g.wr, 0)} untung, total ${g.pl >= 0 ? "+" : "−"}Rp ${big(Math.abs(g.pl))}.`
-    : `<b>Indodax otomatis terkunci.</b> Syarat: ≥ ${GATE.n} transaksi demo selesai, ≥ ${pct(GATE.wr, 0)} untung, dan total untung > 0. Sekarang: ${g.n} transaksi, ${pct(g.wr, 0)} untung, total ${g.pl >= 0 ? "+" : "−"}Rp ${big(Math.abs(g.pl))}.`; }
+  // ---- Periode belajar demo 2 bulan. Uang asli baru terbuka bila: ≥ 60 hari, ≥ 30 transaksi selesai, laba rata-rata per transaksi > 0 setelah biaya,
+  //      profit factor ≥ 1,2, drawdown ≤ 20%, dan (opsional, aturanmu) ≥ 80% transaksi untung.
+  const GATE = { days: 60, n: 30, pf: 1.2, dd: 0.2, wr: 0.8 };
+  function learnStart() { if (!settings.learnStart) { settings.learnStart = new Date().toISOString(); saveSettings({ learnStart: settings.learnStart }); } return settings.learnStart; }
+  function demoStats(onlyAp) { const from = learnStart(), H = (pp.a && pp.a.hist) || [], done = H.filter((o) => o.pl != null && (o.side === "sell" || o.side2 === "close") && (o.fillAt || o.t) >= from && (!onlyAp || o.ap));
+    const n = done.length, W = done.filter((o) => o.pl > 0), L = done.filter((o) => o.pl <= 0), gw = W.reduce((s, o) => s + o.pl, 0), gl = -L.reduce((s, o) => s + o.pl, 0), pl = gw - gl;
+    const E = ((pp.a && pp.a.eq) || []).filter((x) => x.d >= from.slice(0, 10)); let pk = -Infinity, dd = 0; for (const x of E) { pk = Math.max(pk, x.v); dd = Math.max(dd, pk > 0 ? 1 - x.v / pk : 0); }
+    const days = (Date.now() - Date.parse(from)) / 864e5; return { from, days, n, w: W.length, wr: n ? W.length / n : 0, pl, avg: n ? pl / n : 0, pf: gl > 0 ? gw / gl : gw > 0 ? Infinity : 0, dd, eqN: E.length }; }
+  function demoGate() { const s = demoStats(false), need80 = settings.gate80 !== false, chk = { days: s.days >= GATE.days, n: s.n >= GATE.n, avg: s.avg > 0, pf: s.pf >= GATE.pf, dd: s.dd <= GATE.dd, wr: !need80 || s.wr >= GATE.wr };
+    return { ...s, chk, need80, pass: Object.values(chk).every(Boolean) }; }
+  function gateText(g = demoGate()) { const left = Math.max(0, Math.ceil(GATE.days - g.days));
+    return g.pass ? `<span class="pos">Syarat terpenuhi</span>: ${Math.floor(g.days)} hari belajar, ${g.n} transaksi, laba rata-rata ${big(g.avg, "IDR")}/transaksi, profit factor ${nf(2).format(g.pf)}.`
+      : `<b>Uang asli terkunci (masa belajar demo).</b> ${left ? `Sisa <b>${left} hari</b> dari 60.` : "60 hari terlewati."} Sekarang: ${g.n}/${GATE.n} transaksi · rata-rata ${g.avg >= 0 ? "+" : "−"}${big(Math.abs(g.avg), "IDR")} · PF ${isFinite(g.pf) ? nf(2).format(g.pf) : "∞"} · drawdown ${pct(g.dd, 0)}${g.need80 ? ` · ${pct(g.wr, 0)} untung (wajib ≥ 80%)` : ""}.`; }
+  function drawLearnReport() { const el = $("lrBody"); if (!el) return; const g = demoGate(), A = demoStats(true), prog = Math.min(1, g.days / GATE.days), ok = (b) => (b ? '<b class="pos">✓</b>' : '<span class="note">✗</span>');
+    const row = (lab, v, need, b) => `<tr><td>${lab}</td><td><b>${v}</b></td><td class="note">${need}</td><td>${ok(b)}</td></tr>`;
+    el.innerHTML = `<div class="tg-bar"><i style="width:${(prog * 100).toFixed(1)}%"></i></div><p class="note keep">Hari ke-${Math.floor(g.days)} dari 60 · mulai ${new Date(g.from).toLocaleDateString("id-ID")} · ${g.days >= GATE.days ? "masa belajar selesai" : `selesai ±${new Date(Date.parse(g.from) + GATE.days * 864e5).toLocaleDateString("id-ID")}`}</p>
+      <div class="table-wrap"><table><thead><tr><th>Ukuran (semua transaksi demo sejak mulai)</th><th>Sekarang</th><th>Syarat</th><th></th></tr></thead><tbody>
+      ${row("Lama belajar", `${Math.floor(g.days)} hari`, "≥ 60 hari", g.chk.days)}${row("Transaksi selesai", g.n, "≥ 30", g.chk.n)}
+      ${row("Laba rata-rata per transaksi (setelah biaya)", `${g.avg >= 0 ? "+" : "−"}${big(Math.abs(g.avg), "IDR")}`, "> 0", g.chk.avg)}${row("Profit factor (total untung ÷ total rugi)", isFinite(g.pf) ? nf(2).format(g.pf) : "∞", "≥ 1,2", g.chk.pf)}
+      ${row("Drawdown terbesar akun demo", pct(g.dd, 1), "≤ 20%", g.chk.dd)}${row("Transaksi untung", pct(g.wr, 0), g.need80 ? "≥ 80% (aturanmu)" : "tidak wajib", g.chk.wr)}
+      </tbody></table></div><p class="note keep">Autopilot saja: ${A.n} transaksi · ${pct(A.wr, 0)} untung · rata-rata ${A.avg >= 0 ? "+" : "−"}${big(Math.abs(A.avg), "IDR")} · PF ${isFinite(A.pf) ? nf(2).format(A.pf) : "∞"}. ${g.pass ? '<b class="pos">Semua syarat terpenuhi: uang asli boleh dibuka.</b>' : "Uang asli tetap terkunci sampai semua ✓."}</p>`; }
   // QUICK IN / OUT di Analisis: harga & jumlah dari rencana → eksekusi 2 klik (demo, atau Indodax untuk kripto yang listing)
   const qk = { mode: null, arm: null, t: null };
   function qkCtx() { const P = act.plan, d = state.data; if (!P || !d) return null; const crypto = isCrypto(), p = crypto && ix.pairs ? idxPairFor(d.symbol) : null, usd = state.res && state.res.s0 > 0 ? state.res.s0 : P.px;
@@ -3663,7 +3682,7 @@
   const ap = { cfg: null, st: {}, log: [], busy: false, timer: null, ext: {} };
   const AP_DEF = { on: false, ml: true, dl: true, ai: true, target: "demo", thr: 0.75, mode: "asset", budget: 1e9, run: null, mlFast: true, health: true, brains: 0, style: "swing", dayBias: false, fut: false, lev: 2, tgOn: false, tgAmt: 5e7, tgAgg: 0.03, tgSafe: 0.005, tgBrake: 0.25, scope: "list", news: true, exp: true, autoPick: false, pickAt: 0, pickSrc: "all", maxW: 0.35, maxPos: 5, maxDay: 50, val: 100000, every: 30, list: "", cool: {}, day: "", nDay: 0 };
   function apLoad() { ap.cfg = { ...AP_DEF, ...((settings && settings.autopilot) || {}) }; ap.cfg.thr = Math.max(0.75, +ap.cfg.thr || 0.75); ap.log = ((settings && settings.apLog) || []).slice(0, 200);
-    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apMlSpeed").value = c.mlFast === false ? "std" : "fast"; $("apHealth").checked = c.health !== false; $("apBrains").value = String(c.brains || 0); apSetBrains(c.brains); $("apStyle").value = c.style || "swing"; $("apDayBias").checked = !!c.dayBias; $("apFut1").checked = !!c.fut; $("apLev").value = String(c.lev || 2); $("tgOn").checked = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
+    const c = ap.cfg; $("apOn").checked = c.on; $("apUseML").checked = c.ml; $("apUseDL").checked = c.dl; $("apUseAI").checked = c.ai; $("apTarget").value = c.target; $("apThr").value = String(c.thr); $("apMaxPos").value = String(c.maxPos); $("apMaxDay").value = String(c.maxDay); $("apVal").value = c.val; $("apEvery").value = String(c.every); $("apList").value = c.list; $("apMode").value = c.mode; $("apMlSpeed").value = c.mlFast === false ? "std" : "fast"; $("apHealth").checked = c.health !== false; $("apBrains").value = String(c.brains || 0); apSetBrains(c.brains); $("apStyle").value = c.style || "swing"; $("apDayBias").checked = !!c.dayBias; $("apFut1").checked = !!c.fut; $("apLev").value = String(c.lev || 2); $("tgOn").checked = !!c.tgOn; if ($("tgDet")) $("tgDet").open = !!c.tgOn; $("tgAmt").value = c.tgAmt; $("tgAgg").value = String(c.tgAgg); $("tgSafe").value = String(c.tgSafe); $("tgBrake").value = String(c.tgBrake); $("apScope").value = c.scope || "list"; $("apUseNews").checked = c.news !== false; $("apUseExp").checked = c.exp !== false; $("apAutoPick").checked = !!c.autoPick; $("apPickSrc").value = c.pickSrc || "all"; $("apBudget").value = c.budget; $("apMaxW").value = String(c.maxW); }
   function apRead() { const c = ap.cfg; c.on = $("apOn").checked; c.ml = $("apUseML").checked; c.dl = $("apUseDL").checked; c.ai = $("apUseAI").checked; c.target = $("apTarget").value; c.thr = +$("apThr").value; c.maxPos = +$("apMaxPos").value; c.maxDay = Math.min(50, +$("apMaxDay").value || 50); c.val = Math.max(10000, +$("apVal").value || 100000); c.every = +$("apEvery").value; c.list = $("apList").value; c.mode = $("apMode").value; c.mlFast = $("apMlSpeed").value !== "std"; c.health = $("apHealth").checked; c.brains = +$("apBrains").value || 0; apSetBrains(c.brains); c.style = $("apStyle").value; c.dayBias = $("apDayBias").checked; if (c.style !== "swing") c.mode = "asset"; c.fut = $("apFut1").checked; c.lev = Math.min(5, +$("apLev").value || 2); c.tgOn = $("tgOn").checked; c.tgAmt = Math.max(1e6, +$("tgAmt").value || 5e7); c.tgAgg = Math.min(0.05, +$("tgAgg").value); c.tgSafe = +$("tgSafe").value; c.tgBrake = +$("tgBrake").value; if (c.tgOn) c.mode = "asset"; c.scope = $("apScope").value; c.news = $("apUseNews").checked; c.exp = $("apUseExp").checked; c.autoPick = $("apAutoPick").checked; c.pickSrc = $("apPickSrc").value; c.budget = Math.min(AP_CAP, Math.max(1e6, +$("apBudget").value || AP_CAP)); c.maxW = +$("apMaxW").value; c.thr = Math.max(AP_MIN, c.thr); }
   const fmtIdr = (v) => "Rp " + (Math.abs(v) >= 1e9 ? nf(2).format(v / 1e9) + " M" : Math.abs(v) >= 1e6 ? nf(1).format(v / 1e6) + " jt" : nf(0).format(v));
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
@@ -3823,10 +3842,12 @@ lap("berita");
         for (let j = 0; j < k; j++) w[j] -= 0.3 * (g[j] / rows.length + lam * (w[j] - AI_W0[j])); b -= 0.3 * (gb / rows.length); } return { w, b }; };
     const auc = (ps, ys) => { let pos = 0, neg = 0, s = 0; ps.map((p, i) => [p, ys[i]]).sort((a1, b1) => a1[0] - b1[0]).forEach(([, y], i) => { if (y) { pos++; s += i + 1; } else neg++; }); return pos && neg ? (s - (pos * (pos + 1)) / 2) / (pos * neg) : NaN; };
     const P = (m, r) => 1 / (1 + Math.exp(-(m.b + r.reduce((s, v, j) => s + v * m.w[j], 0))));
-    if (n >= 40) { const cut = Math.floor(n * 0.7), tr = L.slice(0, cut), te = L.slice(cut), m1 = fit(tr.map((m) => m.c), tr.map((m) => m.y));
+    if (n >= 40) { const { tr, te } = tsSplit(L); if (tr.length < 20 || te.length < 8) { out.p = (r) => P(out, r); ap.aiModel = out; return out; } const m1 = fit(tr.map((m) => m.c), tr.map((m) => m.y));
       out.auc = auc(te.map((m) => P(m1, m.c)), te.map((m) => m.y)); out.aucFixed = auc(te.map((m) => P({ w: AI_W0, b: 0 }, m.c)), te.map((m) => m.y)); out.nTest = te.length;
       const m2 = fit(L.map((m) => m.c), L.map((m) => m.y)); out.w = m2.w; out.b = m2.b; out.valid = te.length >= 12 && out.auc >= 0.55 && !(out.aucFixed > out.auc); }
     out.p = (r) => P(out, r); ap.aiModel = out; return out; }
+  // pisah latih/uji berdasarkan TANGGAL dengan jeda 7 hari (embargo) supaya catatan yang mirip tidak bocor ke data uji
+  function tsSplit(L) { const n = L.length, cd = L[Math.floor(n * 0.7)].d, emb = new Date(Date.parse(cd) + 7 * 864e5).toISOString().slice(0, 10); return { tr: L.filter((m) => m.d < cd), te: L.filter((m) => m.d >= emb) }; }
   function apExpTrain() { if (ap.expModel) return ap.expModel;
     const L = apMem().filter((m) => m.y != null).sort((x, y) => (x.d < y.d ? -1 : 1)), n = L.length, k = EXP_F.length, out = { n, valid: false };
     const fill = [0.5, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0, 0], row = (m) => m.f.map((v, j) => (v == null || !isFinite(v) ? fill[j] : v));
@@ -3839,7 +3860,7 @@ lap("berita");
     out.base = n ? L.reduce((a, m) => a + m.y, 0) / n : NaN;
     const by = (v) => { const S = L.filter((m) => m.v === v); return { n: S.length, win: S.length ? S.reduce((a, m) => a + m.y, 0) / S.length : NaN, r: S.length ? S.reduce((a, m) => a + m.r, 0) / S.length : NaN }; };
     out.byV = { BELI: by("BELI"), TUNGGU: by("TUNGGU"), JUAL: by("JUAL") };
-    if (n >= 40) { const cut = Math.floor(n * 0.7), tr = L.slice(0, cut), te = L.slice(cut), m1 = fit(tr.map(row), tr.map((m) => m.y));
+    if (n >= 40) { const { tr, te } = tsSplit(L); if (tr.length < 20 || te.length < 8) { ap.expModel = out; return out; } const m1 = fit(tr.map(row), tr.map((m) => m.y));
       out.auc = auc(te.map((m) => m1.p(row(m))), te.map((m) => m.y)); out.nTest = te.length; out.valid = te.length >= 12 && out.auc >= 0.55;
       const m2 = fit(L.map(row), L.map((m) => m.y)); out.model = m2; out.row = row; out.w = EXP_F.map((nm, j) => [nm, m2.w[j]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])); }
     ap.expModel = out; return out; }
@@ -3878,7 +3899,7 @@ lap("berita");
         for (let q = 0; q < H; q++) { const gh = e * W2[q] * (1 - h[q] * h[q]); W2[q] -= lr * (e * h[q] + lam * W2[q]); for (let j = 0; j < k; j++) W1[q][j] -= lr * (gh * Z[i][j] + lam * W1[q][j]); b1[q] -= lr * gh; } b2 -= lr * e; }
       return (r) => { const zr = r.map((v, j) => (v - mu[j]) / sd[j]), h = W1.map((w, q) => Math.tanh(b1[q] + w.reduce((s, v, j) => s + v * zr[j], 0))); return 1 / (1 + Math.exp(-(b2 + h.reduce((s, v, q) => s + v * W2[q], 0)))); }; };
     const auc = (ps, ys) => { let pos = 0, neg = 0, s = 0; ps.map((p, i) => [p, ys[i]]).sort((a1, b1) => a1[0] - b1[0]).forEach(([, y], i) => { if (y) { pos++; s += i + 1; } else neg++; }); return pos && neg ? (s - (pos * (pos + 1)) / 2) / (pos * neg) : NaN; };
-    const cut = Math.floor(n * 0.7), tr = [...Array(cut).keys()], te = [...Array(n - cut).keys()].map((i) => i + cut), f1 = fit(tr);
+    const { tr: trL, te: teL } = tsSplit(L), ix0 = new Map(L.map((m, i) => [m, i])), tr = trL.map((m) => ix0.get(m)), te = teL.map((m) => ix0.get(m)); if (tr.length < 30 || te.length < 12) { ap.brain = out; return out; } const f1 = fit(tr);
     out.auc = auc(te.map((i) => f1(X[i])), te.map((i) => Y[i])); out.nTest = te.length; const E = apExpTrain(); out.aucExp = E.auc;
     out.valid = te.length >= 18 && out.auc >= 0.55 && !(isFinite(E.auc) && E.valid && E.auc >= out.auc); out.p = fit([...Array(n).keys()]); ap.brain = out; return out; }
   function brainPredict(X) { const B = brainTrain(); if (!B.p) return { valid: false, n: B.n }; return { valid: B.valid, p: B.p(brainRow({ f: apFeat(X), rb: X.RB ? [X.RB.pA, X.RB.medA, X.RB.tailA, X.RB.stressStop] : null, eye: X.N && X.N.eye ? [X.N.eye.sent, X.N.eye.buzz, X.N.eye.recent, X.N.eye.shock] : null })), n: B.n, auc: B.auc }; }
@@ -4007,12 +4028,12 @@ lap("berita");
   const futList = () => (pp.a.fut || (pp.a.fut = []));
   const futLiq = (f) => f.entry * (1 - f.dir * (FUT_MM / f.lev));
   function futPnl(f, px) { const fx = fxOf(f.s), hrs = (Date.now() - Date.parse(f.t)) / 3600e3; return f.dir * (px - f.entry) * f.units * fx - (f.spot ? 0 : f.entry * f.units * fx * FUT_FUND8H * Math.floor(hrs / 8)); }
-  function futOpen(s, dir, px, units, lev, brk, ap1, opt = {}) { const fx = fxOf(s), notional = units * px * fx, margin = notional / lev, feeR = opt.feeR || FUT_FEE, fee = notional * feeR;
+  function futOpen(s, dir, px, units, lev, brk, ap1, opt = {}) { px = px * (1 + dir * slipOf(s)); const fx = fxOf(s), notional = units * px * fx, margin = notional / lev, feeR = opt.feeR || FUT_FEE, fee = notional * feeR;
     if (margin + fee > pp.a.cash) throw new Error("kas demo tidak cukup untuk margin"); pp.a.cash -= margin + fee;
     const f = { id: Date.now().toString(36), t: new Date().toISOString(), s, dir, entry: px, units, lev, margin, fee, brk, ap: !!ap1, day: !!opt.day, spot: !!opt.spot, feeR, feeR2: opt.feeR2 || feeR }; futList().push(f);
     const lab = f.spot ? `day trade beli` : `futures ${dir > 0 ? "LONG" : "SHORT"} ${lev}x${f.day ? " day" : ""} buka`;
     pp.a.hist.unshift({ id: f.id, t: f.t, s, name: s, side: dir > 0 ? "buy" : "sell", type: lab, units, fillPx: px, fillAt: f.t, fee, status: "terisi", ap: !!ap1, fut: true, eng: f.day ? "day" : "swing" }); return f; }
-  function futClose(f, px, why) { const fx = fxOf(f.s), pnl = Math.max(-f.margin, futPnl(f, px)), fee = f.units * px * fx * (f.feeR2 || FUT_FEE), back = Math.max(0, f.margin + pnl - fee);
+  function futClose(f, px, why) { if (why !== "LIKUIDASI") px = px * (1 - f.dir * slipOf(f.s)); const fx = fxOf(f.s), pnl = Math.max(-f.margin, futPnl(f, px)), fee = f.units * px * fx * (f.feeR2 || FUT_FEE), back = Math.max(0, f.margin + pnl - fee);
     pp.a.cash += back; pp.a.fut = futList().filter((x) => x !== f);
     pp.a.hist.unshift({ id: f.id + "c", t: new Date().toISOString(), s: f.s, name: f.s, side: f.dir > 0 ? "sell" : "buy", type: f.spot ? `day trade jual · ${why}` : `futures ${f.dir > 0 ? "LONG" : "SHORT"} ${f.lev}x${f.day ? " day" : ""} tutup · ${why}`, units: f.units, fillPx: px, fillAt: new Date().toISOString(), fee, pl: back - f.margin - f.fee, status: "terisi", ap: f.ap, fut: true, side2: "close", eng: f.day ? "day" : "swing" });
     return back - f.margin - f.fee; }
@@ -4041,7 +4062,7 @@ lap("berita");
     return { wd: g("weekday"), m: (+g("hour") % 24) * 60 + +g("minute") }; };
   function daySession(s) { // { open: boleh masuk, close: wajib tutup sekarang, label }
     if (/-USDT?$/.test(s)) { const t = tzParts("Asia/Jakarta"); return { open: t.m < 23 * 60, close: t.m >= 23 * 60 + 50, label: "kripto: hari WIB, tutup 23.50" }; }
-    if (/\.JK$/.test(s) || /^\^JK/.test(s)) { const t = tzParts("Asia/Jakarta"), wk = !["Sat", "Sun"].includes(t.wd) && idxOpen(); return { open: wk && t.m >= 9 * 60 + 15 && t.m <= 15 * 60, close: !wk || t.m >= 15 * 60 + 45, label: "IDX: tutup 15.45 WIB" }; }
+    if (/\.JK$/.test(s) || /^\^JK/.test(s)) { const t = tzParts("Asia/Jakarta"), wk = !["Sat", "Sun"].includes(t.wd) && idxOpen(); return { open: false, close: !wk || t.m >= 15 * 60 + 45, label: "IDX: harga tertunda 10–15 menit, day trade dinonaktifkan" }; }
     const t = tzParts("America/New_York"), wk = !["Sat", "Sun"].includes(t.wd) && t.m >= 9 * 60 + 30 && t.m < 16 * 60; return { open: wk && t.m >= 9 * 60 + 45 && t.m <= 15 * 60, close: !wk || t.m >= 15 * 60 + 50, label: "AS: tutup 15.50 New York" }; }
   const dayHeld = (s) => futList().some((f) => f.ap && f.day && f.s === s);
   const swingHeld = (s) => !!((pp.a.pos[s] && pp.a.pos[s].ap) || futList().some((f) => f.ap && !f.day && f.s === s) || au.list.some((x) => x.ap && x.sym === s && (x.st === "menunggu" || x.st === "terisi")));
@@ -4250,7 +4271,7 @@ lap("berita");
     if (c.target === "demo") { const R = apRun(); $("apGate").innerHTML += `<br>Run #${R.n}${R.failed ? ' <b class="neg">GAGAL</b>' : ""}: dana uji ${fmtIdr(R.cap)} → nilai sekarang <b class="${R.eq >= R.cap ? "pos" : "neg"}">${fmtIdr(R.eq)}</b> (${pct(R.ratio - 1, 1)}) · terpakai ${fmtIdr(R.used)} · batas gagal ${fmtIdr(R.cap * AP_FAIL)}`; }
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
-    $("apDev").innerHTML = devText(); drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
+    $("apDev").innerHTML = devText(); drawLearnReport(); drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
     { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
@@ -4303,6 +4324,7 @@ lap("berita");
       if (k === "fut") { const f = futList().find((y) => y.id === id); if (!f) return; await ppQuotes([f.s]); const q = pp.q[f.s]; if (!q) return; const pl = futClose(f, q.price, "manual"); apLogAdd(f.s, `Ditutup manual @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`, "sell"); }
       else if (k === "pos") { const m = await apSell({ sym: id }, 1, "swing"); apLogAdd(id, `Swing ditutup manual · ${m || "–"}`, "sell"); }
       ppSnap(); ppSave(); renderPaper(); apSave(); drawAp(); });
+    $("lr80").checked = settings.gate80 !== false; $("lr80").onchange = () => { saveSettings({ gate80: $("lr80").checked }); drawAp(); };
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };

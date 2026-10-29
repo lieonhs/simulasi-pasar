@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com https://cdn.jsdelivr.net; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<script src="boot.js?v=20261029235953"></script>
+<script src="boot.js?v=20261030000831"></script>
 <title>RAM Capital · Quant &amp; Market Analytics</title>
 <meta name="description" content="Simulasi risiko & peluang saham, kripto, dan obligasi: Monte Carlo, GARCH, HMM, valuasi Damodaran, sinyal beli/jual, shipping & freight.">
 <meta name="theme-color" content="#070b10">
@@ -25,13 +25,13 @@
 <meta name="twitter:image" content="https://lieonhs.github.io/simulasi-pasar/assets/og-image.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029235953">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="vendor/katex/katex.min.css?v=20261030000831">
+<link rel="stylesheet" href="style.css?v=20261030000831">
+<script src="vendor/chart.umd.min.js?v=20261030000831"></script>
+<script src="vendor/supabase.js?v=20261030000831"></script>
+<script defer src="vendor/katex/katex.min.js?v=20261030000831"></script>
+<script defer src="vendor/katex/contrib/auto-render.min.js?v=20261030000831"></script>
+<script src="vendor/lightweight-charts.standalone.production.js?v=20261030000831"></script>
 </head>
 <body>
 <div id="splash" class="splash"><svg class="splash-logo" width="88" height="88" viewBox="0 0 64 64" aria-hidden="true">  <defs>
@@ -364,17 +364,17 @@
       <label class="toggle ap-main"><input type="checkbox" id="apOn"> <b>Aktifkan autopilot</b></label>
       <div id="apState" class="ap-state"></div>
       <button class="run" id="apSimAll">▶ Simulasi semua aset (demo)</button>
-      <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
-      <label class="toggle"><input type="checkbox" id="apHealth" checked> <b>Mode sehat perangkat</b> <span class="note">kurangi beban saat pakai baterai, baterai lemah, RAM kecil, atau perangkat mulai berat</span></label>
-      <div id="apDev" class="note keep"></div>
+      <div class="grid">
+        <div><label class="lbl" for="apTarget">Eksekusi di</label><select id="apTarget"><option value="demo" selected>Akun demo</option><option value="idx">Indodax (uang asli)</option></select></div>
+        <div><label class="lbl" for="apStyle">Gaya trading</label><select id="apStyle"><option value="swing">Swing (tahan beberapa hari)</option><option value="day">Harian / day trade (tutup sebelum sesi berakhir)</option><option value="both">Keduanya: swing (model) + harian, jalan bersamaan</option><option value="adapt">Adaptif per aset: dua strategi jalan, otomatis pakai yang lebih efektif</option></select></div>
+      </div>
+      <details class="ap-adv"><summary>⚙ Pengaturan lanjutan · kecerdasan, risiko, otak, perangkat</summary>
       <div class="lbl">Kecerdasan yang harus sepakat</div>
       <div class="ap-chk"><label class="toggle"><input type="checkbox" id="apUseML" checked> Machine learning</label><label class="toggle"><input type="checkbox" id="apUseDL" checked> Deep learning</label><label class="toggle"><input type="checkbox" id="apUseAI" checked> RAM AI (aturan)</label><label class="toggle"><input type="checkbox" id="apUseNews" checked> Berita (jual darurat bila ada kejutan)</label><label class="toggle"><input type="checkbox" id="apUseExp" checked> Pengalaman demo (belajar dari hasil sendiri)</label></div>
       <div class="grid">
-        <div><label class="lbl" for="apTarget">Eksekusi di</label><select id="apTarget"><option value="demo" selected>Akun demo</option><option value="idx">Indodax (uang asli)</option></select></div>
         <div><label class="lbl" for="apThr">Keyakinan minimal</label><select id="apThr"><option value="0.75" selected>75%</option><option value="0.8">80%</option><option value="0.85">85%</option></select></div>
         <div><label class="lbl" for="apMlSpeed">Kecepatan ML/DL</label><select id="apMlSpeed"><option value="fast" selected>Cepat (±6 tahun data)</option><option value="std">Standar (±10 tahun, lebih lama)</option></select></div>
         <div><label class="lbl" for="apBrains">Jumlah otak (paralel)</label><select id="apBrains"><option value="0" selected>Otomatis (sesuai CPU)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
-        <div><label class="lbl" for="apStyle">Gaya trading</label><select id="apStyle"><option value="swing">Swing (tahan beberapa hari)</option><option value="day">Harian / day trade (tutup sebelum sesi berakhir)</option><option value="both">Keduanya: swing (model) + harian, jalan bersamaan</option><option value="adapt">Adaptif per aset: dua strategi jalan, otomatis pakai yang lebih efektif</option></select></div>
         <div><label class="lbl" for="apScope">Cakupan</label><select id="apScope"><option value="list">Daftar pilihan (maks 8)</option><option value="all">Semua aset (simulasi penuh, demo)</option></select></div>
         <div><label class="lbl" for="apMode">Mode</label><select id="apMode"><option value="asset" selected>Per aset</option><option value="porto">Portofolio (rebalancing)</option></select></div>
         <div><label class="lbl" for="apBudget">Dana uji per run (maks Rp 1 miliar)</label><input id="apBudget" type="number" min="1000000" max="1000000000" step="1000000" value="1000000000"></div>
@@ -384,6 +384,11 @@
         <div><label class="lbl" for="apVal">Nilai per order Indodax (Rp)</label><input id="apVal" type="number" min="10000" step="10000" value="100000"></div>
         <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="0">Terus-menerus</option><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
+      <label class="toggle"><input type="checkbox" id="apDayBias"> Day trade: wajib bias harian ML/DL ≥ ambang <span class="note">(lebih ketat, jauh lebih jarang transaksi)</span></label>
+      <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
+      <label class="toggle"><input type="checkbox" id="apHealth" checked> <b>Mode sehat perangkat</b> <span class="note">kurangi beban saat pakai baterai, baterai lemah, RAM kecil, atau perangkat mulai berat</span></label>
+      <div id="apDev" class="note keep"></div>
+      </details>
       <label class="lbl" for="apList">Aset yang dipantau (maks 8)</label>
       <div id="apChips" class="ap-chips"></div>
       <div class="search"><input id="apFind" autocomplete="off" spellcheck="false" placeholder="cari aset lain: ketik btc, bbca, nvda…"><ul class="sugg" hidden></ul></div>
@@ -392,11 +397,13 @@
       <div id="apPick" class="ap-pick"></div>
       <div class="row ap-auto"><label class="toggle"><input type="checkbox" id="apAutoPick"> <b>Pilih aset otomatis</b></label><select id="apPickSrc" class="mini-sel"><option value="all">dari watchlist + aset utama + Hidden gems</option><option value="rdc">hanya kripto Perhatikan / Uji dulu (Radar)</option></select></div><p class="note">Tiap 6 jam autopilot memindai sumber yang dipilih, lalu mengisi daftar dengan 8 aset terbaik. Posisi yang masih terbuka tetap di daftar.</p>
       <div class="row"><button class="btn" id="apAddCur">+ Aset yang sedang dianalisis</button><button class="btn" id="apAddWl">+ Dari watchlist</button><button class="btn" id="apAddRd">+ Kripto “Uji dulu” dari Radar</button><button class="btn" id="apAddGems">+ Kandidat kuat Hidden gems</button><button class="btn" id="apNow">Periksa sekarang</button><button class="btn" id="apQuick">Uji cepat 12 aset</button><button class="btn" id="apNewRun">Mulai run baru</button><button class="btn" id="apKill" style="color:var(--bad)">Matikan & tutup posisi autopilot</button></div>
-      <label class="toggle"><input type="checkbox" id="apDayBias"> Day trade: wajib bias harian ML/DL ≥ ambang <span class="note">(lebih ketat, jauh lebih jarang transaksi)</span></label>
+      <details class="ap-adv"><summary>📉 Futures demo (short)</summary>
       <div class="ap-tgt">
         <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual</span></label>
         <div class="grid"><div><label class="lbl" for="apLev">Leverage</label><select id="apLev"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x (maks)</option></select></div></div>
       </div>
+      </details>
+      <details class="ap-adv" id="tgDet"><summary>🎯 Mode target compounding</summary>
       <div class="ap-tgt">
         <label class="toggle"><input type="checkbox" id="tgOn"> <b>Mode target compounding</b> <span class="note">agresif sampai target, lalu hati-hati</span></label>
         <div class="grid">
@@ -408,6 +415,7 @@
         <button class="btn" id="tgStart">Mulai run target dari Rp 1 jt</button>
         <div id="tgStat"></div>
       </div>
+      </details>
       <div id="apGate" class="verdict"></div>
       <p class="note keep">Aturan: <b>beli</b> hanya bila Rencana aksi = BELI, keyakinan ≥ ambang, ekspektasi &gt; 0, dan <b>semua kecerdasan yang dicentang</b> mendukung naik (ML/DL harus <i>teruji</i> dan peluang naik ≥ ambang; RAM AI skor ≥ +2). Model dengan keyakinan di bawah 75% tidak pernah dipakai untuk eksekusi. Stop & target dipasang otomatis. <b>Jual</b> posisi autopilot bila semua kecerdasan yang dicentang condong turun atau rencana berubah JUAL. <b>Berita kejutan</b> (diretas, bangkrut, delisting, suspensi, gugatan, sanksi, depeg, dll., atau ≥ 3 berita negatif dalam 24 jam) langsung menjual posisi autopilot tanpa menunggu kecerdasan lain dan memblok beli 24 jam; berita diperiksa tiap 5 menit. <b>Batas rugi harian 5%</b>: bila nilai run turun ≥ 5% dalam sehari, beli baru diblok sampai besok. Tidak menyentuh posisi manualmu. <b>Mode portofolio:</b> dana dibagi ke aset yang lolos sesuai keyakinan × ekspektasi, lalu hanya dipindah bila keuntungan yang diharapkan melebihi biaya jual + beli + spread + margin 0,5%. Jeda 24 jam per aset setelah keluar. <b>Run demo</b>: dana uji maks Rp 1 miliar; bila nilai run turun ke 50% (mis. 1 miliar tinggal 500 juta), autopilot dianggap <b>gagal memprediksi</b>, dimatikan, dan posisinya ditutup. Saham IDX hanya diproses saat jam bursa. Hanya berjalan selama web ini terbuka.</p>
     </section>
@@ -423,6 +431,7 @@
       <div class="card" id="apOrdX" hidden><div class="card-h"><h2>Order otomatis · Indodax (uang asli)</h2><span class="note" id="apOrdXN"></span></div>
         <div class="subh">⏳ Menunggu eksekusi di Indodax</div><div class="table-wrap"><table id="apPendX"></table></div>
         <div class="subh">✅ Sudah dieksekusi</div><div class="table-wrap"><table id="apDoneX"></table></div></div>
+      <div class="card" id="lrCard"><div class="card-h"><h2>Masa belajar demo · 2 bulan</h2><label class="toggle"><input type="checkbox" id="lr80" checked> wajib ≥ 80% untung</label></div><div id="lrBody"></div></div>
       <div class="card" id="apLearn"><div class="card-h"><h2>Belajar dari demo</h2><span class="note" id="apLearnN"></span></div><div id="apLearnBody"></div></div>
       <div class="card"><h2>Log autopilot</h2><div class="table-wrap hp-wrap"><table id="apLog"></table></div></div></div>
   </div>
@@ -1151,7 +1160,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 </section>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
-<script src="engine.js?v=20261029235953"></script>
-<script src="app.js?v=20261029235953"></script>
+<script src="engine.js?v=20261030000831"></script>
+<script src="app.js?v=20261030000831"></script>
 </body>
 </html>
