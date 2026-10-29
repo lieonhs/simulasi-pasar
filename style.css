@@ -778,3 +778,8 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 .ap-tgt, .ap-adv { max-width: 100%; overflow: hidden; } .ap-tgt .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ap-tgt .grid input, .ap-tgt .grid select { min-width: 0; width: 100%; }
 #apPane > section.card { position: static; }
+/* Berita: kartu selebar layar, daftar berita jadi grid ke samping */
+@media (min-width: 900px) { #out > #newsCard { grid-column: 1 / -1; } }
+#newsList.news-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; align-items: stretch; }
+#newsList.news-list > * { min-width: 0; margin: 0; }
+@media (min-width: 900px) { #newsCard #newsSummary .kpis, #newsCard #newsSummary > div:first-child { max-width: none; } }
