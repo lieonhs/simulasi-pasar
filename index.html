@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029200249">
+<link rel="stylesheet" href="style.css?v=20261029200637">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -360,6 +360,7 @@
       <label class="toggle ap-main"><input type="checkbox" id="apOn"> <b>Aktifkan autopilot</b></label>
       <div id="apState" class="ap-state"></div>
       <button class="run" id="apSimAll">▶ Simulasi semua aset (demo)</button>
+      <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
       <div class="lbl">Kecerdasan yang harus sepakat</div>
       <div class="ap-chk"><label class="toggle"><input type="checkbox" id="apUseML" checked> Machine learning</label><label class="toggle"><input type="checkbox" id="apUseDL" checked> Deep learning</label><label class="toggle"><input type="checkbox" id="apUseAI" checked> RAM AI (aturan)</label><label class="toggle"><input type="checkbox" id="apUseNews" checked> Berita (jual darurat bila ada kejutan)</label><label class="toggle"><input type="checkbox" id="apUseExp" checked> Pengalaman demo (belajar dari hasil sendiri)</label></div>
       <div class="grid">
@@ -372,7 +373,7 @@
         <div><label class="lbl" for="apMaxPos">Maks posisi terbuka</label><select id="apMaxPos"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></div>
         <div><label class="lbl" for="apMaxDay">Maks order baru / hari</label><select id="apMaxDay"><option>2</option><option selected>4</option><option>6</option></select></div>
         <div><label class="lbl" for="apVal">Nilai per order Indodax (Rp)</label><input id="apVal" type="number" min="10000" step="10000" value="100000"></div>
-        <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
+        <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="0">Terus-menerus</option><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
       <label class="lbl" for="apList">Aset yang dipantau (maks 8)</label>
       <div id="apChips" class="ap-chips"></div>
@@ -1121,8 +1122,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029200249";</script>
-<script src="engine.js?v=20261029200249"></script>
-<script src="app.js?v=20261029200249"></script>
+<script>window.APP_V = "20261029200637";</script>
+<script src="engine.js?v=20261029200637"></script>
+<script src="app.js?v=20261029200637"></script>
 </body>
 </html>

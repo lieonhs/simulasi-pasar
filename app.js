@@ -4,17 +4,19 @@
   const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
   const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
   const API = SB_URL + "/functions/v1/market-data"; const API_IDX = API.replace("market-data", "indodax-menu");
-  // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi
-  try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
+  // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi.
+  // Pengecualian: akun pemilik/admin di perangkat yang ditandai "tetap masuk" (sp_keep) memakai localStorage, tanpa keluar otomatis.
+  let KEEP = false; try { KEEP = localStorage.getItem("sp_keep") === "1"; } catch { /* */ }
+  if (!KEEP) try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
   // jendela/tab ditutup lalu dipulihkan browser (Ctrl+Shift+T, "lanjutkan dari terakhir") -> sessionStorage ikut pulih.
   // Tandai saat halaman ditinggalkan; muat berikutnya yang BUKAN refresh = dianggap keluar.
   let closedBefore = false;
   try { const nav = (performance.getEntriesByType("navigation")[0] || {}).type || "navigate";
-    if (sessionStorage.getItem("sp_left") && nav !== "reload") { closedBefore = true; Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => sessionStorage.removeItem(k)); }
+    if (!KEEP && sessionStorage.getItem("sp_left") && nav !== "reload") { closedBefore = true; Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => sessionStorage.removeItem(k)); }
     sessionStorage.removeItem("sp_left");
     addEventListener("pagehide", () => { try { sessionStorage.setItem("sp_left", String(Date.now())); } catch { /* */ } });
   } catch { /* */ }
-  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: window.sessionStorage } }) : null;
+  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: KEEP ? window.localStorage : window.sessionStorage } }) : null;
   const IDLE_MIN = 30; let lastAct = Date.now();
   let session = null;
   async function apiFetch(url, opt = {}) {
@@ -3864,6 +3866,11 @@
       const P = apRdPick(rows); if (!P.length) { toast("Tidak ada kripto berstatus Perhatikan / Uji dulu saat ini."); apLogAdd("—", "Radar kripto: tidak ada yang berstatus Perhatikan / Uji dulu"); return; }
       const L = apList(), add = P.filter((s) => !L.includes(s)); apSetList([...L, ...add]); apLogAdd("—", `Radar kripto (Perhatikan/Uji dulu): ${P.slice(0, 10).join(", ")}${L.length + add.length > 8 ? " · hanya 8 pertama yang masuk" : ""}`); }
     finally { btn.disabled = false; btn.textContent = "+ Kripto “Uji dulu” dari Radar"; apSave(); drawAp(); } }
+
+  // ---- Supaya bisa jalan terus selama web terbuka: kunci layar agar tidak tidur, dan lanjut otomatis saat web dibuka lagi
+  async function apWakeSync() { const want = ap.cfg && ap.cfg.on && $("apWake").checked && !document.hidden;
+    try { if (want && !ap.wl && navigator.wakeLock) { ap.wl = await navigator.wakeLock.request("screen"); ap.wl.addEventListener("release", () => { ap.wl = null; }); }
+      else if (!want && ap.wl) { await ap.wl.release(); ap.wl = null; } } catch { ap.wl = null; } }
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits(); ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
@@ -3884,7 +3891,7 @@
       catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
       drawAp(); }
       if (c.on && c.mode === "porto") await apPorto(); if (c.target === "demo") await apFailCheck(); }
-    finally { ap.busy = false; apSave(); drawAp(); } }
+    finally { ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), 5000); } } }
   // ---- Mode portofolio: bobot target dari keyakinan × ekspektasi, pindah hanya bila untung bersih > biaya
   const apCostRT = (s) => { const [fb, fs] = FEE[kindOf(s)]; return fb + fs + (/-USDT?$/.test(s) ? 0.002 : 0.001); }; // fee beli+jual + spread kira-kira
   const apEdge = (X) => { const P = X && X.P; if (!P || !P.pr || !(P.entry > 0)) return 0; return Math.max(0, P.pr.expR) * Math.abs(P.entry - P.stop) / P.entry; }; // ekspektasi % per trade
@@ -3927,8 +3934,8 @@
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
       else if (!S2.length && !c.autoPick) { el.className = "ap-state idle"; el.innerHTML = "● NYALA tapi <b>menganggur</b>: belum ada aset yang dipantau. Klik aset di bawah, atau centang <b>Pilih aset otomatis</b>."; }
       else if (ap.busy || ap.picking) { el.className = "ap-state on"; el.innerHTML = "● NYALA — sedang menganalisis…"; }
-      else { el.className = "ap-state on"; el.innerHTML = `● NYALA — memantau ${S2.length} aset${c.autoPick ? " (pilih otomatis)" : ""} · pemeriksaan berikutnya ${nxt > 0 ? "±" + Math.ceil(nxt / 60e3) + " menit lagi" : "sebentar lagi"} · hanya jalan selama web ini terbuka`; } }
-    $("apNext").textContent = c.on ? `aktif · periksa tiap ${c.every} menit` : "mati"; }
+      else { el.className = "ap-state on"; el.innerHTML = `● NYALA — memantau ${S2.length} aset${c.autoPick ? " (pilih otomatis)" : ""} · ${c.every === 0 ? "terus-menerus (putaran baru langsung dimulai)" : `pemeriksaan berikutnya ${nxt > 0 ? "±" + Math.ceil(nxt / 60e3) + " menit lagi" : "sebentar lagi"}`}${ap.wl ? " · layar dijaga menyala" : ""} · hanya jalan selama web ini terbuka`; } }
+    $("apNext").textContent = c.on ? (c.every === 0 ? "aktif · terus-menerus" : `aktif · periksa tiap ${c.every} menit`) : "mati"; apWakeSync(); }
   const AP_GROUPS = [["Saham IDX", ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", "ASII.JK", "ANTM.JK", "GOTO.JK"]], ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD", "ADA-USD"]], ["Saham AS", ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN"]], ["Lainnya", ["GC=F", "^JKSE"]]];
   // Cakupan "semua aset" (demo saja): watchlist + semua aset tombol cepat + kripto Radar + Hidden gems, maks 40
   function apAll() { const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s), RC = ap.rdc ? apRdPick(ap.rdc.rows) : [];
@@ -3963,11 +3970,14 @@
     $("apAddGems").onclick = () => { const G = gm.rows.filter((r) => r.st === "Kandidat kuat").map((r) => r.s); if (!G.length) { toast("Belum ada Kandidat kuat di Hidden gems."); return; } $("apList").value = [...new Set([...apList(), ...G])].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); };
     $("apSimAll").onclick = () => { const c = ap.cfg, on = c.on && c.scope === "all" && c.target === "demo";
       if (on) { c.on = false; $("apOn").checked = false; apLogAdd("—", "Simulasi semua aset dihentikan"); apSave(); drawAp(); return; }
-      c.target = "demo"; c.scope = "all"; c.on = true; if (c.every < 30) c.every = 30; $("apTarget").value = "demo"; $("apScope").value = "all"; $("apOn").checked = true; $("apEvery").value = String(c.every);
-      apLogAdd("—", `Simulasi semua aset DIMULAI (${apAll().length} aset, demo, periksa tiap ${c.every} menit)`); apSave(); drawAp(); setTimeout(() => apCycle(true), 300); };
+      c.target = "demo"; c.scope = "all"; c.on = true; c.every = 0; $("apTarget").value = "demo"; $("apScope").value = "all"; $("apOn").checked = true; $("apEvery").value = String(c.every);
+      apLogAdd("—", `Simulasi semua aset DIMULAI (${apAll().length} aset, demo, terus-menerus)`); apSave(); drawAp(); setTimeout(() => apCycle(true), 300); };
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
+    $("apWake").addEventListener("change", () => apWakeSync());
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { apWakeSync(); if (ap.cfg.on) apCycle(false); } });
+    setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
     if (location.hostname === "localhost") window.__ap = { au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(() => { apCycle(false); if (!$("apPane").hidden && !ap.busy) drawAp(); }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
@@ -4523,13 +4533,15 @@
       : st === "rejected" ? "Admin menolak permintaanmu. Kamu bisa mengirim ulang dengan alasan yang lebih jelas." : "Admin mencabut aksesmu. Hubungi admin bila menurutmu ini keliru.");
     $("pendRe").hidden = st !== "rejected";
   }
+  // admin/pemilik: pindahkan sesi ke localStorage supaya tetap masuk walau jendela ditutup (autopilot bisa lanjut saat web dibuka lagi)
+  function keepOwnerSession() { if (!isOwner() || KEEP) return; try { localStorage.setItem("sp_keep", "1"); Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.setItem(k, sessionStorage.getItem(k))); KEEP = true; } catch { /* */ } }
   async function onAuthed(s) {
     session = s; lastAct = Date.now();
     if (authing) return authing;
     authing = (async () => {
       try { me = await fetchMe(s); } catch (e) { authing = null; showAuth("Gagal memeriksa keanggotaan: " + (e.message || e)); return; }
       if (me.status !== "approved") { authing = null; showPending(me); clearTimeout(window.__pendT); window.__pendT = setTimeout(() => { if (!$("pendGate").hidden) onAuthed(session); }, 30000); return; }
-      $("pendGate").hidden = true; await enterApp(s);
+      $("pendGate").hidden = true; keepOwnerSession(); await enterApp(s);
     })();
     return authing;
   }
@@ -4568,7 +4580,7 @@
         <div><span>Status</span><b>${me._nodb ? `persetujuan belum aktif ${isOwner() ? '<button class="fn-key" data-cmd="SETUP">Aktifkan sekarang</button>' : ""}` : "disetujui"}</b></div><div><span>Terdaftar</span><b>${esc(String(me.requested_at || "").slice(0, 10) || "–")}</b></div>
         <div><span>Login terakhir</span><b>${esc(String(session.user.last_sign_in_at || "").slice(0, 16).replace("T", " "))}</b></div></div>
       <div class="kvs"><div class="subh">Tampilan & sesi</div><div><span>Tema</span><b>${["pro", "light", "terminal"].map((t) => `<button class="fn-key ${t === th ? "on" : ""}" data-theme-set="${t}">${THEME_LBL[t]}</button>`).join(" ")}</b></div>
-        <div><span>Keluar otomatis</span><b>${IDLE_MIN} menit tidak aktif · saat jendela ditutup</b></div><div><span>Alarm aktif</span><b>${al.list.filter((a) => a.on).length}</b></div><div><span>Posisi portofolio</span><b>${pf.list.length}</b></div></div></div>
+        <div><span>Keluar otomatis</span><b>${isOwner() ? "tidak (admin tetap masuk di perangkat ini; keluar hanya lewat tombol Keluar)" : IDLE_MIN + " menit tidak aktif · saat jendela ditutup"}</b></div><div><span>Alarm aktif</span><b>${al.list.filter((a) => a.on).length}</b></div><div><span>Posisi portofolio</span><b>${pf.list.length}</b></div></div></div>
       <div class="fn-actions"><button class="fn-key" id="profSave">Simpan nama</button><button class="fn-key" data-cmd="HELP">HELP</button><button class="fn-key" id="profOut">Keluar</button></div>${admin}`);
   }
   function hideSplash() { const sp = $("splash"); if (!sp || sp.classList.contains("out")) return; sp.classList.add("out"); setTimeout(() => sp.remove(), 400); }
@@ -4582,10 +4594,10 @@
     $("pendOut").onclick = (e) => { e.preventDefault(); logout(); };
     $("pendSend").onclick = async () => { const { data, error } = await sb.rpc("sp_request_access", { p_name: null, p_reason: $("pendReason").value.trim() || "kirim ulang" }); $("pendMsg").textContent = error ? error.message : "Permintaan dikirim ulang."; if (data) showPending(data); };
     $("cmdUser").onclick = () => showProfile();
-    const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
+    const logout = async (why) => { try { await sb.auth.signOut(); } catch { /* */ } try { localStorage.removeItem("sp_keep"); Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ } try { sessionStorage.clear(); if (why) sessionStorage.setItem("sp_logout_msg", why); } catch { /* */ } location.reload(); };
     $("logoutBtn").onclick = () => logout(); $("cmdLogout").onclick = () => logout();
     ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, () => (lastAct = Date.now()), { passive: true }));
-    setInterval(() => { if (session && $("authGate").hidden && Date.now() - lastAct > IDLE_MIN * 60000) logout(`Kamu keluar otomatis karena tidak aktif ${IDLE_MIN} menit.`); }, 30000);
+    setInterval(() => { if (session && $("authGate").hidden && !isOwner() && Date.now() - lastAct > IDLE_MIN * 60000) logout(`Kamu keluar otomatis karena tidak aktif ${IDLE_MIN} menit.`); }, 30000);
     if (closedBefore) setTimeout(() => { $("authMsg").textContent = "Jendela sebelumnya ditutup, jadi kamu sudah keluar. Silakan masuk lagi."; }, 0);
     try { const m = sessionStorage.getItem("sp_logout_msg"); if (m) { sessionStorage.removeItem("sp_logout_msg"); setTimeout(() => { $("authMsg").textContent = m; }, 0); } } catch { /* */ }
     $("authForm").onsubmit = async (e) => { e.preventDefault(); const email = $("authEmail").value.trim(), pass = $("authPass").value, msg = $("authMsg");
@@ -4601,6 +4613,7 @@
       finally { $("authBtn").disabled = false; } };
     if (!sb) { hideSplash(); showAuth("Gagal memuat modul login. Periksa koneksi lalu muat ulang."); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
+      if (KEEP && s) setTimeout(() => { try { Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.setItem(k, sessionStorage.getItem(k))); } catch { /* */ } }, 0); // salinan sesi admin selalu terbaru
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
       if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { $("pendGate").hidden = true; showAuth(); }
     });
