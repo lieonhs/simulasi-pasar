@@ -147,7 +147,8 @@
   const AP_CAP = 1e9, AP_FAIL = 0.5; // dana uji per run & batas gagal
   const AP_MIN = 0.75; // keyakinan di bawah 75% tidak pernah dieksekusi
   const apSave = () => saveSettings({ autopilot: ap.cfg, apLog: ap.log.slice(0, 200) });
-  const apSyms = () => (ap.cfg.scope === "all" && ap.cfg.target === "demo" ? apAll() : apList());
+  const WIDE = ["all", "cmid", "ctop", "cidx"], isWide = (c = ap.cfg) => c.target === "demo" && WIDE.includes(c.scope);
+  const apSyms = () => (isWide() ? apAll() : apList());
   const apList = () => [...new Set(ap.cfg.list.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 8); // simbol sudah lengkap (dari klik/saran)
   function apLogAdd(sym, msg, kind = "") { ap.log.unshift({ t: new Date().toISOString(), s: sym, m: msg, k: kind }); ap.log.length = Math.min(ap.log.length, 200); }
   const idxOpen = () => { const n = new Date(Date.now() + 7 * 3600e3), d = n.getUTCDay(), m = n.getUTCHours() * 60 + n.getUTCMinutes(), day = n.toISOString().slice(0, 10); return d >= 1 && d <= 5 && !MCEngine.isHoliday(day, "IDX") && m >= 9 * 60 + 5 && m <= 15 * 60 + 45; };
@@ -437,7 +438,7 @@ lap("berita");
     return [...new Set([...apWatch().slice(0, 20), ...AP_QUICK, ...G])].slice(0, 32); }
   const apRank = (st) => { const X = st && st.X, V = st && st.V; if (!X || !V) return -1e9; if (X.N && X.N.shock) return -1e8;
     return (V.act === "BELI" ? 100 : V.act === "JUAL" ? -100 : 0) + (isFinite(X.P.confPct) ? X.P.confPct * 20 : 0) + X.aiScore * 2 + (X.mlV && isFinite(X.mlP) ? (X.mlP - 0.5) * 40 : 0) + (X.dlV && isFinite(X.dlP) ? (X.dlP - 0.5) * 40 : 0) + (X.exp && X.exp.valid ? (X.exp.p - 0.5) * 40 : 0); };
-  async function apAutoPick(force = false) { const c = ap.cfg; if (!c.autoPick || ap.picking || (c.scope === "all" && c.target === "demo")) return; if (!force && Date.now() - (c.pickAt || 0) < 6 * 3600e3) return;
+  async function apAutoPick(force = false) { const c = ap.cfg; if (!c.autoPick || ap.picking || isWide(c)) return; if (!force && Date.now() - (c.pickAt || 0) < 6 * 3600e3) return;
     ap.picking = true; c.pickAt = Date.now(); const U = await apPickUniverse(), keep = apPositions();
     try { for (const [i, s] of U.entries()) { const st = ap.st[s] || (ap.st[s] = {}); if (st.at && Date.now() - st.at < 3 * 3600e3 && st.X) continue; st.note = `memindai ${i + 1}/${U.length}…`; drawAp();
         try { const X = await apDecide(s), V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); } catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; } drawAp(); }
@@ -700,7 +701,7 @@ lap("berita");
   async function apCycle(force = false) {
     if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits(); ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
-      if (c.on) await apNewsGuard(); apLabelSweep(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
+      if (c.on) await apNewsGuard(); apLabelSweep(); await apWideRefresh(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
       const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
       const evMin = Math.max(c.every, DP.minEvery);
@@ -772,7 +773,7 @@ lap("berita");
     document.querySelectorAll(".ap-porto").forEach((e) => (e.hidden = c.mode !== "porto"));
     if (c.mode === "porto" && ap.porto) $("apGate").innerHTML += "<br>Bobot portofolio: " + ap.porto.map((r) => `${esc(r.s)} ${pct(r.cur, 0)}→<b>${pct(r.w, 0)}</b>`).join(" · ");
     $("apDev").innerHTML = devText(); drawLearnReport(); drawApLearn(); drawApChips(); drawApOrders(); drawApOrdersX(); drawTg(); drawFut(); drawApCmp(); drawApPos();
-    { const simOn = c.on && c.scope === "all" && c.target === "demo"; $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
+    { const simOn = c.on && isWide(c); $("apSimAll").textContent = simOn ? "■ Hentikan simulasi semua aset" : "▶ Simulasi semua aset (demo)"; $("apSimAll").classList.toggle("alt", simOn); }
     { const S2 = apSyms(), last = Math.max(0, ...S2.map((s) => (ap.st[s] && ap.st[s].at) || 0)), nxt = last ? last + c.every * 60e3 - Date.now() : 0, el = $("apState");
       if (!c.on) { el.className = "ap-state off"; el.innerHTML = "● MATI — tidak ada order otomatis. Centang <b>Aktifkan autopilot</b> untuk menyalakan."; }
       else if (!S2.length && !c.autoPick) { el.className = "ap-state idle"; el.innerHTML = "● NYALA tapi <b>menganggur</b>: belum ada aset yang dipantau. Klik aset di bawah, atau centang <b>Pilih aset otomatis</b>."; }
@@ -781,12 +782,20 @@ lap("berita");
     $("apNext").textContent = c.on ? (c.every === 0 ? "aktif · terus-menerus" : `aktif · periksa tiap ${c.every} menit`) : "mati"; apWakeSync(); }
   const AP_GROUPS = [["Saham IDX", ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", "ASII.JK", "ANTM.JK", "GOTO.JK"]], ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD", "ADA-USD"]], ["Saham AS", ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN"]], ["Lainnya", ["GC=F", "^JKSE"]]];
   // Cakupan "semua aset" (demo saja): watchlist + semua aset tombol cepat + kripto Radar + Hidden gems, maks 40
-  function apAll() { const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s), RC = ap.rdc ? apRdPick(ap.rdc.rows) : [];
+  function apAll() { const sc = ap.cfg.scope;
+    if (sc !== "all") return [...new Set([...apPositions(), ...((ap.wide && ap.wide[sc]) || [])])].slice(0, 120); // semua kripto: diisi apWideRefresh()
+    const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s), RC = ap.rdc ? apRdPick(ap.rdc.rows) : [];
     return [...new Set([...apPositions(), ...apWatch(), ...AP_GROUPS.flatMap((g) => g[1]), ...RC, ...G])].slice(0, 40); }
+  async function apWideRefresh(force) { const sc = ap.cfg.scope; if (!["cmid", "ctop", "cidx"].includes(sc)) return; const W = ap.wide || (ap.wide = {}), at = ap.wideAt || (ap.wideAt = {});
+    if (!force && W[sc] && Date.now() - (at[sc] || 0) < 6 * 3600e3) return;
+    if (sc === "cidx") { await idxPairsLoad(); W[sc] = (ix.pairs || []).filter((p) => !["usdt", "usdc"].includes(p.base) && !p.suspended && p.volIdr > 5e7).sort((x, y) => y.volIdr - x.volIdr).slice(0, 120).map((p) => p.base.toUpperCase() + "-USDT"); }
+    else W[sc] = await allCrypto(sc === "cmid" ? [30, 150] : [0, 120]); at[sc] = Date.now(); }
   const apWatch = () => [...new Set((($("wlQ") && $("wlQ").value) || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
   function apSetList(L) { $("apList").value = [...new Set(L)].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); }
   function drawApChips() { const L = apList(), held = apPositions(), lab = (s) => s.replace(/\.JK$/, "").replace(/-USD$/, "").replace("GC=F", "EMAS").replace("^JKSE", "IHSG");
-    if (ap.cfg.scope === "all" && ap.cfg.target === "demo") { const A = apAll(); $("apChips").innerHTML = `<span class="ap-chip held">Semua aset · ${A.length}</span><span class="note">watchlist + tombol cepat + kripto Radar + Hidden gems. Ganti Cakupan untuk memilih sendiri.</span>`; }
+    const wide = isWide(); ["apFind", "apPick"].forEach((id) => { const el = $(id); if (el) (id === "apFind" ? el.parentElement : el).hidden = wide; }); document.querySelectorAll(".ap-pickonly").forEach((el) => (el.hidden = wide));
+    if (wide) { const A = apAll(), lab = { all: "Semua aset", cmid: "Semua kripto · peringkat 30–150", ctop: "Semua kripto · 120 teratas", cidx: "Semua koin Indodax" }[ap.cfg.scope];
+      $("apChips").innerHTML = `<span class="ap-chip held">${lab} · ${A.length}</span><span class="note">${ap.cfg.scope === "all" ? "watchlist + tombol cepat + kripto Radar + Hidden gems" : A.length ? "diperbarui tiap 6 jam dari volume 24 jam" : "memuat daftar koin…"}. Ganti Cakupan untuk memilih sendiri.</span>`; }
     else $("apChips").innerHTML = L.length ? L.map((s) => `<span class="ap-chip${held.includes(s) ? " held" : ""}" title="${esc(s)}">${esc(lab(s))}${held.includes(s) ? " •" : ""}<button data-apdel="${esc(s)}" title="Hapus">✕</button></span>`).join("") + `<span class="note">${L.length}/8</span>` : '<span class="note">Belum ada aset. Klik aset di bawah atau cari.</span>';
     const W = apWatch(), RC = apRdPick([...((rd.rows || []).filter((r) => !r.err && /-USDT?$/.test(r.s))), ...((ap.rdc && ap.rdc.rows) || [])]);
     let groups = [...(RC.length ? [["Radar kripto · Uji dulu", [...new Set(RC)].slice(0, 16)]] : []), ...(W.length ? [["Watchlist saya", W.slice(0, 20)]] : []), ...AP_GROUPS]; if (ap.cfg.target === "idx" && ix.pairs) groups = [["Indodax (volume ≥ Rp 1 M)", ix.pairs.filter((p) => p.volIdr >= 1e9).sort((a, b) => b.volIdr - a.volIdr).slice(0, 16).map((p) => p.base.toUpperCase() + "-USD")]];
@@ -801,8 +810,9 @@ lap("berita");
       apRead(); if (id === "apTarget" && ap.cfg.target === "idx" && !demoGate().pass) { toast("Indodax terkunci sampai syarat demo terpenuhi."); ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx" && !isOwner()) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; }
       if (id === "apTarget" && ap.cfg.target === "idx") reauth("Mengaktifkan autopilot uang asli butuh verifikasi password (berlaku 12 jam).").then((ok) => { if (!ok) { ap.cfg.target = "demo"; $("apTarget").value = "demo"; apSave(); drawAp(); } });
+      if (id === "apScope" && WIDE.includes(ap.cfg.scope) && ap.cfg.scope !== "all") { if (ap.cfg.target !== "demo") { toast("Cakupan semua kripto hanya untuk akun demo."); ap.cfg.scope = "list"; $("apScope").value = "list"; } else apWideRefresh(true).then(() => { drawAp(); toast(`${apAll().length} koin dipantau. Putaran pertama bisa lama; berikutnya cepat karena model disimpan per hari.`); if (ap.cfg.on) apCycle(true); }); }
       if (id === "apScope" && ap.cfg.scope === "all") { if (ap.cfg.target !== "demo") { toast("Simulasi semua aset hanya untuk akun demo."); ap.cfg.scope = "list"; $("apScope").value = "list"; } else { toast(`Simulasi penuh: ${apAll().length} aset dipantau. Satu putaran bisa ±${Math.ceil(apAll().length * 15 / 60)} menit.`); if (ap.cfg.on) setTimeout(() => apCycle(true), 300); } }
-      if (id === "apTarget" && ap.cfg.target === "idx" && ap.cfg.scope === "all") { ap.cfg.scope = "list"; $("apScope").value = "list"; }
+      if (id === "apTarget" && ap.cfg.target === "idx" && WIDE.includes(ap.cfg.scope)) { ap.cfg.scope = "list"; $("apScope").value = "list"; }
       if (/^tg/.test(id)) ap.tgOdds = null;
       if (id === "apPickSrc" && ap.cfg.autoPick) { ap.cfg.pickAt = 0; setTimeout(() => apAutoPick(true), 300); }
       if (id === "apAutoPick" && ap.cfg.autoPick) { ap.cfg.pickAt = 0; setTimeout(() => apAutoPick(true), 300); }
@@ -815,7 +825,7 @@ lap("berita");
     $("apAddGems").onclick = () => { const G = gm.rows.filter((r) => r.st === "Kandidat kuat").map((r) => r.s); if (!G.length) { toast("Belum ada Kandidat kuat di Hidden gems."); return; } $("apList").value = [...new Set([...apList(), ...G])].slice(0, 8).join(", "); apRead(); apSave(); drawAp(); };
     $("apSimAll").onclick = () => { const c = ap.cfg, on = c.on && c.scope === "all" && c.target === "demo";
       if (on) { c.on = false; $("apOn").checked = false; apLogAdd("—", "Simulasi semua aset dihentikan"); apSave(); drawAp(); return; }
-      c.target = "demo"; c.scope = "all"; c.on = true; c.every = 0; $("apTarget").value = "demo"; $("apScope").value = "all"; $("apOn").checked = true; $("apEvery").value = String(c.every);
+      c.target = "demo"; c.scope = WIDE.includes(c.scope) ? c.scope : "all"; c.on = true; apWideRefresh(); c.every = 0; $("apTarget").value = "demo"; $("apScope").value = "all"; $("apOn").checked = true; $("apEvery").value = String(c.every);
       apLogAdd("—", `Simulasi semua aset DIMULAI (${apAll().length} aset, demo, terus-menerus)`); apSave(); drawAp(); setTimeout(() => apCycle(true), 300); };
     $("tgStart").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const c = ap.cfg; c.tgOn = true; $("tgOn").checked = true; c.budget = 1e6; $("apBudget").value = 1e6; c.target = "demo"; $("apTarget").value = "demo"; c.mode = "asset"; $("apMode").value = "asset";
       const n = ((c.run && c.run.n) || 0) + 1; c.run = { start: new Date().toISOString(), cap: 1e6, n }; ap.tgOdds = null; apLogAdd("—", `Run #${n} TARGET dimulai: Rp 1 jt → ${fmtIdr(c.tgAmt)} · agresif ${pct(c.tgAgg, 0)}/transaksi, hati-hati ${pct(c.tgSafe, 2)}, rem ${pct(c.tgBrake, 0)}`); apSave(); drawAp(); };
