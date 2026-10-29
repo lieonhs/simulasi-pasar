@@ -4858,18 +4858,30 @@ lap("berita");
     if (srv.paper && loc.paper && srv.paper.hist && loc.paper.hist) out.paper = { ...loc.paper, hist: byKey(srv.paper.hist, loc.paper.hist, (x) => x.id + "|" + x.side + "|" + (x.fillAt || x.t)).sort((p, q) => ((q.fillAt || q.t) > (p.fillAt || p.t) ? 1 : -1)).slice(0, 3000) };
     if (srv.autopilot && loc.autopilot && srv.autopilot.run && loc.autopilot.run && (srv.autopilot.run.n || 0) > (loc.autopilot.run.n || 0)) out.autopilot = { ...loc.autopilot, run: srv.autopilot.run };
     return out; }
+  // Data besar disimpan per kunci di tabel sp_data (kalau sudah dibuat) → tiap kunci ditulis terpisah, lebih kecil & jarang bentrok.
+  const BIG = ["paper", "apMem", "apLog", "idxLedger", "amHist"]; let dataOk = null; const dAt = {}, dDirty = new Set(); let dTimer = null;
+  async function dataProbe() { try { const { data, error } = await sb.from("sp_data").select("key,data,updated_at").eq("user_id", session.user.id); if (error) { dataOk = false; return null; } dataOk = true; return data || []; } catch { dataOk = false; return null; } }
+  async function dataFlush() { if (!dataOk || !dDirty.size) return; const keys = [...dDirty]; dDirty.clear();
+    try { const { data: cur } = await sb.from("sp_data").select("key,data,updated_at").eq("user_id", session.user.id).in("key", keys); const now = new Date().toISOString();
+      for (const r of cur || []) if (dAt[r.key] && r.updated_at > dAt[r.key]) { const m = mergeLearn({ [r.key]: r.data }, { [r.key]: settings[r.key] }); settings[r.key] = m[r.key]; learnReload(); }
+      await sb.from("sp_data").upsert(keys.filter((k) => settings[k] != null).map((k) => ({ user_id: session.user.id, key: k, data: settings[k], updated_at: now }))); keys.forEach((k) => (dAt[k] = now)); } catch { keys.forEach((k) => dDirty.add(k)); } }
   function saveSettings(patch) {
-    settings = { ...settings, ...patch }; if (settings.paper && settings.paper.hist && settings.paper.hist.length > 3000) settings.paper.hist.length = 3000; if (!sb || !session) return;
+    settings = { ...settings, ...patch }; if (dataOk) { for (const k of Object.keys(patch)) if (BIG.includes(k)) dDirty.add(k); clearTimeout(dTimer); dTimer = setTimeout(dataFlush, 2000); if (Object.keys(patch).every((k) => BIG.includes(k))) return; } if (settings.paper && settings.paper.hist && settings.paper.hist.length > 3000) settings.paper.hist.length = 3000; if (!sb || !session) return;
     clearTimeout(saveTimer); saveTimer = setTimeout(async () => { try {
         const { data: cur } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle();
         if (cur && cur.data && cur.updated_at && setAt && cur.updated_at > setAt) { settings = mergeLearn(cur.data, settings); learnReload(); } // ada tulisan dari perangkat/tab lain sejak kita terakhir lihat
-        const now = new Date().toISOString(); await sb.from("sp_settings").upsert({ user_id: session.user.id, data: settings, updated_at: now }); setAt = now; } catch { /* */ } }, 1500);
+        const now = new Date().toISOString(), main = dataOk ? Object.fromEntries(Object.entries(settings).filter(([k]) => !BIG.includes(k))) : settings;
+        await sb.from("sp_settings").upsert({ user_id: session.user.id, data: main, updated_at: now }); setAt = now; } catch { /* */ } }, 1500);
   }
   function learnReload() { try { if (ap.cfg) { ap.mem = (settings.apMem || []).slice(); ap.expModel = null; ap.log = (settings.apLog || []).slice(0, 200); } if (pp.a && settings.paper && settings.paper.hist) pp.a.hist = settings.paper.hist; led.rows = null; } catch { /* */ } }
-  async function pullSettings() { if (!sb || !session) return; try { const { data: cur } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle();
+  async function pullSettings() { if (!sb || !session) return;
+    if (dataOk) try { const { data: rows } = await sb.from("sp_data").select("key,data,updated_at").eq("user_id", session.user.id); let ch = false; for (const r of rows || []) if (!dAt[r.key] || r.updated_at > dAt[r.key]) { settings[r.key] = mergeLearn({ [r.key]: r.data }, { [r.key]: settings[r.key] })[r.key]; dAt[r.key] = r.updated_at; ch = true; } if (ch) learnReload(); } catch { /* */ }
+    try { const { data: cur } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle();
       if (cur && cur.data && cur.updated_at && (!setAt || cur.updated_at > setAt)) { settings = mergeLearn(cur.data, settings); setAt = cur.updated_at; learnReload(); if (ap.cfg && !$("apPane").hidden) drawAp(); } } catch { /* */ } }
   async function loadSettings() {
     try { const { data } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle(); settings = (data && data.data) || {}; setAt = (data && data.updated_at) || null; } catch { settings = {}; }
+    const rows = await dataProbe(); if (rows) { const have = new Set(); for (const r of rows) { settings[r.key] = settings[r.key] != null ? mergeLearn({ [r.key]: r.data }, { [r.key]: settings[r.key] })[r.key] : r.data; dAt[r.key] = r.updated_at; have.add(r.key); }
+      for (const k of BIG) if (settings[k] != null) dDirty.add(k); if (dDirty.size) setTimeout(() => { dataFlush().then(() => saveSettings({})); }, 3000); } // pindahkan data lama ke sp_data, lalu kecilkan baris utama
     if (settings.watchlist) $("wlQ").value = settings.watchlist;
     if (settings.quantlab) $("qlQ").value = settings.quantlab;
     if (settings.focus) setFocus(settings.focus, false);
