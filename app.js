@@ -4192,7 +4192,7 @@
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
     $("apWake").addEventListener("change", () => apWakeSync());
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { apWakeSync(); if (ap.cfg.on) apCycle(false); } });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
     if (location.hostname === "localhost") window.__ap = { futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
     clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
@@ -4709,12 +4709,30 @@
   if (/[?&]debug\b/.test(location.search)) window.__sp = state;
   // ---------- login (Supabase Auth) ----------
   let settings = {}, saveTimer = null, booted = false;
+  // Data tersimpan di akun (Supabase) → tetap ada saat login lagi / ganti perangkat.
+  // Sebelum menulis, data belajar digabung dengan salinan di server supaya perangkat/tab lain tidak saling menimpa.
+  let setAt = null; // updated_at server yang terakhir kita lihat
+  const byKey = (A, B, key, pick) => { const m = new Map(); for (const x of A || []) m.set(key(x), x); for (const x of B || []) { const k = key(x), o = m.get(k); m.set(k, o && pick ? pick(o, x) : x); } return [...m.values()]; };
+  function mergeLearn(srv, loc) { const out = { ...loc };
+    if (srv.apMem || loc.apMem) out.apMem = byKey(srv.apMem, loc.apMem, (x) => x.s + "|" + x.d, (o, x) => (x.y == null && o.y != null ? o : x)).sort((p, q) => (p.d < q.d ? -1 : 1)).slice(-1500);
+    if (srv.apLog || loc.apLog) out.apLog = byKey(srv.apLog, loc.apLog, (x) => x.t + "|" + x.s + "|" + x.m).sort((p, q) => (p.t < q.t ? 1 : -1)).slice(0, 200);
+    if (srv.idxLedger || loc.idxLedger) out.idxLedger = byKey(srv.idxLedger, loc.idxLedger, (x) => x.id).sort((p, q) => p.t - q.t).slice(-4000);
+    if (srv.amHist || loc.amHist) out.amHist = byKey(srv.amHist, loc.amHist, (x) => x.d, (o, x) => x).sort((p, q) => (p.d < q.d ? -1 : 1)).slice(-730);
+    if (srv.paper && loc.paper && srv.paper.hist && loc.paper.hist) out.paper = { ...loc.paper, hist: byKey(srv.paper.hist, loc.paper.hist, (x) => x.id + "|" + x.side + "|" + (x.fillAt || x.t)).sort((p, q) => ((q.fillAt || q.t) > (p.fillAt || p.t) ? 1 : -1)).slice(0, 3000) };
+    if (srv.autopilot && loc.autopilot && srv.autopilot.run && loc.autopilot.run && (srv.autopilot.run.n || 0) > (loc.autopilot.run.n || 0)) out.autopilot = { ...loc.autopilot, run: srv.autopilot.run };
+    return out; }
   function saveSettings(patch) {
-    settings = { ...settings, ...patch }; if (!sb || !session) return;
-    clearTimeout(saveTimer); saveTimer = setTimeout(async () => { try { await sb.from("sp_settings").upsert({ user_id: session.user.id, data: settings, updated_at: new Date().toISOString() }); } catch { /* */ } }, 800);
+    settings = { ...settings, ...patch }; if (settings.paper && settings.paper.hist && settings.paper.hist.length > 3000) settings.paper.hist.length = 3000; if (!sb || !session) return;
+    clearTimeout(saveTimer); saveTimer = setTimeout(async () => { try {
+        const { data: cur } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle();
+        if (cur && cur.data && cur.updated_at && setAt && cur.updated_at > setAt) { settings = mergeLearn(cur.data, settings); learnReload(); } // ada tulisan dari perangkat/tab lain sejak kita terakhir lihat
+        const now = new Date().toISOString(); await sb.from("sp_settings").upsert({ user_id: session.user.id, data: settings, updated_at: now }); setAt = now; } catch { /* */ } }, 1500);
   }
+  function learnReload() { try { if (ap.cfg) { ap.mem = (settings.apMem || []).slice(); ap.expModel = null; ap.log = (settings.apLog || []).slice(0, 200); } if (pp.a && settings.paper && settings.paper.hist) pp.a.hist = settings.paper.hist; led.rows = null; } catch { /* */ } }
+  async function pullSettings() { if (!sb || !session) return; try { const { data: cur } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle();
+      if (cur && cur.data && cur.updated_at && (!setAt || cur.updated_at > setAt)) { settings = mergeLearn(cur.data, settings); setAt = cur.updated_at; learnReload(); if (ap.cfg && !$("apPane").hidden) drawAp(); } } catch { /* */ } }
   async function loadSettings() {
-    try { const { data } = await sb.from("sp_settings").select("data").eq("user_id", session.user.id).maybeSingle(); settings = (data && data.data) || {}; } catch { settings = {}; }
+    try { const { data } = await sb.from("sp_settings").select("data,updated_at").eq("user_id", session.user.id).maybeSingle(); settings = (data && data.data) || {}; setAt = (data && data.updated_at) || null; } catch { settings = {}; }
     if (settings.watchlist) $("wlQ").value = settings.watchlist;
     if (settings.quantlab) $("qlQ").value = settings.quantlab;
     if (settings.focus) setFocus(settings.focus, false);
