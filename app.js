@@ -1686,6 +1686,10 @@
   async function quotesFor(syms) {
     const out = {}; for (let i = 0; i < syms.length; i += 25) { const part = syms.slice(i, i + 25);
       try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(part.join(","))}`)).json(); (j.quotes || []).forEach((q) => { if (q && q.price != null) out[q.symbol] = q; }); } catch { /* */ } }
+    // koin -USDT (meme/altcoin dari Binance) yang tidak ada di Yahoo: ambil harga langsung dari Binance
+    const miss = syms.filter((s) => /-USDT$/i.test(s) && !out[s]);
+    await Promise.all(miss.map(async (s) => { try { const t = await (await fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${s.toUpperCase().replace("-USDT", "")}USDT`)).json();
+      if (t && t.lastPrice) out[s] = { symbol: s, price: +t.lastPrice, prevClose: +t.prevClosePrice || +t.openPrice, volume: +t.volume, currency: "USDT", open: true, time: Math.floor((t.closeTime || Date.now()) / 1000) }; } catch { /* */ } }));
     return out;
   }
   const qChg = (q) => (q && q.prevClose ? q.price / q.prevClose - 1 : NaN);
@@ -2169,7 +2173,7 @@
     } catch (e) { el.innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
   }
   function setXTab(t) { ix.tab = t; document.querySelectorAll("#xTabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.xt === t)); document.querySelectorAll("#idxPane .x-pane").forEach((p) => (p.hidden = p.dataset.xp !== t));
-    if (t === "pf") idxBalance(); else if (t === "mkt") idxMarket(); else if (t === "book") idxBook(); else if (t === "open") idxOpenOrders(); else if (t === "hist" && ix.pair) idxHist(ix.histKind || "tradeHistory"); }
+    if (t === "pf") idxBalance(); else if (t === "mkt") idxMarket(); else if (t === "book") idxBook(); else if (t === "open") idxOpenOrders(); else if (t === "hist" && ix.pair) idxHist(ix.histKind || "tradeHistory"); else if (t === "auto") { drawAuto(); auLoop(); } }
   function bindIdxMenu() {
     $("xTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-xt]"); if (b) setXTab(b.dataset.xt); });
     $("xHistTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-h]"); if (b) { ix.histKind = b.dataset.h; idxHist(b.dataset.h); } });
@@ -2251,7 +2255,7 @@
       if (!$("xPrice").value) $("xPrice").value = ix.pair.last || ""; idxPreview(); });
     $("xPair").addEventListener("blur", () => setTimeout(() => ($("xSugg").hidden = true), 150));
     ["xType", "xPrice", "xAmt"].forEach((id) => $(id).addEventListener("input", idxPreview));
-    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu();
+    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu(); bindAuto();
     $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
       openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
     pp.timer = setInterval(() => { if (!document.hidden && (pp.a.orders.length || hasBrk())) refreshPaper(); }, 60000);
@@ -3264,10 +3268,12 @@
       : B.action === "JUAL" ? [["Jual di", f(P.entryHi)], ["Sisa jual bila tutup <", `<span class="neg">${f(P.trail)}</span>`], ["Beli lagi bila tutup >", f(P.trigUp)], ["Paling lambat", fmtDay(P.expire)]]
       : [["Beli bila tutup >", f(P.trigUp)], ...(P.pull ? [["Atau antre di", f(P.pull)]] : []), ["Pemegang jual bila tutup <", `<span class="neg">${f(P.trail)}</span>`], ["Evaluasi", fmtDay(P.review)]];
     el.innerHTML = `<div class="br"><div class="br-f ${vc}"><div class="k">Kesimpulan 3 kecerdasan</div><div class="v">${B.action}</div><div class="h">keyakinan ${isFinite(B.conf) ? `<b>${pct(B.conf, 0)}</b>` : "–"} · ${B.agree}/${B.nLive} teruji mendukung${act.plan && act.plan.fuse ? " · fusi" : ""}</div></div>${B.parts.map(cell).join("")}</div>
-      <div class="br-line">${line.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}<div class="br-act">${B.action === "BELI" && P.qty > 0 ? '<button class="btn primary" id="brDemo">Isi tiket demo</button>' : ""}<button class="btn" data-goat="ask">Tanya AI</button></div></div>
-      <div class="br-why">${B.reasons.slice(0, 4).map((r) => `<span class="${r.w > 0 ? "pos" : "neg"}">${r.w > 0 ? "+" : "−"} ${esc(r.txt)}</span>`).join("")}${B.risk.slice(0, 3).map((r) => `<span class="warn">! ${esc(r)}</span>`).join("")}${B.why ? `<span class="neg">${esc(B.why)}</span>` : ""}</div>`;
+      <div class="br-line">${line.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}<div class="br-act"><button class="btn" data-goat="ask">Tanya AI</button></div></div><div id="qkBox"></div>
+      <div class="br-why">${B.reasons.slice(0, 4).map((r) => `<span class="${r.w > 0 ? "pos" : "neg"}">${r.w > 0 ? "+" : "−"} ${esc(r.txt)}</span>`).join("")}${B.risk.slice(0, 3).map((r) => `<span class="warn">! ${esc(r)}</span>`).join("")}${B.why ? `<span class="neg">${esc(B.why)}</span>` : ""}</div>`; drawQuick();
   }
-  document.addEventListener("click", (e) => { if (e.target && e.target.id === "brDemo") actToDemo(); });
+  document.addEventListener("click", (e) => { const t = e.target; if (!t || !t.closest) return; if (t.id === "brDemo") actToDemo();
+    const m = t.closest("[data-qm]"); if (m) { qk.mode = m.dataset.qm; qk.arm = null; if (qk.mode === "idx" && !ix.bal) idxBalance().then(drawQuick).catch(() => {}); drawQuick(); return; }
+    if (t.closest("#qkIn")) qkGo("in"); else if (t.closest("#qkOut")) qkGo("out"); });
   // tanya-jawab lokal: niat pertanyaan → jawaban dari angka di halaman; selain itu cari di Buku Panduan
   function localAnswer(q, dataOnly = false) {
     const P = act.plan, B = act.brain || brain(), s = String(q).toLowerCase(), M = act.ml && !act.ml.error ? act.ml : null, DL = M && M.dl && !M.dl.error ? M.dl : null, C = act.conf, idx = isIdx();
@@ -3318,11 +3324,11 @@
   async function runRadar() {
     if (rd.busy) return; rd.busy = true; $("rdRun").disabled = true; const syms = [...new Set(rdUniverse())].slice(0, 80), N = syms.length, wantF = $("rdFund").checked; let done = 0;
     const tick = (m) => { done++; $("rdBar").style.width = Math.round((100 * done) / (N + ($("rdDeep").checked ? 3 : 0))) + "%"; $("rdStatus").textContent = m; };
-    rd.rows = []; $("rdStatus").textContent = `Memindai ${N} aset…`; await ensureUsRf();
+    rd.rows = []; $("rdStatus").textContent = `Memindai ${N} aset…`; await ensureUsRf(); try { await idxPairsLoad(); } catch { /* */ }
     try {
       await pool(syms, 4, async (s) => {
         try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari");
-          const crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(s), R = await compute("radar", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10 } });
+          const crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(s), R = await compute("radar", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10, isIdx: /\.JK$/.test(s) } });
           let val = null; const eq = !crypto && !/^\^/.test(s) && !/=/.test(s);
           if (wantF && eq) { try { const F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(s)}`)).json(); val = valEnsemble(F, R.px, (d.currency || "") !== "IDR", null); } catch { /* */ } }
           const row = { s, name: d.name, cur: d.currency, ...R, val }; Object.assign(row, rdScore(row)); rd.rows.push(row); tick(`${s} ✓`); drawRadar(); }
@@ -3341,16 +3347,16 @@
     const cnt = (k) => rd.rows.filter((r) => r.st === k).length;
     $("rdSum").innerHTML = ["Perhatikan", "Uji dulu", "Abaikan", "Lemah"].map((k) => `<span class="rd-pill rd-${k.replace(" ", "")}">${k} <b>${cnt(k)}</b></span>`).join("");
     const mlc = (r) => { const F = r.deep && !r.deep.err ? r.deep : r.ml; if (!F) return "–"; const dl = r.deep && r.deep.dl; return `<span class="${F.valid ? (F.p > F.base ? "pos" : "neg") : "note"}">${pct(F.p, 0)}</span>${F.valid ? "" : '<span class="note">·x</span>'}${dl ? ` <span class="note">DL</span> <span class="${dl.valid ? (dl.p > dl.base ? "pos" : "neg") : "note"}">${pct(dl.p, 0)}</span>` : ""}`; };
-    $("rdTable").innerHTML = `<thead><tr><th>Aset</th><th>Status</th><th>Skor</th><th>Konfl.</th><th>Binomial T/S</th><th>ML</th><th>Nilai wajar</th><th>3B</th><th>Kenapa</th></tr></thead><tbody>${R.map((r) => r.err ? `<tr class="note"><td>${esc(r.s)}</td><td colspan="8">${esc(r.err)}</td></tr>` :
+    $("rdTable").innerHTML = `<thead><tr><th>Aset</th><th>Status</th><th>Skor</th><th>Konfl.</th><th>Binomial T/S</th><th>ML</th><th>Nilai wajar</th><th>3B</th><th>Rencana harga</th><th>Kenapa</th></tr></thead><tbody>${R.map((r) => r.err ? `<tr class="note"><td>${esc(r.s)}</td><td colspan="9">${esc(r.err)}</td></tr>` :
       `<tr class="rd-row" data-s="${esc(r.s)}"><td><b>${esc(r.s.replace(".JK", ""))}</b></td><td><span class="rd-pill rd-${r.st.replace(" ", "")}">${r.st}</span></td><td class="num">${nf(0).format(r.sc)}</td>
         <td class="num">${r.conf ? `${r.conf.s > 0 ? "+" : ""}${r.conf.s}${r.conf.aplus ? ' <b class="pos">A+</b>' : r.conf.valid ? " ✓" : ""}` : "–"}</td>
         <td class="num">${r.bin ? `<span class="pos">${pct(r.bin.pUp, 0)}</span>/<span class="neg">${pct(r.bin.pDn, 0)}</span>` : "–"}</td><td class="num">${mlc(r)}</td>
         <td class="num">${r.val && r.val.methods && r.val.methods.length ? `<span class="${r.val.upside > 0 ? "pos" : "neg"}">${spct(r.val.upside, 0)}</span>` : "–"}</td><td class="num ${cls(r.ret3m)}">${spct(r.ret3m, 0)}</td>
-        <td class="rd-why">${r.why.slice(0, 3).map(esc).join(" · ")}</td></tr>`).join("")}</tbody>`;
+        <td>${planCell(r)}</td><td class="rd-why">${r.why.slice(0, 3).map(esc).join(" · ")}</td></tr>`).join("")}</tbody>`;
   }
   function bindRadar() {
     $("rdRun").onclick = runRadar;
-    $("rdTable").addEventListener("click", (e) => { const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
+    $("rdTable").addEventListener("click", (e) => { if (e.target.closest("button")) return; const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
     try { const j = JSON.parse(localStorage.getItem("sp_radar_v1") || "null"); if (j && j.rows && Date.now() - j.at < 3 * 864e5) { rd.rows = j.rows; $("rdUni").value = j.uni || "idx"; drawRadar(); $("rdStatus").textContent = `Hasil scan terakhir ${new Date(j.at).toLocaleString("id-ID")} · klik Scan untuk memperbarui`; } } catch { /* */ }
   }
 
@@ -3373,7 +3379,7 @@
     } catch (e) { lv.data = { err: e.message }; } finally { lv.busy = false; }
     drawLive(); drawBrain();
   }
-  function liveStart() { clearInterval(lv.timer); lv.data = null; $("actTabLive").hidden = true; if (!isCrypto()) return; liveLoad();
+  function liveStart() { clearInterval(lv.timer); lv.data = null; $("actTabLive").hidden = true; if (!isCrypto()) return; liveLoad(); if (isOwner() && !ix.bal) idxBalance().then(drawQuick).catch(() => {});
     lv.timer = setInterval(() => { if (document.hidden || $("detailView").hidden || !state.data || state.data.symbol !== lv.sym) return; liveLoad(); }, 15000); }
   function drawLive() {
     const el = $("actLive"); if (!el) return; const L = lv.data, P = act.plan; if (!L) { el.innerHTML = ""; return; }
@@ -3387,9 +3393,10 @@
         ${k("Tembok antrean ±2%", L.wb || L.wa ? `${L.wb ? `<span class="pos">B ${fmtNum(L.wb.px)}</span>` : ""} ${L.wa ? `<span class="neg">J ${fmtNum(L.wa.px)}</span>` : ""}` : "–", "level > 3× rata-rata: cenderung menahan harga")}
         ${k("24 jam", spct(L.p.chg24, 1), `vol Rp ${big(L.p.volIdr)}`)}</div>
       ${P && r ? `<div class="subh">Rencana aksi dalam harga Indodax (Rp)</div><div class="br-line">${[["Antre beli", idr(P.entry)], ["Stop", `<span class="neg">${idr(P.stop)}</span>`], ["Target 1", `<span class="pos">${idr(P.t1)}</span>`], ["Target 2", `<span class="pos">${idr(P.t2)}</span>`], ["Beli bila tutup >", idr(P.trigUp)], ["Pemegang jual bila <", idr(P.trail)]].map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join("")}
-        <div class="br-act">${isOwner() ? `<button class="btn primary" id="liveTicket">Isi tiket Indodax</button>` : ""}<button class="btn" data-cmd="DEMO">Order book penuh (F6)</button></div></div>` : ""}
+        <div class="br-act">${isOwner() ? `<button class="btn primary" id="liveTicket">Isi tiket Indodax</button><button class="btn" id="liveAuto">Order otomatis</button>` : ""}<button class="btn" data-cmd="DEMO">Order book penuh (F6)</button></div></div>` : ""}
       <div class="x-book"><div><div class="subh">Beli (bid)</div><table class="x-mini"><tbody>${side(L.j.bids, "pos")}</tbody></table></div><div><div class="subh">Jual (ask)</div><table class="x-mini"><tbody>${side(L.j.asks, "neg")}</tbody></table></div></div>
       <p class="note">Data riil Indodax, diperbarui tiap 15 detik. Angka-angka ini hanya kondisi saat ini (belum ada riwayat untuk diuji), jadi dipakai RAM AI sebagai faktor kecil dan peringatan, bukan penentu. Harga rencana dikonversi memakai rasio harga Indodax ÷ harga global.</p>`;
+    const ab = $("liveAuto"); if (ab) ab.onclick = () => autoArmFrom(state.data.symbol, { entry: P.entry, stop: P.stop, t1: P.t1, t2: P.t2, px: state.res && state.res.s0 ? state.res.s0 : P.px });
     const b = $("liveTicket"); if (b) b.onclick = () => { const p = L.p; setView("trade"); setTradeTab("idx"); setTimeout(() => { ix.pair = p; idxPick(p.base, "buy", { price: String(Math.round(P.entry * r)) });
       if (P.qty > 0) $("xAmt").value = (+P.qty).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""); idxPreview(); }, 400); };
   }
@@ -3429,19 +3436,23 @@
     const st = sc >= 55 && tested && !illiq ? "Kandidat kuat" : sc >= 40 && !illiq ? (tested ? "Pantau" : "Spekulatif") : sc >= 40 ? "Spekulatif" : "Lewati";
     return { gs: sc, st, pro, con, liqIdr, tested };
   }
+  function idxRatioFor(s, px) { const p = /-USDT?$/.test(s) && ix.pairs ? idxPairFor(s) : null; return p && p.last && px > 0 ? { p, k: p.last / px } : null; }
+  function planCell(r) { const P = r.plan; if (!P || !(P.entry > 0)) return "–"; const X = idxRatioFor(r.s, P.px), k = X ? X.k : 1, f = (v) => (X ? "Rp " : "") + fmtNum(v * k);
+    return `<div class="pl-c"><span>Masuk ≤ <b>${f(P.entry)}</b></span><span>Stop <b class="neg">${f(P.stop)}</b></span><span>Jual <b class="pos">${f(P.t1)}</b> / <b class="pos">${f(P.t2)}</b></span><span class="note">RR 1:${nf(1).format(P.rr1)}${P.pT1 != null ? ` · T1 dulu ${pct(P.pT1, 0)}` : ""}${X ? " · Indodax" : ""}</span></div>`; }
   function gmThesis(r) { const p = r.pro.slice(0, 4), c = r.con.slice(0, 2); return (p.length ? p.join(", ") : "belum ada alasan kuat") + (c.length ? `. Risiko: ${c.join(", ")}` : "") + "."; }
   async function runGems() {
     if (gm.busy) return; gm.busy = true; $("gmRun").disabled = true; $("gmNote").hidden = false;
     const u = $("gmUni").value; let uni = GM_UNI[u];
     if (u === "wl") uni = $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean);
     if (u === "idxc") { await idxPairsLoad(); uni = (ix.pairs || []).filter((p) => p.base !== "usdt" && p.base !== "usdc" && !p.suspended && p.volIdr > 5e7).slice(0, 80).map((p) => p.base.toUpperCase() + "-USDT"); }
-    const syms = [...new Set(uni || [])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0;
+    if ($("gmIdxOnly").checked && u !== "idxs" && u !== "usm" && u !== "wl") { await idxPairsLoad(); uni = (uni || []).filter((s) => !/-USDT?$/.test(s) || idxPairFor(s)); }
+    const syms = [...new Set(uni || [])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0; if (!N) { $("gmStatus").textContent = "Tidak ada koin di daftar ini yang listing di Indodax."; gm.busy = false; $("gmRun").disabled = false; return; }
     const tick = (m) => { done++; $("gmBar").style.width = Math.round((100 * done) / (N + (deep ? 5 : 0))) + "%"; $("gmStatus").textContent = m; };
-    gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
+    gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); try { await idxPairsLoad(); } catch { /* */ } if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
     try {
       await pool(syms, 4, async (s) => {
         try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); const crypto = /-USDT?$/.test(s) || /CRYPTO/i.test(d.type || "");
-          const R = await compute("gem", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10, F: 40 } }); let F = null, val = null;
+          const R = await compute("gem", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10, F: 40, isIdx: /\.JK$/.test(s) } }); let F = null, val = null;
           if (!crypto) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(s)}`)).json(); val = valEnsemble(F, R.px, (d.currency || "") !== "IDR", null); } catch { /* */ } }
           const row = { s, name: d.name, ...R, F, val }; Object.assign(row, gmScore(row)); gm.rows.push(row); tick(`${s} ✓`); drawGems(); }
         catch (e) { gm.rows.push({ s, err: e.message, st: "Gagal", gs: -1, pro: [], con: [] }); tick(`${s} dilewati`); } });
@@ -3450,22 +3461,141 @@
           try { const d = await fetchSymbol(r.s, "10y"); const M = await compute("ml", { D: buildD(d), o: { horizon: 10 } }); r.deep = { valid: M.valid, p: M.p, base: M.base, auc: M.auc, dl: M.dl && !M.dl.error ? { valid: M.dl.valid, p: M.dl.p, base: M.dl.base, auc: M.dl.auc } : null }; Object.assign(r, gmScore(r)); }
           catch (e) { r.deep = { err: e.message }; } tick(`Uji mendalam ${r.s} ✓`); drawGems(); } }
       const k = gm.rows.filter((r) => r.st === "Kandidat kuat").length; $("gmStatus").textContent = `Selesai: ${N} aset · ${k} kandidat kuat · ${gm.rows.filter((r) => r.st === "Pantau").length} pantau`;
-      try { localStorage.setItem("sp_gems_v1", JSON.stringify({ at: Date.now(), uni: u, rows: gm.rows.map((r) => ({ s: r.s, name: r.name, gs: r.gs, st: r.st, pro: r.pro, con: r.con, liqIdr: r.liqIdr, err: r.err, gem: r.gem ? { dd: r.gem.dd, turn: r.gem.turn, accum: r.gem.accum, hist: r.gem.hist, F: r.gem.F } : null, val: r.val ? { upside: r.val.upside, methods: r.val.methods.length } : null, ml: r.ml, deep: r.deep, ret3m: r.ret3m })) })); } catch { /* */ }
+      try { localStorage.setItem("sp_gems_v1", JSON.stringify({ at: Date.now(), uni: u, rows: gm.rows.map((r) => ({ s: r.s, name: r.name, gs: r.gs, st: r.st, pro: r.pro, con: r.con, liqIdr: r.liqIdr, err: r.err, gem: r.gem ? { dd: r.gem.dd, turn: r.gem.turn, accum: r.gem.accum, hist: r.gem.hist, F: r.gem.F } : null, val: r.val ? { upside: r.val.upside, methods: r.val.methods.length } : null, ml: r.ml, deep: r.deep, ret3m: r.ret3m, plan: r.plan })) })); } catch { /* */ }
     } finally { gm.busy = false; $("gmRun").disabled = false; $("gmBar").style.width = "100%"; }
   }
   function drawGems() {
     const ord = { "Kandidat kuat": 0, Pantau: 1, Spekulatif: 2, Lewati: 3, Gagal: 4 }, R = gm.rows.slice().sort((a, b) => ord[a.st] - ord[b.st] || b.gs - a.gs), cnt = (k) => gm.rows.filter((r) => r.st === k).length;
     $("gmSum").innerHTML = ["Kandidat kuat", "Pantau", "Spekulatif", "Lewati"].map((k) => `<span class="rd-pill gm-${k.replace(" ", "")}">${k} <b>${cnt(k)}</b></span>`).join("");
     const bar = (v) => `<i class="gm-b"><i style="width:${Math.max(2, Math.min(100, v * 100)).toFixed(0)}%"></i></i>`;
-    $("gmTable").innerHTML = `<thead><tr><th>#</th><th>Aset</th><th>Status</th><th>Gem</th><th>Turun dari puncak</th><th>Berbalik</th><th>Akumulasi</th><th>Nilai</th><th>Model</th><th>Tesis RAM AI</th></tr></thead><tbody>` + R.filter((r) => r.st !== "Gagal").slice(0, 60).map((r, i) => {
+    $("gmTable").innerHTML = `<thead><tr><th>#</th><th>Aset</th><th>Status</th><th>Gem</th><th>Turun dari puncak</th><th>Berbalik</th><th>Akumulasi</th><th>Nilai</th><th>Model</th><th>Rencana harga</th><th>Tesis RAM AI</th></tr></thead><tbody>` + R.filter((r) => r.st !== "Gagal").slice(0, 60).map((r, i) => {
       const G = r.gem || {}, F = r.deep && !r.deep.err ? r.deep : r.ml, dl = r.deep && r.deep.dl;
       return `<tr class="rd-row" data-s="${esc(r.s)}"><td>${i + 1}</td><td><b>${esc(r.s.replace(".JK", "").replace(/-USDT?$/, ""))}</b><div class="note">${esc(String(r.name || "").slice(0, 22))}</div></td><td><span class="rd-pill gm-${r.st.replace(" ", "")}">${r.st}</span></td><td class="num"><b>${nf(0).format(r.gs)}</b></td>
         <td class="num">${isFinite(G.dd) ? pct(G.dd, 0) : "–"}</td><td>${bar(G.turn || 0)}</td><td>${bar(G.accum || 0)}</td><td class="num">${r.val && r.val.methods && (r.val.methods.length || r.val.methods) ? `<span class="${r.val.upside > 0 ? "pos" : "neg"}">${spct(r.val.upside, 0)}</span>` : "–"}</td>
         <td class="num">${F ? `<span class="${F.valid ? (F.p > F.base ? "pos" : "neg") : "note"}">${pct(F.p, 0)}${F.valid ? "" : "·x"}</span>` : "–"}${dl ? ` <span class="note">DL</span> <span class="${dl.valid ? (dl.p > dl.base ? "pos" : "neg") : "note"}">${pct(dl.p, 0)}</span>` : ""}${G.hist && G.hist.valid ? ' <b class="pos" title="pola gem teruji di aset ini">◆</b>' : ""}</td>
-        <td class="gm-th">${esc(gmThesis(r))}</td></tr>`; }).join("") + "</tbody>";
+        <td>${planCell(r)}${r.plan && r.plan.entry > 0 ? `<button class="fn-key" data-auto="${esc(r.s)}" title="${demoGate().pass && idxRatioFor(r.s, r.plan.px) && isOwner() ? "Indodax (uang asli)" : "akun demo"}">Order otomatis${demoGate().pass && idxRatioFor(r.s, r.plan.px) && isOwner() ? " · Indodax" : " · demo"}</button>` : ""}</td><td class="gm-th">${esc(gmThesis(r))}</td></tr>`; }).join("") + "</tbody>";
   }
-  function bindGems() { $("gmRun").onclick = runGems; $("gmTable").addEventListener("click", (e) => { const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
+  function bindGems() { $("gmRun").onclick = runGems; $("gmTable").addEventListener("click", (e) => { const ab = e.target.closest("[data-auto]"); if (ab) { const r = gm.rows.find((x) => x.s === ab.dataset.auto); if (r) autoArmFrom(r.s, r.plan); return; } const tr = e.target.closest(".rd-row"); if (tr) openDetail(tr.dataset.s); });
     try { const j = JSON.parse(localStorage.getItem("sp_gems_v1") || "null"); if (j && j.rows && Date.now() - j.at < 3 * 864e5) { gm.rows = j.rows; $("gmUni").value = j.uni || "idxs"; drawGems(); $("gmNote").hidden = false; $("gmStatus").textContent = `Hasil terakhir ${new Date(j.at).toLocaleString("id-ID")} · klik Cari gems untuk memperbarui`; } } catch { /* */ } }
+
+
+  // =====================================================================
+  // SYARAT INDODAX: buka beli otomatis / quick IN Indodax hanya setelah terbukti di demo
+  // =====================================================================
+  const GATE = { n: 20, wr: 0.8 };
+  function demoGate() { const H = (pp.a && pp.a.hist) || [], done = H.filter((o) => o.side === "sell" && o.pl != null), n = done.length, w = done.filter((o) => o.pl > 0).length, pl = done.reduce((s, o) => s + o.pl, 0), wr = n ? w / n : 0;
+    return { n, w, wr, pl, pass: n >= GATE.n && wr >= GATE.wr && pl > 0 }; }
+  function gateText(g = demoGate()) { return g.pass ? `<span class="pos">Syarat terpenuhi</span>: ${g.n} transaksi demo, ${pct(g.wr, 0)} untung, total ${g.pl >= 0 ? "+" : "−"}Rp ${big(Math.abs(g.pl))}.`
+    : `<b>Indodax otomatis terkunci.</b> Syarat: ≥ ${GATE.n} transaksi demo selesai, ≥ ${pct(GATE.wr, 0)} untung, dan total untung > 0. Sekarang: ${g.n} transaksi, ${pct(g.wr, 0)} untung, total ${g.pl >= 0 ? "+" : "−"}Rp ${big(Math.abs(g.pl))}.`; }
+  // QUICK IN / OUT di Analisis: harga & jumlah dari rencana → eksekusi 2 klik (demo, atau Indodax untuk kripto yang listing)
+  const qk = { mode: null, arm: null, t: null };
+  function qkCtx() { const P = act.plan, d = state.data; if (!P || !d) return null; const crypto = isCrypto(), p = crypto && ix.pairs ? idxPairFor(d.symbol) : null, usd = state.res && state.res.s0 > 0 ? state.res.s0 : P.px;
+    const k = p && p.last && usd ? p.last / usd : null, idxOk = !!(p && k && isOwner()), mode = qk.mode && (qk.mode !== "idx" || idxOk) ? qk.mode : "demo";
+    return { P, d, p, k, idxOk, mode, pos: pp.a && pp.a.pos[d.symbol], unit: isIdx() ? 100 : 1, crypto, gate: demoGate() }; }
+  function drawQuick() {
+    const el = $("qkBox"); if (!el) return; const C = qkCtx(); if (!C) { el.innerHTML = ""; return; } const { P, mode, pos, k, p, gate } = C, idx = isIdx(), cur = mode === "idx" ? "Rp " : "", I = mode === "idx";
+    const pxIn = I ? P.entry * k : P.entry, qIn = P.qty > 0 ? P.qty : 0, unitW = I ? p.base.toUpperCase() : idx ? "lot" : "unit";
+    const held = I ? (ix.bal && ix.bal[p.base]) || 0 : pos ? (idx ? Math.floor(pos.units / 100) : pos.units) : 0, last = I ? p.last : state.res && state.res.s0;
+    const valIn = I ? qIn * pxIn : qIn * pxIn * C.unit * actFx(), valOut = I ? held * (last || 0) : held * (last || 0) * C.unit * actFx(), lockIn = I && !gate.pass;
+    const fq = (q) => (I ? String(+(+q).toFixed(8)) : idx ? nf(0).format(q) : nf(4).format(q));
+    el.innerHTML = `<div class="qk"><div class="qk-mode"><a data-qm="demo" class="${!I ? "on" : ""}">Demo</a>${C.idxOk ? `<a data-qm="idx" class="${I ? "on" : ""}">Indodax (uang asli)${gate.pass ? "" : " 🔒"}</a>` : ""}</div>
+      <button class="qk-in ${qk.arm === "in" ? "arm" : ""} ${P.action !== "BELI" ? "weak" : ""}" id="qkIn" ${qIn > 0 && !lockIn ? "" : "disabled"}>${qk.arm === "in" ? "KLIK LAGI: BELI" : "IN · BELI"}<small>${lockIn ? "terkunci: buktikan dulu di demo" : qIn > 0 ? `${fq(qIn)} ${unitW} @ ${cur}${fmtNum(pxIn)} (limit) · ±Rp ${big(valIn)}${P.action !== "BELI" ? ` · rencana: ${P.action}, tidak disarankan` : ""}` : "modal terlalu kecil"}</small></button>
+      <button class="qk-out ${qk.arm === "out" ? "arm" : ""}" id="qkOut" ${held > 0 ? "" : "disabled"}>${qk.arm === "out" ? "KLIK LAGI: JUAL" : "OUT · JUAL"}<small>${held > 0 ? `${fq(held)} ${unitW} @ market ±${cur}${fmtNum(last)} · ±Rp ${big(valOut)}` : I ? "tidak ada saldo koin ini" : "belum punya posisi demo"}</small></button>
+      <div class="qk-info">Stop <b class="neg">${cur}${fmtNum(I ? P.stop * k : P.stop)}</b> · T1 <b class="pos">${cur}${fmtNum(I ? P.t1 * k : P.t1)}</b> · T2 <b class="pos">${cur}${fmtNum(I ? P.t2 * k : P.t2)}</b>${!I ? " · stop & target otomatis ikut dipasang" : ""}</div>
+      ${C.idxOk ? `<div class="qk-gate">${gateText(gate)}</div>` : ""}</div>`;
+  }
+  function qkArm(which) { if (qk.arm !== which) { qk.arm = which; clearTimeout(qk.t); qk.t = setTimeout(() => { qk.arm = null; drawQuick(); }, 4000); drawQuick(); return false; } qk.arm = null; clearTimeout(qk.t); return true; }
+  async function qkGo(which) {
+    const C = qkCtx(); if (!C || !qkArm(which)) return; const { P, mode, p, k, d } = C;
+    try {
+      if (mode === "idx") { const pd = Math.min(8, decOf(p.last)), vp = isFinite(p.volPrec) ? p.volPrec : 8;
+        if (which === "in") { if (!C.gate.pass) throw new Error("Indodax terkunci sampai syarat demo terpenuhi"); const px = floorTo(P.entry * k, pd), q = floorTo(P.qty, vp);
+          const j = await idxCall("createOrder", { symbol: p.base + "idr", side: "BUY", type: "LIMIT", price: String(px), quantity: String(q) }, `buy ${p.pair}`); toast(`Indodax: beli ${q} ${p.base.toUpperCase()} @ ${fmtNum(px)} dipasang (#${j.orderId || ""})`);
+          ix.log.unshift({ t: new Date().toISOString(), side: "buy", pair: p.pair, type: "limit", price: px, amt: q, value: px * q, id: j.orderId || "", ok: true }); }
+        else { const q = floorTo((ix.bal && ix.bal[p.base]) || 0, vp); if (!(q > 0)) throw new Error("saldo koin kosong");
+          const j = await idxCall("createOrder", { symbol: p.base + "idr", side: "SELL", type: "MARKET", quantity: String(q) }, `sell ${p.pair}`); toast(`Indodax: jual ${q} ${p.base.toUpperCase()} market terkirim (#${j.orderId || ""})`);
+          ix.log.unshift({ t: new Date().toISOString(), side: "sell", pair: p.pair, type: "market", price: 0, amt: q, value: q * p.last, id: j.orderId || "", ok: true }); }
+        saveSettings({ idxLog: ix.log.slice(0, 100) }); setTimeout(() => idxBalance().then(drawQuick), 1500); }
+      else { openTrade(d.symbol, which === "in" ? "buy" : "sell"); await new Promise((r) => setTimeout(r, 300)); await ppQuotes([d.symbol]);
+        if (which === "in") { $("dType").value = "limit"; $("dLimit").value = P.entry; $("dQty").value = P.qty; $("dStop").value = P.stop; $("dT1").value = P.t1; $("dT2").value = P.t2; }
+        else { const pos = pp.a.pos[d.symbol]; $("dType").value = "market"; $("dQty").value = isIdx() ? Math.floor(pos.units / 100) : pos.units; ["dStop", "dT1", "dT2"].forEach((id) => ($(id).value = "")); }
+        ppPreview(); await ppSend(); toast($("dStatus").textContent || "Order demo dikirim."); }
+    } catch (e) { toast("Gagal: " + e.message); }
+    drawQuick(); }
+  // =====================================================================
+  // ORDER OTOMATIS INDODAX (bracket) — hanya pemilik; dipersenjatai sekali dengan konfirmasi ketik
+  // =====================================================================
+  const au = { list: [], busy: false };
+  const AU_MAX = 3, auActive = () => au.list.filter((x) => x.st === "menunggu" || x.st === "terisi");
+  const auSave = () => saveSettings({ idxAuto: au.list.slice(0, 30) });
+  const decOf = (v) => { const s = String(v); if (s.includes("e-")) return +s.split("e-")[1]; return (s.split(".")[1] || "").length; };
+  const floorTo = (v, d) => { const k = 10 ** Math.max(0, Math.min(10, d)); return Math.floor(v * k + 1e-9) / k; };
+  const roundTo = (v, d) => { const k = 10 ** Math.max(0, Math.min(10, d)); return Math.round(v * k) / k; };
+  const auLog = (x, m) => { x.log = [`${new Date().toLocaleString("id-ID")} · ${m}`, ...(x.log || [])].slice(0, 30); };
+  async function autoDemo(sym, plan) { // versi demo: beli limit + stop + target otomatis di akun demo (harga dalam mata uang aset)
+    openTrade(sym, "buy"); await new Promise((r) => setTimeout(r, 350)); await ppQuotes([sym]); const cap = Math.max(0, parseFloat($("actCap").value) || 1e7) / ((/\.JK$/.test(sym) ? 1 : pp.fx || 16000));
+    const R = plan.entry - plan.stop, risk = cap * (parseFloat($("actRisk").value) || 0.01), unit = /\.JK$/.test(sym) ? 100 : 1; let q = R > 0 ? risk / R / unit : 0; q = Math.min(q, cap / (plan.entry * unit)); q = unit === 100 ? Math.floor(q) : +q.toFixed(6);
+    $("dType").value = "limit"; $("dLimit").value = plan.entry; $("dQty").value = q; $("dStop").value = plan.stop; $("dT1").value = plan.t1; $("dT2").value = plan.t2; ppPreview(); await ppSend(); toast("Demo: " + ($("dStatus").textContent || "order dipasang")); }
+  async function autoArmFrom(sym, plan) {
+    try { await idxPairsLoad(); } catch { /* */ }
+    if (!isOwner() || !demoGate().pass || !/-USDT?$/.test(sym) || !idxPairFor(sym)) { if (isOwner() && /-USDT?$/.test(sym) && !demoGate().pass) toast("Indodax otomatis masih terkunci (syarat demo belum terpenuhi). Dipasang di akun demo."); return autoDemo(sym, plan); }
+    await idxPairsLoad(); const p = idxPairFor(sym); if (!p || !plan || !(plan.px > 0)) { toast("Koin ini tidak listing di Indodax / rencana belum ada."); return; }
+    if (!ix.cfg) { try { ix.cfg = await idxCall("status"); } catch { /* */ } } if (!ix.cfg || !ix.cfg.configured || ix.cfg.ok === false) { toast("Indodax belum tersambung (cek tab Setup)."); return; }
+    if (ix.cfg.canTrade === false) { toast("API key tidak punya izin trade."); return; }
+    if (auActive().length >= AU_MAX) { toast(`Maksimal ${AU_MAX} rencana otomatis aktif.`); return; }
+    const k = p.last / plan.px, bk = await (await apiFetch(`${API_IDX}?action=book&pair=${encodeURIComponent(p.pair)}`)).json().catch(() => ({}));
+    const pd = Math.min(8, Math.max(decOf(p.last), ...((bk.bids || []).slice(0, 5).map((x) => decOf(x[0]))), ...((bk.asks || []).slice(0, 5).map((x) => decOf(x[0]))))), vp = isFinite(p.volPrec) ? p.volPrec : 8;
+    const L = { entry: floorTo(plan.entry * k, pd), stop: roundTo(plan.stop * k, pd), t1: roundTo(plan.t1 * k, pd), t2: roundTo(plan.t2 * k, pd) }, max = ix.cfg.maxIdr || 2e6, def = Math.min(max, 200000), B = p.base.toUpperCase();
+    if (!(L.stop < L.entry && L.entry < L.t1 && L.t1 <= L.t2)) { toast("Level harga tidak valid untuk otomatis."); return; }
+    openFn(`ORDER OTOMATIS <span class='note'>· ${esc(B)}/IDR · uang asli</span>`, `<div class="au-arm">
+      <div class="kpis compact">${[["Harga sekarang", "Rp " + fmtNum(p.last)], ["Beli limit di", "Rp " + fmtNum(L.entry)], ["Stop (dipantau)", `<span class="neg">Rp ${fmtNum(L.stop)}</span>`], ["Jual ½ di T1", `<span class="pos">Rp ${fmtNum(L.t1)}</span>`], ["Jual sisa di T2", `<span class="pos">Rp ${fmtNum(L.t2)}</span>`]].map(([a, b]) => `<div class="kpi"><div class="k">${a}</div><div class="v">${b}</div></div>`).join("")}</div>
+      <label class="lbl" for="auAmt">Nilai beli (Rp, maks ${nf(0).format(max)})</label><input id="auAmt" type="number" min="10000" max="${max}" step="10000" value="${def}">
+      <div id="auPrev" class="verdict"></div>
+      <label class="lbl" for="auWord">Ketik <code>OTOMATIS ${esc(B)}</code> untuk mempersenjatai</label><input id="auWord" autocomplete="off">
+      <button class="run" id="auGo" style="background:var(--bad)">Pasang order otomatis</button>
+      <p class="note">Order beli limit langsung dikirim ke Indodax. Jual target dipasang otomatis setelah beli terisi. Stop hanya dijalankan selama web terbuka.</p></div>`);
+    const prev = () => { const v = Math.min(max, Math.max(0, parseFloat($("auAmt").value) || 0)), q = floorTo(v / L.entry, vp), loss = q * (L.entry - L.stop), gain = q * (L.t1 - L.entry) / 2 + q * (L.t2 - L.entry) / 2;
+      $("auPrev").innerHTML = `Jumlah ±<b>${nf(Math.min(8, vp)).format(q)} ${esc(B)}</b> · rugi bila stop ±<b class="neg">Rp ${nf(0).format(loss)}</b> · untung bila kedua target ±<b class="pos">Rp ${nf(0).format(gain)}</b> · RR 1:${nf(1).format(gain / (loss || 1))}${p.minIdr && v < p.minIdr ? ' · <span class="neg">di bawah minimal Indodax</span>' : ""}`; return { v, q }; };
+    $("auAmt").oninput = prev; prev();
+    $("auGo").onclick = async () => { if ($("auWord").value.trim().toUpperCase() !== `OTOMATIS ${B}`) { toast("Teks konfirmasi tidak cocok."); return; } const { v, q } = prev(); if (!(q > 0) || v < 10000) { toast("Jumlah terlalu kecil."); return; }
+      $("auGo").disabled = true; const x = { id: Date.now().toString(36), sym, base: p.base, symbol: p.base + "idr", pair: p.pair, ...L, qty: q, vp, pd, st: "menunggu", created: Date.now(), expire: Date.now() + 3 * 864e5, sells: [], log: [] };
+      try { const j = await idxCall("createOrder", { symbol: x.symbol, side: "BUY", type: "LIMIT", price: String(L.entry), quantity: String(q) }, `buy ${p.pair}`); x.buyId = String(j.orderId || ""); auLog(x, `beli limit ${q} @ ${fmtNum(L.entry)} terkirim (#${x.buyId})`);
+        au.list.unshift(x); auSave(); closeFn(); toast(`Order otomatis ${B} aktif.`); setView("trade"); setTradeTab("idx"); setXTab("auto"); }
+      catch (e) { toast("Gagal: " + e.message); $("auGo").disabled = false; } };
+  }
+  const isDone = (o) => /^FILLED$/i.test(String(o && o.status)), isDead = (o) => /CANCEL|REJECT|EXPIRE/i.test(String(o && o.status));
+  async function auLoop() {
+    if (au.busy || !isOwner() || !auActive().length) return; au.busy = true; let ch = false;
+    try { for (const x of auActive()) {
+      try { const bk = await (await apiFetch(`${API_IDX}?action=book&pair=${encodeURIComponent(x.pair)}`)).json(); const last = bk.trades && bk.trades[0] ? bk.trades[0].px : bk.bids && bk.bids[0] ? bk.bids[0][0] : NaN; x.last = last;
+        if (x.st === "menunggu") { const o = await idxCall("getOrder", { symbol: x.symbol, orderId: x.buyId });
+          if (isDone(o)) { const q = floorTo(+o.executedQty || x.qty, x.vp); x.filled = q; x.st = "terisi"; auLog(x, `beli terisi ${q}`); ch = true;
+            const q1 = floorTo(q / 2, x.vp), q2 = floorTo(q - q1, x.vp), plan = q1 > 0 && q1 * x.t1 >= 10000 && q2 * x.t2 >= 10000 ? [[x.t1, q1, "T1"], [x.t2, q2, "T2"]] : [[x.t1, q, "T1"]];
+            for (const [px, qq, nm] of plan) { try { const j = await idxCall("createOrder", { symbol: x.symbol, side: "SELL", type: "LIMIT", price: String(px), quantity: String(qq) }, `sell ${x.pair}`); x.sells.push({ id: String(j.orderId || ""), px, q: qq, nm }); auLog(x, `jual ${nm} ${qq} @ ${fmtNum(px)} dipasang`); }
+              catch (e) { auLog(x, `gagal pasang jual ${nm}: ${e.message}`); } } }
+          else if (isDead(o)) { x.st = "batal"; auLog(x, "order beli dibatalkan/ditolak di Indodax"); ch = true; }
+          else if (Date.now() > x.expire) { try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: x.buyId }); } catch { /* */ } x.st = "kedaluwarsa"; auLog(x, "beli tidak terisi 3 hari → dibatalkan"); ch = true; } }
+        else if (x.st === "terisi") { let soldQ = 0, allDone = x.sells.length > 0;
+          for (const s of x.sells) { if (s.done) { soldQ += s.q; continue; } const o = await idxCall("getOrder", { symbol: x.symbol, orderId: s.id }).catch(() => null);
+            if (isDone(o)) { s.done = true; soldQ += s.q; auLog(x, `${s.nm} terisi @ ${fmtNum(s.px)}`); ch = true; if (s.nm === "T1" && !x.be) { x.be = true; x.stop = x.entry; auLog(x, "stop naik ke harga masuk (impas)"); } }
+            else { allDone = false; if (isDead(o)) s.dead = true; } }
+          if (allDone) { x.st = "selesai"; auLog(x, "semua target terisi"); ch = true; }
+          else if (isFinite(last) && last <= x.stop) { for (const s of x.sells) if (!s.done && !s.dead) { try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: s.id }); } catch { /* */ } }
+            const rem = floorTo((x.filled || x.qty) - soldQ, x.vp); if (rem > 0) { try { await idxCall("createOrder", { symbol: x.symbol, side: "SELL", type: "MARKET", quantity: String(rem) }, `sell ${x.pair}`); auLog(x, `STOP: harga ${fmtNum(last)} ≤ ${fmtNum(x.stop)} → jual market ${rem}`); } catch (e) { auLog(x, `STOP gagal jual market: ${e.message}`); continue; } }
+            x.st = "stop"; ch = true; toast(`Order otomatis ${x.base.toUpperCase()}: stop dijalankan.`); } } }
+      catch (e) { auLog(x, `cek gagal: ${e.message}`); } }
+    } finally { au.busy = false; if (ch) auSave(); if (ix.tab === "auto") drawAuto(); }
+  }
+  async function auCancel(x) { const ids = [x.st === "menunggu" ? x.buyId : null, ...(x.sells || []).filter((s) => !s.done).map((s) => s.id)].filter(Boolean);
+    for (const id of ids) { try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: id }); } catch { /* */ } } x.st = "batal"; auLog(x, "dibatalkan manual (order terbuka dibatalkan; koin yang sudah dibeli tetap di saldo)"); auSave(); drawAuto(); }
+  function drawAuto() { const el = $("auTable"); if (!el) return; const L = au.list; const gt = $("auGate"); if (gt) gt.innerHTML = gateText();
+    el.innerHTML = L.length ? `<thead><tr><th>Koin</th><th>Status</th><th>Masuk</th><th>Stop</th><th>T1 / T2</th><th>Jumlah</th><th>Harga kini</th><th>Catatan terakhir</th><th></th></tr></thead><tbody>` + L.map((x) => `<tr><td><b>${esc(x.base.toUpperCase())}</b></td><td><span class="rd-pill au-${x.st}">${x.st}</span></td><td>${fmtNum(x.entry)}</td><td class="neg">${fmtNum(x.stop)}${x.be ? " (impas)" : ""}</td><td class="pos">${fmtNum(x.t1)} / ${fmtNum(x.t2)}</td><td>${nf(Math.min(8, x.vp || 8)).format(x.filled || x.qty)}</td><td>${x.last ? fmtNum(x.last) : "–"}</td>
+      <td class="note" title="${esc((x.log || []).join("\n"))}">${esc((x.log || [])[0] || "")}</td><td>${x.st === "menunggu" || x.st === "terisi" ? `<button class="x-btn" data-aucancel="${esc(x.id)}">Batalkan</button>` : ""}</td></tr>`).join("") + "</tbody>"
+      : '<tbody><tr><td class="note">Belum ada order otomatis. Pasang dari tab Live Indodax di Analisis, atau tombol "Order otomatis" di Hidden gems.</td></tr></tbody>'; }
+  function bindAuto() { au.list = ((typeof settings !== "undefined" && settings && settings.idxAuto) || []).slice(0, 30);
+    $("auKill").onclick = async () => { if (!auActive().length) return; for (const x of auActive()) await auCancel(x); toast("Semua order otomatis dimatikan."); };
+    $("auTable").addEventListener("click", (e) => { const b = e.target.closest("[data-aucancel]"); if (b) { const x = au.list.find((y) => y.id === b.dataset.aucancel); if (x) auCancel(x); } });
+    setInterval(() => { if (!document.hidden) auLoop(); }, 15000); setTimeout(auLoop, 4000); }
   function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
     $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
   async function ensureHolidays() { // tahun di luar kalender bawaan (2027): ambil libur nasional otomatis (cuti bersama bursa belum termasuk)

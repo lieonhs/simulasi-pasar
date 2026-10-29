@@ -2,8 +2,8 @@
 // GET  ?action=pairs                 semua pasangan IDR + harga + perubahan 24 jam / 7 hari (publik)
 // GET  ?action=book&pair=btc_idr     order book 20 level + 30 transaksi terakhir (publik)
 // POST ?action=private {method,params,confirm}  hanya pemilik:
-//   status, account, openOrders, orderHistory, myTrades, deposits, withdrawals (baca)
-//   createOrder (wajib konfirmasi + batas INDODAX_MAX_IDR), cancelOrder. Penarikan dana TIDAK tersedia.
+//   status, account, openOrders, getOrder, orderHistory, myTrades, deposits, withdrawals (baca)
+//   createOrder (wajib konfirmasi; batas INDODAX_MAX_IDR untuk BELI — jual/keluar posisi tidak dibatasi), cancelOrder. Penarikan dana TIDAK tersedia.
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
 const json = (body: unknown, status = 200, cache = 0) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json", ...(cache ? { "Cache-Control": `private, max-age=${cache}` } : {}) } });
@@ -39,7 +39,7 @@ async function pairs() {
     const id = String(p.id ?? p.ticker_id), base = String(p.traded_currency ?? p.base_currency ?? id.replace(/idr$/, "")).toLowerCase(), t = tick[`${base}_idr`] ?? {}, last = Number(t.last ?? 0) || 0;
     return { id, pair: `${base}_idr`, base, name: p.description ?? p.traded_currency_unit ?? base.toUpperCase(), last: last || null, high: Number(t.high ?? 0) || null, low: Number(t.low ?? 0) || null,
       volIdr: Number(t.vol_idr ?? 0) || 0, chg24: chg(last, p24[`${base}idr`]), chg7: chg(last, p7[`${base}idr`]), buy: Number(t.buy ?? 0) || null, sell: Number(t.sell ?? 0) || null,
-      minIdr: Number(p.trade_min_traded_currency ?? p.trade_min_base_currency ?? 0) || null, priceRound: Number(p.price_round ?? 0) || null, suspended: !!p.is_maintenance };
+      minIdr: Number(p.trade_min_traded_currency ?? p.trade_min_base_currency ?? 0) || null, priceRound: Number(p.price_round ?? 0) || null, volPrec: Number(p.volume_precision ?? 8), pricePrec: Number(p.price_precision ?? 0) || null, suspended: !!p.is_maintenance };
   }).sort((a: any, b: any) => b.volIdr - a.volIdr);
   const data = { at: Math.floor(Date.now() / 1000), count: list.length, pairs: list }; pairsCache = { at: Date.now(), data }; return data;
 }
@@ -78,6 +78,7 @@ async function priv(body: any, email: string) {
   if (m === "myTrades") return sym ? v2("GET", "/api/v2/myTrades", { symbol: sym, limit: "1000", ...week }) : { status: 400, data: { error: "Pilih koin dulu." } };
   if (m === "deposits" || m === "withdrawals") { const coin = str(p.coin, 12).toUpperCase(); if (!/^[A-Z0-9]{2,12}$/.test(coin)) return { status: 400, data: { error: "Koin tidak valid." } };
     return v2("GET", m === "deposits" ? "/api/v2/capital/deposit/hisrec" : "/api/v2/capital/withdraw/history", { coin }); } // hanya riwayat; tidak ada fungsi tarik dana
+  if (m === "getOrder") { const id = str(p.orderId, 40); if (!sym || !/^[0-9]{1,30}$/.test(id)) return { status: 400, data: { error: "Order tidak valid." } }; return v2("GET", "/api/v2/order", { symbol: sym, orderId: id }); }
   if (m === "cancelOrder") { const id = str(p.orderId, 40); if (!sym || !/^[0-9]{1,30}$/.test(id)) return { status: 400, data: { error: "Order tidak valid." } }; return v2("DELETE", "/api/v2/order", { symbol: sym, orderId: id }); }
   if (m === "createOrder") {
     const side = str(p.side, 4).toUpperCase(), type = str(p.type, 6).toUpperCase(), price = Number(p.price ?? 0), qty = Number(p.quantity ?? 0), quote = Number(p.quoteOrderQty ?? 0);
@@ -89,7 +90,7 @@ async function priv(body: any, email: string) {
     else { if (!(qty > 0)) return { status: 400, data: { error: "Isi jumlah koin." } }; P.quantity = String(qty);
       const t = await (await fetch(`https://indodax.com/api/ticker/${sym}`, { headers: UA })).json().catch(() => ({})); value = qty * Number(t?.ticker?.last ?? 0); }
     if (!(value > 0)) return { status: 400, data: { error: "Nilai order tidak valid." } };
-    if (value > IDX_MAX) return { status: 400, data: { error: `Order Rp ${Math.round(value).toLocaleString("id-ID")} melebihi batas per order Rp ${IDX_MAX.toLocaleString("id-ID")} (secret INDODAX_MAX_IDR).` } };
+    if (side === "BUY" && value > IDX_MAX) return { status: 400, data: { error: `Order Rp ${Math.round(value).toLocaleString("id-ID")} melebihi batas per order Rp ${IDX_MAX.toLocaleString("id-ID")} (secret INDODAX_MAX_IDR).` } };
     return v2("POST", "/api/v2/order", P);
   }
   return { status: 400, data: { error: "Metode tidak diizinkan." } };

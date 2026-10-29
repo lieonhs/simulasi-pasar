@@ -1,4 +1,7 @@
 importScripts("engine.js?v=" + (new URL(self.location.href).searchParams.get("v") || ""));
+// harga masuk / stop / target ringkas untuk Radar & Hidden gems (aturan harga yang sama dengan Rencana aksi)
+function planLite(cfg) { try { const P = MCEngine.actionPlan(cfg.D, { sims: 400, strats: [], isIdx: !!(cfg.o && cfg.o.isIdx), crypto: !!(cfg.o && cfg.o.ppy === 365), seed: 3 });
+  return { entry: P.entry, entryHi: P.entryHi, stop: P.stop, t1: P.t1, t2: P.t2, rr1: P.rr1, chase: P.chase, H: P.H, pT1: P.pr ? P.pr.t1 : null, pStop: P.pr ? P.pr.stop : null, expR: P.pr ? P.pr.expR : null, px: P.px }; } catch (e) { return null; } }
 self.onmessage = (e) => {
   const { id, type, cfg } = e.data;
   const progress = (msg, frac) => self.postMessage({ id, type: "progress", msg, frac });
@@ -8,8 +11,8 @@ self.onmessage = (e) => {
     else if (type === "strat") res = MCEngine.runStrategy(cfg.id, cfg.D, cfg.o);
     else if (type === "stratAll") res = MCEngine.runAllStrategies(cfg.D, cfg.o);
     else if (type === "ml") res = MCEngine.mlModel(cfg.D, { ...cfg.o, progress });
-    else if (type === "radar") res = MCEngine.radarAsset(cfg.D, cfg.o);
-    else if (type === "gem") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), gem: MCEngine.gemAsset(cfg.D, cfg.o) };
+    else if (type === "radar") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), plan: planLite(cfg) };
+    else if (type === "gem") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), gem: MCEngine.gemAsset(cfg.D, cfg.o), plan: planLite(cfg) };
     else if (type === "noise") res = MCEngine.noiseBand(cfg.bars, cfg.o);
     else if (type === "math") res = MCEngine.mathLab(cfg.px, cfg.o);
     else if (type === "qport") res = MCEngine.quantPortfolio(cfg.series, cfg.opt);
