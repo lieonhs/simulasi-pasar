@@ -3,7 +3,7 @@
   "use strict";
   const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
   const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
-  const API = SB_URL + "/functions/v1/market-data";
+  const API = SB_URL + "/functions/v1/market-data"; const API_IDX = API.replace("market-data", "indodax-menu");
   // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi
   try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
   // jendela/tab ditutup lalu dipulihkan browser (Ctrl+Shift+T, "lanjutkan dari terakhir") -> sessionStorage ikut pulih.
@@ -2069,12 +2069,15 @@
     const r = await apiFetch(`${API}?action=indodax`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params, confirm }) });
     const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.success === 0) throw new Error(j.error || j.message || `Gagal (${r.status})`); return j;
   }
+  async function idxRead(method, params = {}) { // fitur baca lewat fungsi indodax-menu
+    const r = await apiFetch(`${API_IDX}?action=private`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method, params }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok || j.error || j.success === 0) { if ((r.status === 404 || r.status >= 500) && (method === "getInfo" || method === "openOrders")) return idxCall(method, params); throw new Error(j.error || j.message || `Gagal (${r.status})`); } return j; }
   async function idxInit() {
     if (!isOwner()) { $("xStatus").textContent = "Fitur Indodax hanya untuk akun pemilik."; return; }
     try { ix.cfg = await idxCall("status"); $("xStatus").innerHTML = ix.cfg.configured ? `<span class="pos">Tersambung ke server.</span> Batas per order Rp ${nf(0).format(ix.cfg.maxIdr)}.` : '<span class="neg">Belum dikonfigurasi.</span> Ikuti langkah di kanan untuk menambahkan API key.'; }
     catch (e) { $("xStatus").textContent = e.message; }
-    if (!ix.pairs) { try { const j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); ix.pairs = j.pairs || []; $("xPair").placeholder = `ketik: btc, eth… (${ix.pairs.length} koin)`; } catch { ix.pairs = []; } }
-    renderIdxLog();
+    await idxPairsLoad(); $("xPair").placeholder = `ketik: btc, eth… (${(ix.pairs || []).length} koin)`;
+    renderIdxLog(); if (ix.cfg && ix.cfg.configured && !ix.tabInit) { ix.tabInit = true; setXTab("pf"); } else if (ix.cfg && !ix.cfg.configured) setXTab("setup");
   }
   function idxPreview() {
     const p = ix.pair, lim = $("xType").value === "limit"; $("xPriceWrap").hidden = !lim;
@@ -2097,24 +2100,89 @@
       try { const j = await idxCall("trade", params, word); const ret = j.return || {}; ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, id: ret.order_id || "", ok: true });
         toast(`Indodax: order ${ix.side === "buy" ? "beli" : "jual"} ${P.p.base.toUpperCase()} terkirim${ret.order_id ? " (#" + ret.order_id + ")" : ""}`); }
       catch (e) { ix.log.unshift({ t: new Date().toISOString(), side: ix.side, pair: P.p.pair, type: params.order_type, price: P.px, amt: P.amt, value: P.value, ok: false, err: e.message }); toast("Indodax gagal: " + e.message); }
-      saveSettings({ idxLog: ix.log.slice(0, 100) }); renderIdxLog(); idxPreview(); };
+      saveSettings({ idxLog: ix.log.slice(0, 100) }); renderIdxLog(); idxPreview(); setTimeout(() => { if (ix.tab === "pf") idxBalance(); else if (ix.tab === "open") idxOpenOrders(); }, 1200); };
   }
   function renderIdxLog() {
     $("xLog").innerHTML = ix.log.length ? `<thead><tr><th>Waktu</th><th>Pair</th><th>Sisi</th><th>Jenis</th><th>Harga</th><th>Jumlah</th><th>Nilai</th><th>Hasil</th></tr></thead><tbody>` + ix.log.map((o) => `<tr><td>${wib(o.t)}</td><td>${esc(o.pair)}</td>
       <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "BELI" : "JUAL"}</td><td>${o.type}</td><td>${o.price ? fmtNum(o.price) : "market"}</td><td>${nf(8).format(o.amt)}</td><td>Rp ${nf(0).format(o.value)}</td><td class="txt">${o.ok ? `terkirim ${esc(String(o.id))}` : `<span class="neg">${esc(o.err || "")}</span>`}</td></tr>`).join("") + "</tbody>"
       : '<tbody><tr><td class="note">Belum ada order dari web ini.</td></tr></tbody>';
   }
+  async function idxPairsLoad(force = false) { if (ix.pairs && ix.pairsAt && !force && Date.now() - ix.pairsAt < 60e3) return ix.pairs;
+    try { let j = await (await apiFetch(`${API_IDX}?action=pairs`)).json().catch(() => ({})); if (!j.pairs) j = await (await apiFetch(`${API}?action=indodax_pairs`)).json(); if (j.pairs) { ix.pairs = j.pairs; ix.pairsAt = Date.now(); if (ix.pair) ix.pair = ix.pairs.find((p) => p.pair === ix.pair.pair) || ix.pair; } } catch { ix.pairs = ix.pairs || []; } return ix.pairs; }
+  const coinOf = (c) => (ix.pairs || []).find((p) => p.base === c);
   async function idxBalance() {
-    try { const j = await idxCall("getInfo"); const r = j.return || {}, bal = r.balance || {}, hold = r.balance_hold || {};
-      const px = (c) => (c === "idr" ? 1 : ((ix.pairs || []).find((p) => p.base === c) || {}).last || 0);
-      const rows = Object.keys(bal).map((c) => ({ c, b: +bal[c] || 0, h: +hold[c] || 0 })).filter((x) => x.b > 0 || x.h > 0).map((x) => ({ ...x, v: (x.b + x.h) * px(x.c) })).sort((a, b) => b.v - a.v);
-      const tot = rows.reduce((a, x) => a + x.v, 0);
-      $("xBalTable").innerHTML = `<thead><tr><th>Aset</th><th>Tersedia</th><th>Di order</th><th>Nilai (Rp)</th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(x.c.toUpperCase())}</td><td>${x.c === "idr" ? nf(0).format(x.b) : nf(8).format(x.b)}</td><td>${x.h ? nf(8).format(x.h) : ""}</td><td>${nf(0).format(x.v)}</td></tr>`).join("") +
-        `<tr><td><b>Total</b></td><td></td><td></td><td><b>${nf(0).format(tot)}</b></td></tr></tbody>`;
+    $("xBalTable").innerHTML = '<tbody><tr><td class="status">Memuat saldo…</td></tr></tbody>';
+    try { await idxPairsLoad(); const j = await idxRead("getInfo"); const r = j.return || {}, bal = r.balance || {}, hold = r.balance_hold || {};
+      const px = (c) => (c === "idr" ? 1 : (coinOf(c) || {}).last || 0);
+      const rows = Object.keys(bal).map((c) => ({ c, b: +bal[c] || 0, h: +hold[c] || 0 })).filter((x) => x.b > 0 || x.h > 0).map((x) => ({ ...x, px: px(x.c), v: (x.b + x.h) * px(x.c), chg: x.c === "idr" ? 0 : (coinOf(x.c) || {}).chg24 })).sort((a, b) => b.v - a.v);
+      const tot = rows.reduce((a, x) => a + x.v, 0), cash = rows.filter((x) => x.c === "idr").reduce((a, x) => a + x.v, 0), d24 = rows.reduce((a, x) => a + (isFinite(x.chg) && x.chg != null ? x.v - x.v / (1 + x.chg) : 0), 0);
+      ix.bal = Object.fromEntries(rows.map((x) => [x.c, x.b]));
+      $("xPfKpi").innerHTML = [["Total aset", "Rp " + nf(0).format(tot), `${rows.length} aset`], ["Rupiah (kas)", "Rp " + nf(0).format(cash), tot ? pct(cash / tot, 0) + " dari total" : ""], ["Kripto", "Rp " + nf(0).format(tot - cash), tot ? pct((tot - cash) / tot, 0) : ""],
+        ["Perubahan 24 jam", `<span class="${cls(d24)}">${d24 >= 0 ? "+" : "−"}Rp ${nf(0).format(Math.abs(d24))}</span>`, tot - cash > 0 ? spct(d24 / (tot - cash - d24 || 1), 1) + " kripto" : ""]].map(([k, v, s]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${s}</div></div>`).join("");
+      $("xBalTable").innerHTML = `<thead><tr><th>Aset</th><th>Tersedia</th><th>Di order</th><th>Harga</th><th>24j</th><th>Nilai (Rp)</th><th>Porsi</th><th></th></tr></thead><tbody>` + rows.map((x) => `<tr><td><b>${esc(x.c.toUpperCase())}</b></td><td>${x.c === "idr" ? nf(0).format(x.b) : nf(8).format(x.b)}</td><td>${x.h ? (x.c === "idr" ? nf(0).format(x.h) : nf(8).format(x.h)) : ""}</td>
+        <td>${x.c === "idr" ? "" : fmtNum(x.px)}</td><td class="${cls(x.chg)}">${x.c === "idr" || x.chg == null ? "" : spct(x.chg, 1)}</td><td>${nf(0).format(x.v)}</td><td>${tot ? pct(x.v / tot, 0) : ""}</td>
+        <td class="x-acts">${x.c === "idr" ? "" : `<button class="fn-key" data-xsell="${esc(x.c)}">Jual</button><button class="fn-key" data-xbook="${esc(x.c)}">Book</button><button class="fn-key" data-xana="${esc(x.c)}">Analisis</button>`}</td></tr>`).join("") +
+        `<tr><td><b>Total</b></td><td></td><td></td><td></td><td></td><td><b>${nf(0).format(tot)}</b></td><td></td><td></td></tr></tbody>`;
     } catch (e) { $("xBalTable").innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
   }
+  function idxPick(base, side, opts = {}) { const p = coinOf(base); if (!p) return; ix.pair = p; $("xPair").value = p.base.toUpperCase();
+    if (side) { ix.side = side; document.querySelectorAll("#xSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === side)); }
+    if (opts.price) { $("xType").value = "limit"; $("xPrice").value = opts.price; } else if (!$("xPrice").value || opts.reset) $("xPrice").value = p.last || "";
+    if (opts.amt != null) $("xAmt").value = opts.amt; $("xBookPair").textContent = p.base.toUpperCase() + "/IDR"; $("xHistPair").textContent = p.base.toUpperCase() + "/IDR"; idxPreview();
+    $("idxTicket").scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+  async function idxMarket() {
+    await idxPairsLoad(); const q = ($("xMktQ").value || "").trim().toLowerCase(), key = ix.mktSort || "volIdr";
+    const L = (ix.pairs || []).filter((p) => !q || p.base.includes(q) || String(p.name || "").toLowerCase().includes(q)).sort((a, b) => (b[key] ?? -1e18) - (a[key] ?? -1e18)).slice(0, 150);
+    $("xMktN").textContent = `${(ix.pairs || []).length} koin IDR`;
+    const th = (k, l) => `<th class="sortable${key === k ? " sorted" : ""}" data-xs="${k}">${l}</th>`;
+    $("xMkt").innerHTML = `<thead><tr><th>Koin</th>${th("last", "Harga")}${th("chg24", "24j")}${th("chg7", "7h")}<th>Rendah – tinggi 24j</th>${th("volIdr", "Volume")}<th></th></tr></thead><tbody>` + L.map((p) => `<tr class="${ix.pair && ix.pair.pair === p.pair ? "best" : ""}"><td><b>${esc(p.base.toUpperCase())}</b> <span class="note">${esc(String(p.name || "").slice(0, 18))}</span>${p.suspended ? ' <span class="neg">maint.</span>' : ""}</td>
+      <td>${fmtNum(p.last)}</td><td class="${cls(p.chg24)}">${p.chg24 == null ? "–" : spct(p.chg24, 1)}</td><td class="${cls(p.chg7)}">${p.chg7 == null ? "–" : spct(p.chg7, 1)}</td><td class="note">${fmtNum(p.low)} – ${fmtNum(p.high)}</td><td>${big(p.volIdr)}</td>
+      <td class="x-acts"><button class="fn-key" data-xbuy="${esc(p.base)}">Beli</button><button class="fn-key" data-xbook="${esc(p.base)}">Book</button><button class="fn-key" data-xana="${esc(p.base)}">Analisis</button></td></tr>`).join("") + "</tbody>";
+  }
+  async function idxBook() {
+    await idxPairsLoad(); if (!ix.pair) ix.pair = coinOf("btc"); const p = ix.pair; if (!p) return; $("xBookPair").textContent = p.base.toUpperCase() + "/IDR";
+    try { const j = await (await apiFetch(`${API_IDX}?action=book&pair=${encodeURIComponent(p.pair)}`)).json(); if (j.error) throw new Error(j.error);
+      const mx = Math.max(1e-9, ...j.bids.map((x) => x[0] * x[1]), ...j.asks.map((x) => x[0] * x[1])), bb = j.bids[0] && j.bids[0][0], ba = j.asks[0] && j.asks[0][0];
+      const side = (L, c) => `<tbody>${L.map(([px, q]) => `<tr class="x-lv" data-xpx="${px}"><td class="${c}">${fmtNum(px)}</td><td>${nf(q < 1 ? 6 : 2).format(q)}</td><td class="x-bar"><i class="${c}" style="width:${Math.max(2, ((px * q) / mx) * 100).toFixed(0)}%"></i>${big(px * q)}</td></tr>`).join("")}</tbody>`;
+      $("xBids").innerHTML = `<thead><tr><th>Harga</th><th>Jumlah</th><th>Rp</th></tr></thead>` + side(j.bids, "pos"); $("xAsks").innerHTML = `<thead><tr><th>Harga</th><th>Jumlah</th><th>Rp</th></tr></thead>` + side(j.asks, "neg");
+      const sb = j.bids.slice(0, 10).reduce((a, x) => a + x[0] * x[1], 0), sa = j.asks.slice(0, 10).reduce((a, x) => a + x[0] * x[1], 0);
+      $("xBookInfo").innerHTML = bb && ba ? `spread ${pct((ba - bb) / ba, 2)} · tekanan 10 level: <b class="${sb > sa ? "pos" : "neg"}">${pct(sb / (sb + sa), 0)} beli</b> · klik harga untuk isi limit` : "";
+      $("xTrades").innerHTML = `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Jumlah</th><th>Rp</th></tr></thead><tbody>` + j.trades.map((t) => `<tr><td>${new Date(t.t * 1000).toLocaleTimeString("id-ID")}</td><td class="${t.side === "buy" ? "pos" : "neg"}">${t.side === "buy" ? "beli" : "jual"}</td><td>${fmtNum(t.px)}</td><td>${nf(t.amt < 1 ? 6 : 2).format(t.amt)}</td><td>${big(t.px * t.amt)}</td></tr>`).join("") + "</tbody>";
+    } catch (e) { $("xBookInfo").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+  }
+  async function idxHist(kind) {
+    document.querySelectorAll("#xHistTabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.h === kind)); const p = ix.pair, el = $("xHist");
+    if (kind !== "transHistory" && !p) { el.innerHTML = '<tbody><tr><td class="note">Pilih koin dulu (tiket order, tab Pasar, atau Portofolio).</td></tr></tbody>'; return; }
+    el.innerHTML = '<tbody><tr><td class="status">Memuat…</td></tr></tbody>'; const T = (s) => (s ? new Date(+s * 1000).toLocaleString("id-ID") : "");
+    try { const j = await idxRead(kind, kind === "transHistory" ? {} : { pair: p.pair, count: "100" }), r = j.return || {};
+      if (kind === "orderHistory") { const L = r.orders || []; el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Order</th><th>Sisa</th><th>Status</th><th>Selesai</th></tr></thead><tbody>` + L.map((o) => `<tr><td>${T(o.submit_time)}</td><td class="${o.type === "buy" ? "pos" : "neg"}">${esc(o.type)}</td><td>${fmtNum(+o.price)}</td>
+          <td class="txt">${esc(Object.entries(o).filter(([k]) => /^order_/.test(k) && k !== "order_id").map(([k, v]) => k.replace("order_", "") + " " + v).join(", "))}</td><td class="txt">${esc(Object.entries(o).filter(([k]) => /^remain_/.test(k)).map(([k, v]) => k.replace("remain_", "") + " " + v).join(", "))}</td><td>${esc(o.status || "")}</td><td>${T(o.finish_time)}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada riwayat order.</td></tr></tbody>'; }
+      else if (kind === "tradeHistory") { const L = r.trades || []; let buyQ = 0, buyIdr = 0, sellQ = 0, sellIdr = 0, fee = 0; const b = p.base;
+        for (const t of L) { const q = +t[b] || 0, v = q * +t.price; fee += +t.fee || 0; if (t.type === "buy") { buyQ += q; buyIdr += v; } else { sellQ += q; sellIdr += v; } }
+        el.innerHTML = L.length ? `<thead><tr><th>Waktu</th><th>Sisi</th><th>Harga</th><th>Jumlah</th><th>Nilai (Rp)</th><th>Fee</th></tr></thead><tbody>` + L.map((t) => `<tr><td>${T(t.trade_time)}</td><td class="${t.type === "buy" ? "pos" : "neg"}">${esc(t.type)}</td><td>${fmtNum(+t.price)}</td><td>${nf(8).format(+t[b] || 0)}</td><td>${nf(0).format((+t[b] || 0) * +t.price)}</td><td>${esc(String(t.fee || ""))}</td></tr>`).join("") +
+          `<tr><td colspan="6" class="note">Rata-rata beli ${buyQ ? "Rp " + fmtNum(buyIdr / buyQ) : "–"} (${nf(8).format(buyQ)}) · rata-rata jual ${sellQ ? "Rp " + fmtNum(sellIdr / sellQ) : "–"} (${nf(8).format(sellQ)})${buyQ && p.last ? ` · posisi bersih ${nf(8).format(buyQ - sellQ)} vs harga kini: <b class="${cls(p.last / (buyIdr / buyQ) - 1)}">${spct(p.last / (buyIdr / buyQ) - 1, 1)}</b>` : ""} · total fee ${nf(0).format(fee)}</td></tr></tbody>` : '<tbody><tr><td class="note">Belum ada trade untuk koin ini.</td></tr></tbody>'; }
+      else { const rows = []; for (const [kind2, byCoin] of [["deposit", r.deposit || {}], ["penarikan", r.withdraw || {}]]) for (const [c, L] of Object.entries(byCoin)) for (const x of (Array.isArray(L) ? L : [])) rows.push({ k: kind2, c, ...x });
+        rows.sort((a, b) => (+b.submit_time || 0) - (+a.submit_time || 0));
+        el.innerHTML = rows.length ? `<thead><tr><th>Waktu</th><th>Jenis</th><th>Aset</th><th>Jumlah</th><th>Fee</th><th>Status</th></tr></thead><tbody>` + rows.slice(0, 200).map((x) => `<tr><td>${T(x.submit_time)}</td><td class="${x.k === "deposit" ? "pos" : "neg"}">${x.k}</td><td>${esc(x.c.toUpperCase())}</td><td>${esc(String(x.amount ?? x[x.c] ?? ""))}</td><td>${esc(String(x.fee ?? ""))}</td><td>${esc(String(x.status ?? ""))}</td></tr>`).join("") + "</tbody>" : '<tbody><tr><td class="note">Belum ada deposit/penarikan.</td></tr></tbody>'; }
+    } catch (e) { el.innerHTML = `<tbody><tr><td class="status err">${esc(e.message)}</td></tr></tbody>`; }
+  }
+  function setXTab(t) { ix.tab = t; document.querySelectorAll("#xTabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.xt === t)); document.querySelectorAll("#idxPane .x-pane").forEach((p) => (p.hidden = p.dataset.xp !== t));
+    if (t === "pf") idxBalance(); else if (t === "mkt") idxMarket(); else if (t === "book") idxBook(); else if (t === "open") idxOpenOrders(); else if (t === "hist" && ix.pair) idxHist(ix.histKind || "tradeHistory"); }
+  function bindIdxMenu() {
+    $("xTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-xt]"); if (b) setXTab(b.dataset.xt); });
+    $("xHistTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-h]"); if (b) { ix.histKind = b.dataset.h; idxHist(b.dataset.h); } });
+    $("xMktQ").addEventListener("input", () => idxMarket());
+    $("idxPane").addEventListener("click", (e) => { const t = e.target;
+      const s = t.closest("[data-xs]"); if (s) { ix.mktSort = s.dataset.xs; idxMarket(); return; }
+      const by = t.closest("[data-xbuy]"); if (by) { idxPick(by.dataset.xbuy, "buy", { reset: true }); return; }
+      const sl = t.closest("[data-xsell]"); if (sl) { const c = sl.dataset.xsell; idxPick(c, "sell", { reset: true, amt: ix.bal && ix.bal[c] ? ix.bal[c] : null }); return; }
+      const bk = t.closest("[data-xbook]"); if (bk) { const p = coinOf(bk.dataset.xbook); if (p) { ix.pair = p; idxPick(p.base); } setXTab("book"); return; }
+      const an = t.closest("[data-xana]"); if (an) { openDetail(an.dataset.xana.toUpperCase() + "-USD"); return; }
+      const lv = t.closest("tr.x-lv"); if (lv) { idxPick(ix.pair.base, null, { price: lv.dataset.xpx }); return; } });
+    setInterval(() => { if ($("idxPane").hidden || document.hidden || !isOwner()) return; if (ix.tab === "book") idxBook(); else if (ix.tab === "mkt") { idxPairsLoad(true).then(idxMarket); } }, 15000);
+  }
   async function idxOpenOrders() {
-    try { const j = await idxCall("openOrders"); const o = j.return && j.return.orders ? j.return.orders : {}; const rows = [];
+    try { const j = await idxRead("openOrders"); const o = j.return && j.return.orders ? j.return.orders : {}; const rows = [];
       for (const [pair, L] of Object.entries(o)) for (const x of (Array.isArray(L) ? L : [])) rows.push({ pair, ...x });
       $("xOpen").innerHTML = rows.length ? `<thead><tr><th>Pair</th><th>Sisi</th><th>Harga</th><th>Sisa</th><th>Waktu</th><th></th></tr></thead><tbody>` + rows.map((x) => `<tr><td>${esc(x.pair)}</td><td class="${x.type === "buy" ? "pos" : "neg"}">${esc(x.type)}</td><td>${fmtNum(+x.price)}</td>
         <td class="txt">${esc(Object.entries(x).filter(([k]) => /^remain_/.test(k)).map(([k, v]) => k.replace("remain_", "") + " " + v).join(", "))}</td><td>${x.submit_time ? new Date(+x.submit_time * 1000).toLocaleString("id-ID") : ""}</td>
@@ -2181,7 +2249,7 @@
       if (!$("xPrice").value) $("xPrice").value = ix.pair.last || ""; idxPreview(); });
     $("xPair").addEventListener("blur", () => setTimeout(() => ($("xSugg").hidden = true), 150));
     ["xType", "xPrice", "xAmt"].forEach((id) => $(id).addEventListener("input", idxPreview));
-    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders;
+    $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders; bindIdxMenu();
     $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
       openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
     pp.timer = setInterval(() => { if (!document.hidden && (pp.a.orders.length || hasBrk())) refreshPaper(); }, 60000);

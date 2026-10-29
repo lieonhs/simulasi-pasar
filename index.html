@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029125918">
+<link rel="stylesheet" href="style.css?v=20261029131809">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -404,11 +404,17 @@
       <button id="xSend" class="run">Tinjau order</button>
       <p class="note">Setiap order harus kamu konfirmasi dengan mengetik ulang. Batas per order diatur di server (secret INDODAX_MAX_IDR). Fitur ini hanya aktif untuk akun pemilik.</p>
     </section>
-    <div>
-      <div class="card"><div class="card-h"><h2>Saldo Indodax</h2><button class="btn" id="xBal">Muat saldo</button></div><div class="table-wrap"><table id="xBalTable"></table></div></div>
-      <div class="card"><div class="card-h"><h2>Order terbuka di Indodax</h2><button class="btn" id="xOpenBtn">Muat</button></div><div class="table-wrap"><table id="xOpen"></table></div></div>
-      <div class="card"><h2>Log order dari web ini</h2><div class="table-wrap"><table id="xLog"></table></div></div>
-      <div class="card"><h2>Langkah menyambungkan Indodax</h2><ol class="readme" id="xSteps">
+    <div class="idx-side">
+      <div class="tabs x-tabs" id="xTabs"><button class="tab active" data-xt="pf">Portofolio</button><button class="tab" data-xt="mkt">Pasar</button><button class="tab" data-xt="book">Order book</button><button class="tab" data-xt="open">Order terbuka</button><button class="tab" data-xt="hist">Riwayat</button><button class="tab" data-xt="log">Log web</button><button class="tab" data-xt="setup">Setup</button></div>
+      <div class="card x-pane" data-xp="pf"><div class="card-h"><h2>Portofolio Indodax</h2><button class="btn" id="xBal">Muat ulang</button></div><div id="xPfKpi" class="kpis compact"></div><div class="table-wrap"><table id="xBalTable"></table></div></div>
+      <div class="card x-pane" data-xp="mkt" hidden><div class="card-h"><h2>Pasar Indodax <span class="tag" id="xMktN">IDR</span></h2><input id="xMktQ" class="x-q" placeholder="cari koin…" autocomplete="off"></div><div class="table-wrap x-scroll"><table id="xMkt"></table></div></div>
+      <div class="card x-pane" data-xp="book" hidden><div class="card-h"><h2>Order book <span class="tag" id="xBookPair">BTC/IDR</span></h2><span class="note" id="xBookInfo"></span></div>
+        <div class="x-book"><div><div class="subh">Beli (bid)</div><table id="xBids"></table></div><div><div class="subh">Jual (ask)</div><table id="xAsks"></table></div></div>
+        <div class="subh">Transaksi terakhir</div><div class="table-wrap x-scroll"><table id="xTrades"></table></div></div>
+      <div class="card x-pane" data-xp="open" hidden><div class="card-h"><h2>Order terbuka di Indodax</h2><button class="btn" id="xOpenBtn">Muat</button></div><div class="table-wrap"><table id="xOpen"></table></div></div>
+      <div class="card x-pane" data-xp="hist" hidden><div class="card-h"><h2>Riwayat <span class="tag" id="xHistPair">pilih koin</span></h2><div class="seg small" id="xHistTabs"><button class="seg-btn" data-h="orderHistory">Order</button><button class="seg-btn" data-h="tradeHistory">Trade</button><button class="seg-btn" data-h="transHistory">Deposit & tarik</button></div></div><div class="table-wrap x-scroll"><table id="xHist"></table></div></div>
+      <div class="card x-pane" data-xp="log" hidden><h2>Log order dari web ini</h2><div class="table-wrap"><table id="xLog"></table></div></div>
+      <div class="card x-pane" data-xp="setup" hidden><h2>Langkah menyambungkan Indodax</h2><ol class="readme" id="xSteps">
         <li>Login ke indodax.com → menu <b>Trade API</b> (pengaturan akun) → buat API key baru. Pastikan akunmu sudah verifikasi identitas.</li>
         <li>Centang izin <b>view</b> dan <b>trade</b> saja. <b>Jangan centang withdraw.</b> Web ini memang tidak punya fungsi tarik dana, jadi izin itu tidak dibutuhkan.</li>
         <li>Simpan <b>API key</b> dan <b>secret key</b> yang muncul. Jangan kirim lewat chat atau taruh di kode.</li>
@@ -1053,8 +1059,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029125918";</script>
-<script src="engine.js?v=20261029125918"></script>
-<script src="app.js?v=20261029125918"></script>
+<script>window.APP_V = "20261029131809";</script>
+<script src="engine.js?v=20261029131809"></script>
+<script src="app.js?v=20261029131809"></script>
 </body>
 </html>
