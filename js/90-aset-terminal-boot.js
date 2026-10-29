@@ -585,7 +585,8 @@
     $("pendRe").hidden = st !== "rejected";
   }
   // admin/pemilik: pindahkan sesi ke localStorage supaya tetap masuk walau jendela ditutup (autopilot bisa lanjut saat web dibuka lagi)
-  function keepOwnerSession() { if (!isOwner() || KEEP) return; try { localStorage.setItem("sp_keep", "1"); Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.setItem(k, sessionStorage.getItem(k))); KEEP = true; } catch { /* */ } }
+  // admin/pemilik: pindahkan sesi ke localStorage SEKALI lalu muat ulang, supaya sejak itu hanya ada satu penyimpanan sesi (tidak ada salinan basi yang bisa membuat Supabase mencabut sesi)
+  function keepOwnerSession() { if (!isOwner() || KEEP) return; try { localStorage.setItem("sp_keep", "1"); Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => { localStorage.setItem(k, sessionStorage.getItem(k)); sessionStorage.removeItem(k); }); KEEP = true; setTimeout(() => location.reload(), 300); } catch { /* */ } }
   async function onAuthed(s) {
     session = s; lastAct = Date.now();
     if (authing) return authing;
@@ -664,7 +665,6 @@
       finally { $("authBtn").disabled = false; } };
     if (!sb) { hideSplash(); showAuth("Gagal memuat modul login. Periksa koneksi lalu muat ulang."); return; }
     sb.auth.onAuthStateChange(async (ev, s) => {
-      if (KEEP && s) setTimeout(() => { try { Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.setItem(k, sessionStorage.getItem(k))); } catch { /* */ } }, 0); // salinan sesi admin selalu terbaru
       if (ev === "PASSWORD_RECOVERY") { const np = prompt("Masukkan password baru (min. 6 karakter):"); if (np) { const { error } = await sb.auth.updateUser({ password: np }); alert(error ? authErr(error) : "Password berhasil diganti."); } }
       if (s) { session = s; if (!booted) onAuthed(s); } else if (ev === "SIGNED_OUT") { $("pendGate").hidden = true; showAuth(); }
     });

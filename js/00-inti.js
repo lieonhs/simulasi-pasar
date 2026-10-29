@@ -8,6 +8,7 @@
   // Pengecualian: akun pemilik/admin di perangkat yang ditandai "tetap masuk" (sp_keep) memakai localStorage, tanpa keluar otomatis.
   let KEEP = false; try { KEEP = localStorage.getItem("sp_keep") === "1"; } catch { /* */ }
   if (!KEEP) try { Object.keys(localStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
+  else try { Object.keys(sessionStorage).filter((k) => /^sb-.*-auth-token/.test(k)).forEach((k) => sessionStorage.removeItem(k)); } catch { /* */ } // mode tetap-masuk: buang salinan sesi lama di tab ini
   // jendela/tab ditutup lalu dipulihkan browser (Ctrl+Shift+T, "lanjutkan dari terakhir") -> sessionStorage ikut pulih.
   // Tandai saat halaman ditinggalkan; muat berikutnya yang BUKAN refresh = dianggap keluar.
   let closedBefore = false;
