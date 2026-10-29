@@ -1053,7 +1053,7 @@
         const eq = !/^\^/.test(d.symbol) && !/=F$|=X$/.test(d.symbol) && !/INDEX|CURRENCY|FUTURE|CRYPTO/i.test(d.type || "");
         if (wantFund && eq) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(d.symbol)}`)).json(); } catch { /* */ } }
         tick(`Analisis ${d.symbol} ✓`);
-        return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F, liq: liquidity(d), sig: quickSignal(d, rf, m.ppy) };
+        return { symbol: d.symbol, name: d.name, currency: d.currency, type: d.type, bench: b ? b.symbol : "–", m, F, liq: liquidity(d), sig: quickSignal(d, rf, m.ppy), cf: quickConf(d) };
       });
       wl.rows = rows; wl.days = days; wl.model = model;
       $("wlOut").hidden = false; renderWatch(); renderWlMap(); renderHighlights(); startWlLive();
@@ -1090,6 +1090,9 @@
   }
   const trendIcon = (t) => (t > 0 ? '<span class="pos">▲ naik</span>' : t < 0 ? '<span class="neg">▼ turun</span>' : "◆ datar");
   const pc = (v, d = 1) => `<span class="${cls(v)}">${spct(v, d)}</span>`;
+  function quickConf(d) { try { if (!d.ohlc || d.ohlc.length < 300) return null; const C = MCEngine.confluence(buildD(d), { H: 10, ppy: /CRYPTO/i.test(d.type || "") ? 365 : 252 }); if (!C) return null;
+      return { s: C.sNow, n: C.nNow, valid: C.valid, aplus: C.sel.active, best: C.sel.best ? { thr: C.sel.best.thr, up: C.sel.best.up, nEff: C.sel.best.nEff } : null, base: C.base }; } catch { return null; } }
+  const aplusCell = (r) => (!r.cf ? '<span class="note">data < 300 hari</span>' : r.cf.aplus ? `<b class="pos">A+ aktif</b> <span class="note">${pct(r.cf.best.up, 0)} vs ${pct(r.cf.base, 0)}</span>` : r.cf.best ? `<span class="note">teruji (≥+${r.cf.best.thr}), belum aktif</span>` : '<span class="note">tidak teruji</span>');
   function wlCols() {
     const days = wl.days;
     const C = {
@@ -1106,7 +1109,9 @@
         ["RSI", (r) => (r.sig ? r.sig.rsi : null), (r) => (r.sig && r.sig.rsi != null ? `<span class="${r.sig.rsi > 70 ? "neg" : r.sig.rsi < 30 ? "pos" : ""}">${nf(0).format(r.sig.rsi)}</span>` : "–")],
         ["Sistem sedang", (r) => (r.sig ? r.sig.position : null), (r) => (!r.sig ? "–" : r.sig.position ? `<span class="pos">pegang</span> <span class="note">sejak ${esc(r.sig.entryDate)} (${spct(r.m.last / r.sig.entryPx - 1)})</span>` : '<span class="note">di luar pasar</span>')],
         ["Sharpe OOS aturan / B&H", (r) => (r.sig ? r.sig.oosS - r.sig.oosB : null), (r) => (!r.sig ? "–" : `<span class="${r.sig.oosS > r.sig.oosB ? "pos" : "neg"}">${nf(2).format(r.sig.oosS)}</span> / ${nf(2).format(r.sig.oosB)}`)],
-        ["Transaksi · menang", (r) => (r.sig ? r.sig.win : null), (r) => (r.sig ? `${r.sig.trades} · ${pct(r.sig.win, 0)}` : "–")]],
+        ["Transaksi · menang", (r) => (r.sig ? r.sig.win : null), (r) => (r.sig ? `${r.sig.trades} · ${pct(r.sig.win, 0)}` : "–")],
+        ["Konfluensi", (r) => (r.cf ? r.cf.s : null), (r) => (r.cf ? `<span class="${r.cf.s >= 3 ? "pos" : r.cf.s <= -3 ? "neg" : ""}">${r.cf.s > 0 ? "+" : ""}${r.cf.s}</span> / ${r.cf.n}` : "–")],
+        ["Setup A+ (10 hari)", (r) => (r.cf ? (r.cf.aplus ? 2 + r.cf.best.up : r.cf.best ? 1 : 0) : -1), aplusCell]],
       likuid: [["Volume terakhir", (r) => (r.liq ? r.liq.lastVol : null), (r) => (r.liq ? big(r.liq.lastVol) + (r.liq.lotDiv === 100 ? " lot" : "") : "–")],
         ["Rata-rata vol 20h", (r) => (r.liq ? r.liq.avgVol : null), (r) => (r.liq ? big(r.liq.avgVol) + (r.liq.lotDiv === 100 ? " lot" : "") : "–")],
         ["Vol vs rata-rata", (r) => (r.liq ? r.liq.ratio : null), (r) => (r.liq && isFinite(r.liq.ratio) ? `<span class="${r.liq.ratio > 2 ? "pos" : ""}">${nf(1).format(r.liq.ratio)}×</span>` : "–")],
@@ -1947,13 +1952,22 @@
     const lines = [`Harga sekarang <b>${fmtNum(q.price)}</b>${q.currency && q.currency !== "IDR" ? " " + esc(q.currency) : ""}${lim ? ` · limit <b>${fmtNum(px)}</b>` : ""}`];
     if (units > 0 && px > 0) lines.push(`${pp.side === "buy" ? "Biaya" : "Hasil"} ±<b>${big(pp.side === "buy" ? gross + fee : gross - fee, "IDR")}</b> (fee ${big(fee, "IDR")})`);
     lines.push(pp.side === "buy" ? `Kas tersedia ${big(pp.a.cash, "IDR")}${units > 0 && gross + fee > pp.a.cash ? ' — <span class="neg">tidak cukup</span>' : ""}` : `Dimiliki ${pos ? (k === "idx" ? nf(0).format(pos.units / 100) + " lot" : nf(6).format(pos.units)) : "0"}`);
+    const buy = pp.side === "buy"; $("dBrkWrap").hidden = !buy;
+    const num = (id) => { const v = parseFloat($(id).value); return v > 0 ? (k === "idx" ? MCEngine.roundTick(v, true, id === "dStop" ? -1 : 1) : v) : null; };
+    let brk = null, bad = "";
+    if (buy) { const sp = num("dStop"), t1 = num("dT1"), t2 = num("dT2"), ref = px > 0 ? px : q.price;
+      if (sp != null && sp >= ref) bad = "stop harus di bawah harga beli"; else if (t1 != null && t1 <= ref) bad = "target 1 harus di atas harga beli"; else if (t2 != null && t1 != null && t2 < t1) bad = "target 2 harus ≥ target 1"; else if (t2 != null && t2 <= ref) bad = "target 2 harus di atas harga beli";
+      if (!bad && (sp || t1 || t2)) { brk = { stop: sp, t1, t2 }; const R = sp ? ref - sp : NaN, rr = R > 0 && t1 ? (t1 - ref) / R : NaN;
+        lines.push(`Dijaga otomatis: ${sp ? `stop <b class="neg">${fmtNum(sp)}</b> (${spct(sp / ref - 1, 1)})` : "tanpa stop"}${t1 ? ` · T1 <b class="pos">${fmtNum(t1)}</b> (${spct(t1 / ref - 1, 1)})` : ""}${t2 ? ` · T2 <b class="pos">${fmtNum(t2)}</b>` : ""}${isFinite(rr) ? ` · RR 1 : ${nf(1).format(rr)}` : ""}${units > 0 && R > 0 ? ` · rugi bila stop ±${big(units * R * fx, "IDR")}` : ""}`); }
+      if (bad) lines.push(`<span class="neg">${bad}</span>`); }
     $("dPreview").innerHTML = lines.join("<br>");
-    return { s, k, px, units, fx, fee, gross, lim };
+    return { s, k, px, units, fx, fee, gross, lim, brk, bad };
   }
   function ppFill(o, px) {
     const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
     if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
-      a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee; }
+      a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee;
+      if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; }
     else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; }
       const fee = gross * fs, costPart = p.cost * (o.units / p.units); o.pl = gross - fee - costPart; a.cash += gross - fee; p.units -= o.units; p.cost -= costPart; o.fee = fee;
       if (p.units < 1e-9) delete a.pos[o.s]; }
@@ -1963,16 +1977,32 @@
     $("dStatus").classList.remove("err"); await ppQuotes([normTicker($("dSym").value.trim())]); const P = ppPreview();
     if (!P) return; if (!(P.units > 0)) { $("dStatus").textContent = "Jumlah harus lebih dari 0" + (P.k === "idx" ? " lot." : "."); return; }
     if (P.lim && !(P.px > 0)) { $("dStatus").textContent = "Isi harga limit."; return; }
-    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s: P.s, name: (pp.q[P.s] || {}).symbol || P.s, side: pp.side, type: P.lim ? "limit" : "market", units: P.units, limit: P.lim ? P.px : null, status: "terbuka" };
+    if (P.bad) { $("dStatus").textContent = "Periksa stop/target: " + P.bad + "."; $("dStatus").classList.add("err"); return; }
+    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s: P.s, name: (pp.q[P.s] || {}).symbol || P.s, side: pp.side, type: P.lim ? "limit" : "market", units: P.units, limit: P.lim ? P.px : null, status: "terbuka", brk: P.brk || null };
     if (!P.lim) { ppFill(o, pp.q[P.s].price); $("dStatus").textContent = o.status === "terisi" ? `Order ${o.side === "buy" ? "beli" : "jual"} ${P.s} terisi di ${fmtNum(o.fillPx)}.` : `Ditolak: ${o.note}.`; if (o.status !== "terisi") $("dStatus").classList.add("err"); }
     else { pp.a.orders.push(o); $("dStatus").textContent = `Order limit ${o.side === "buy" ? "beli" : "jual"} ${P.s} @ ${fmtNum(P.px)} dipasang.`; checkLimits(); }
+    if (o.status !== "ditolak") ["dStop", "dT1", "dT2"].forEach((id) => ($(id).value = ""));
     ppSnap(); ppSave(); renderPaper(); if (!$("detailView").hidden) renderTcPos();
   }
   function checkLimits() {
     let ch = false;
     for (const o of pp.a.orders.filter((x) => x.status === "terbuka")) { const q = pp.q[o.s]; if (!q) continue;
       if ((o.side === "buy" && q.price <= o.limit) || (o.side === "sell" && q.price >= o.limit)) { ppFill(o, o.limit); ch = true; toast(`Demo: order limit ${o.side === "buy" ? "beli" : "jual"} ${o.s} terisi di ${fmtNum(o.limit)}`); } }
-    pp.a.orders = pp.a.orders.filter((x) => x.status === "terbuka"); if (ch) { ppSnap(); ppSave(); } return ch;
+    pp.a.orders = pp.a.orders.filter((x) => x.status === "terbuka"); if (checkBrackets()) ch = true; if (ch) { ppSnap(); ppSave(); } return ch;
+  }
+  // stop loss / target otomatis untuk posisi demo (diisi di harga yang terlihat saat dicek)
+  const hasBrk = () => pp.a && Object.values(pp.a.pos).some((p) => p.brk);
+  function checkBrackets() {
+    let ch = false;
+    for (const [s, p] of Object.entries({ ...pp.a.pos })) { const b = p.brk, q = pp.q[s]; if (!b || !q || !(q.price > 0)) continue; const x = q.price, idx = kindOf(s) === "idx";
+      const sell = (units, why) => { const o = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t: new Date().toISOString(), s, name: p.name || s, side: "sell", type: why, units, limit: null, status: "terbuka" };
+        if (ppFill(o, x)) { ch = true; toast(`Demo: ${why} ${s} — jual ${idx ? nf(0).format(units / 100) + " lot" : nf(6).format(units)} di ${fmtNum(x)}`); return true; } return false; };
+      if (b.stop && x <= b.stop) { sell(p.units, b.hit1 ? "stop impas" : "stop loss"); continue; }
+      if (b.t2 && x >= b.t2) { sell(p.units, "target 2"); continue; }
+      if (b.t1 && !b.hit1 && x >= b.t1) { const half = idx ? Math.floor(p.units / 200) * 100 : p.units / 2;
+        if (!b.t2 || !(half > 0)) { sell(p.units, "target 1"); continue; }
+        if (sell(half, "target 1")) { const np = pp.a.pos[s]; if (np) np.brk = { ...b, hit1: true, stop: Math.max(b.stop || 0, b.entry) }; } } }
+    return ch;
   }
   function ppEquity() { let v = pp.a.cash; for (const [s, p] of Object.entries(pp.a.pos)) { const q = pp.q[s]; v += q ? p.units * q.price * fxOf(s) : p.cost; } return v; }
   function ppSnap() { const d = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), e = ppEquity(), L = pp.a.eq; if (L.length && L[L.length - 1].d === d) L[L.length - 1].v = e; else L.push({ d, v: e }); if (L.length > 400) L.splice(0, L.length - 400); }
@@ -1988,10 +2018,10 @@
       ["Transaksi jual", `${done.length}`, done.length ? `${pct(wins / done.length, 0)} untung` : "belum ada"]]
       .map(([k, v, h]) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h}</div></div>`).join("");
     const P = Object.entries(a.pos);
-    $("dPos").innerHTML = P.length ? `<thead><tr><th>Aset</th><th>Jumlah</th><th>Harga rata-rata</th><th>Harga kini</th><th>Nilai</th><th>Untung/rugi</th><th>%</th><th></th></tr></thead><tbody>` + P.map(([s, p]) => {
+    $("dPos").innerHTML = P.length ? `<thead><tr><th>Aset</th><th>Jumlah</th><th>Harga rata-rata</th><th>Harga kini</th><th>Nilai</th><th>Untung/rugi</th><th>%</th><th>Dijaga otomatis</th><th></th></tr></thead><tbody>` + P.map(([s, p]) => {
       const q = pp.q[s], fx = fxOf(s), v = q ? p.units * q.price * fx : NaN, g = v - p.cost, avg = p.cost / p.units / fx, k = kindOf(s);
       return `<tr><td><span class="pf-sym" data-s="${esc(s)}">${esc(s)}</span></td><td>${k === "idx" ? nf(0).format(p.units / 100) + " lot" : nf(p.units < 1 ? 6 : 2).format(p.units)}</td><td>${fmtNum(avg)}</td><td>${q ? fmtNum(q.price) : "–"}</td><td>${R(v)}</td>
-        <td><span class="${cls(g)}">${g >= 0 ? "+" : ""}${R(g)}</span></td><td>${pc(g / p.cost)}</td><td><button class="fn-key" data-sellall="${esc(s)}">Jual</button></td></tr>`; }).join("") + "</tbody>"
+        <td><span class="${cls(g)}">${g >= 0 ? "+" : ""}${R(g)}</span></td><td>${pc(g / p.cost)}</td><td>${p.brk ? `<span class="brk">${p.brk.stop ? `<span class="neg">stop ${fmtNum(p.brk.stop)}${p.brk.hit1 ? " (impas)" : ""}</span>` : ""}${p.brk.t1 ? ` · T1 ${fmtNum(p.brk.t1)}${p.brk.hit1 ? " ✓" : ""}` : ""}${p.brk.t2 ? ` · T2 ${fmtNum(p.brk.t2)}` : ""}</span> <button class="x-btn" data-dbrk="${esc(s)}" title="Hapus stop/target">✕</button>` : '<span class="note">–</span>'}</td><td><button class="fn-key" data-sellall="${esc(s)}">Jual</button></td></tr>`; }).join("") + "</tbody>"
       : '<tbody><tr><td class="note">Belum ada posisi. Pasang order beli di tiket sebelah kiri.</td></tr></tbody>';
     const O = a.orders;
     $("dOpen").innerHTML = O.length ? `<thead><tr><th>Waktu</th><th>Aset</th><th>Sisi</th><th>Limit</th><th>Jumlah</th><th>Harga kini</th><th></th></tr></thead><tbody>` + O.map((o, i) => `<tr><td>${wib(o.t)}</td><td>${esc(o.s)}</td>
@@ -2114,7 +2144,7 @@
     $("trTabs").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn[data-t]"); if (b) setTradeTab(b.dataset.t); });
     $("dSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; pp.side = b.dataset.s; document.querySelectorAll("#dSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); $("dSend").textContent = pp.side === "buy" ? "Kirim order beli demo" : "Kirim order jual demo"; ppPreview(); });
     attachAC($("dSym"), { onPick: (sym) => { $("dSym").value = sym; ppQuotes([sym]).then(ppPreview); } });
-    ["dType", "dLimit", "dQty"].forEach((id) => $(id).addEventListener("input", ppPreview));
+    ["dType", "dLimit", "dQty", "dStop", "dT1", "dT2"].forEach((id) => $(id).addEventListener("input", ppPreview));
     $("dSym").addEventListener("change", () => ppQuotes([normTicker($("dSym").value.trim())]).then(ppPreview));
     $("dPreview").addEventListener("click", (e) => { if (e.target.id === "dLoadPx") { e.preventDefault(); ppQuotes([normTicker($("dSym").value.trim())]).then(ppPreview); } });
     $("dSend").onclick = ppSend; $("dRefresh").onclick = refreshPaper;
@@ -2124,6 +2154,7 @@
       const sa = e.target.closest("[data-sellall]"); if (sa) { const sym = sa.dataset.sellall, p = pp.a.pos[sym]; pp.side = "sell"; document.querySelectorAll("#dSide .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.s === "sell"));
         $("dSym").value = sym; $("dType").value = "market"; $("dQty").value = kindOf(sym) === "idx" ? p.units / 100 : p.units; ppPreview(); $("dSym").scrollIntoView({ block: "center" }); return; }
       const dc = e.target.closest("[data-dcancel]"); if (dc) { pp.a.orders.splice(+dc.dataset.dcancel, 1); ppSave(); renderPaper(); return; }
+      const db = e.target.closest("[data-dbrk]"); if (db) { const p = pp.a.pos[db.dataset.dbrk]; if (p) { delete p.brk; ppSave(); renderPaper(); } return; }
       const xc = e.target.closest("[data-xcancel]"); if (xc) { idxCall("cancelOrder", { pair: xc.dataset.pair, order_id: xc.dataset.xcancel, type: xc.dataset.type }).then(() => { toast("Order Indodax dibatalkan."); idxOpenOrders(); }).catch((er) => toast("Gagal batal: " + er.message)); } });
     // Indodax
     $("xSide").addEventListener("click", (e) => { const b = e.target.closest(".seg-btn"); if (!b) return; ix.side = b.dataset.s; document.querySelectorAll("#xSide .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); idxPreview(); });
@@ -2137,7 +2168,7 @@
     $("xSend").onclick = idxReview; $("xBal").onclick = idxBalance; $("xOpenBtn").onclick = idxOpenOrders;
     $("wiDemo").onclick = () => { const amt = parseFloat($("wiAmt").value) || 0, s = state.data.symbol, px = state.res.s0, k = kindOf(s);
       openTrade(s, "buy"); $("dType").value = "market"; $("dQty").value = k === "idx" ? Math.floor(amt / (px * 100 * 1.0015)) : +(amt / px / (k === "crypto" ? (pp.fx || 16000) : state.data.currency === "IDR" ? 1 : (pp.fx || 16000))).toFixed(6); setTimeout(ppPreview, 400); };
-    pp.timer = setInterval(() => { if (!document.hidden && pp.a.orders.length) refreshPaper(); }, 60000);
+    pp.timer = setInterval(() => { if (!document.hidden && (pp.a.orders.length || hasBrk())) refreshPaper(); }, 60000);
   }
   const confirmReset = () => window.confirm("Reset akun demo? Semua posisi dan riwayat demo akan dihapus.");
 
@@ -2320,6 +2351,9 @@
     ["alarm alert notifikasi harga", "Alarm harga", "Klik ALRT atau ketik <code>ALRT BBRI</code>. Dicek tiap 60 detik hanya selama web terbuka."],
     ["demo paper trading latihan virtual order", "Akun demo", "Uang virtual Rp 100 juta, harga live. Order market terisi langsung; limit dicek tiap 60 detik. Pasang order dari kartu Order di Analisis atau F6. Reset kapan saja."],
     ["indodax kripto uang asli api key eksekusi", "Indodax", "Hanya kripto berpasangan rupiah dan hanya akun pemilik. Buat API key (view + trade, tanpa withdraw), simpan di Supabase Secrets <code>INDODAX_KEY</code>/<code>INDODAX_SECRET</code>. Setiap order wajib konfirmasi ketik ulang."],
+    ["konfluensi confluence faktor skor timeframe mtf mingguan jam", "Konfluensi & multi-timeframe", "Di kartu Rencana aksi (atau ketik <code>BBCA CONF</code>). Skor = jumlah 9 faktor teknikal (▲ +1, ▼ −1). Lihat apakah skor <b>teruji</b> di aset itu, dan apakah mingguan, harian, 4 jam, dan 1 jam searah."],
+    ["keyakinan tinggi a+ setup selektif yakin", "Setup A+ (keyakinan tinggi)", "Keyakinan tinggi yang jujur hanya muncul saat setup A+ terpenuhi: skor konfluensi tinggi + tren harian & mingguan naik, dan kombinasi itu terbukti lebih sering benar di riwayat aset tersebut. Lebih jarang masuk, tapi lebih sering benar. Cari aset dengan <b>A+ aktif</b> di Watchlist → tab Sinyal."],
+    ["stop loss otomatis target demo bracket", "Stop & target otomatis (demo)", "Isi Stop loss, Target 1, Target 2 di tiket demo (beli). Setelah terisi: harga ≤ stop → jual semua; ≥ T1 → jual ½ dan stop naik ke harga masuk; ≥ T2 → jual sisa. Dicek tiap 60 detik selama web terbuka."],
     ["strategi 50 backtest uji pilih", "50 strategi", "F6 → Strategi (50) atau ketik <code>BBCA STRAT</code>. Pilih satu lalu Jalankan, atau Bandingkan semua 50. Lihat Sharpe OOS dan bandingkan dengan beli-dan-tahan serta ambang kebetulan di bawah peringkat."],
     ["noise band intraday momentum zarattini", "Noise band", "Strategi intraday: batas = max/min(open, tutup kemarin) × (1 ± rata-rata gerak 14 hari di jam yang sama). Masuk saat harga keluar dari pita, keluar di batas/VWAP, tutup semua sebelum pasar tutup. Pakai data per jam untuk uji yang lebih panjang."],
     ["rate of return ror cagr return bulanan tahunan", "Rate of return", "Total = pertumbuhan seluruh periode; CAGR = rata-rata per tahun; tabel bulanan menunjukkan return tiap bulan dan setahun, bisa dibandingkan dengan beli-dan-tahan."],
@@ -2491,10 +2525,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], CONF: ["Konfluensi 9 faktor (teruji historis) + multi-timeframe mingguan/harian/4 jam/1 jam", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", MTF: "CONF", KONFLUENSI: "CONF", CHECK: "CONF", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2532,11 +2566,12 @@
     if (fn === "DES") return showDes(target);
     if (fn === "HP") return showHp(target);
     closeFn();
-    const focus = { ML: "ml", ACT: "signal", GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust", MATH: "math" }[fn] || "all";
+    const focus = { ML: "ml", ACT: "signal", CONF: "signal", GP: "candle", GIP: "candle", FA: "val", N: "news", SIG: "signal", MC: "proj", PLAN: "plan", COMP: "cmp", OMON: "quant", TRUST: "trust", MATH: "math" }[fn] || "all";
     const need = sym && (sym !== state.symbol || !state.res);
     if (need) { setFocus(focus); await openDetail(sym); } else { setView("detail"); }
     setFocus(focus);
     if (fn === "GIP") { const t = document.querySelector('#tfTabs .tab[data-tf="5m"]'); if (t) t.click(); }
+    else if (fn === "CONF") { let k = 0; const go = () => { const el = $("actConf"); if (el && el.innerHTML) { el.scrollIntoView({ behavior: "smooth", block: "start" }); flashCard(el); } else if (k++ < 40) setTimeout(go, 500); }; go(); }
     else if (fn === "GP" && isIntra()) { const t = document.querySelector('#tfTabs .tab[data-tf="D"]'); if (t) t.click(); }
   }
   function flashCard(el) { if (!el) return; el.classList.remove("flash-card"); void el.offsetWidth; el.classList.add("flash-card"); }
@@ -2827,8 +2862,13 @@
     const R = rawD(d), st0 = actStartInfo(R.d[R.n - 1]), cap = Math.max(0, parseFloat($("actCap").value) || 0), risk = parseFloat($("actRisk").value) || 0.01;
     // harga live terbaru menggantikan tutup terakhir bila ada
     if (state.res.s0 && Math.abs(state.res.s0 / R.c[R.n - 1] - 1) < 0.25) R.c[R.n - 1] = state.res.s0;
+    const ck0 = `${key}|${act.all ? 1 : 0}`; // konfluensi dihitung sebelum rencana supaya setup A+ ikut memutuskan
+    if (act.confKey0 !== ck0 || !act.conf) { act.confKey0 = ck0; act.confKey = null; }
     act.plan = MCEngine.actionPlan(R, { isIdx: isIdx(), crypto: isCrypto(), strats: act.all.list, votes: act.all.votes, score: state.sig && state.sig.now ? state.sig.now.score : 0,
       capital: cap / actFx(), riskPct: risk, unit: isIdx() ? 100 : 1, start: st0.date, costBps: stratOpts().costBps, market: marketOf(), ml: act.ml && !act.ml.error ? act.ml : null });
+    const ck = `${key}|${act.plan.H}`; if (act.confKey !== ck) { act.confKey = ck; try { act.conf = MCEngine.confluence(D, { H: act.plan.H, costBps: stratOpts().costBps, ppy: isCrypto() ? 365 : 252 }); act.mtfD = MCEngine.mtfDaily(D); } catch (e) { act.conf = { error: e.message }; } mtfLoad(d.symbol); }
+    if (act.conf && act.conf.sel && act.conf.sel.active) act.plan = MCEngine.actionPlan(R, { isIdx: isIdx(), crypto: isCrypto(), strats: act.all.list, votes: act.all.votes, score: state.sig && state.sig.now ? state.sig.now.score : 0,
+      capital: cap / actFx(), riskPct: risk, unit: isIdx() ? 100 : 1, start: st0.date, costBps: stratOpts().costBps, market: marketOf(), ml: act.ml && !act.ml.error ? act.ml : null, sel: act.conf.sel });
     act.plan.when = st0.when; try { trkEval(); act.trk = trkRecord(act.plan); } catch { /* */ }
     const hk = `${key}|${act.mlKey}|${act.plan.H}`; if (act.histKey !== hk) { act.histKey = hk; act.hist = null;
       try { const mlOos = {}; if (act.ml && act.ml.oosP) for (const r of act.ml.oosP) mlOos[r.d] = r.p;
@@ -2889,11 +2929,77 @@
     const dm = $("actDemo"); if (dm) dm.onclick = actToDemo;
     const ds = $("actSell"); if (ds) ds.onclick = () => { const sym = state.data.symbol, p = pp.a.pos[sym]; if (!p) return; openTrade(sym, "sell");
       setTimeout(() => { $("dType").value = "market"; $("dQty").value = isIdx() ? Math.floor(p.units / 100) : p.units; ppPreview(); }, 350); };
-    drawGoal(); drawTrack();
+    drawGoal(); drawTrack(); drawConf();
     if (act.ai && act.aiKey === aiKeyOf()) drawBrief(); else if (act.busy) { /* biarkan status "sedang membaca" */ } else if (act.aiErr) drawAiErr(); else { $("actAi").innerHTML = ""; if (document.body.classList.contains("mode-quick")) runBrief(true); }
   }
   function actToDemo() { const P = act.plan; if (!P) return; openTrade(state.data.symbol, "buy");
-    setTimeout(() => { $("dType").value = "limit"; $("dLimit").value = P.entry; $("dQty").value = P.qty; ppPreview(); $("dQty").scrollIntoView({ block: "center" }); }, 350); }
+    setTimeout(() => { $("dType").value = "limit"; $("dLimit").value = P.entry; $("dQty").value = P.qty; $("dStop").value = P.stop; $("dT1").value = P.t1; $("dT2").value = P.t2; ppPreview(); $("dQty").scrollIntoView({ block: "center" }); }, 350); }
+
+  // ---------- Konfluensi 9 faktor + multi-timeframe ----------
+  const mtfCache = new Map();
+  async function mtfLoad(sym) {
+    const c = mtfCache.get(sym); if (c && Date.now() - c.at < 600e3) { act.mtf = c.v; drawConf(); return; }
+    act.mtf = { loading: true }; let v = { error: "intraday tidak tersedia" };
+    try { const j = await (await apiFetch(`${API}?action=intraday&symbol=${encodeURIComponent(sym)}&interval=60m`)).json();
+      if (j && Array.isArray(j.bars) && j.bars.length >= 40) { const B = j.bars.filter((b) => b && b[4] > 0); const off = j.gmtoffset || 0; v = { h1: MCEngine.mtfTrend(B, 1, off), h4: MCEngine.mtfTrend(B, 4, off), n: B.length }; } else v = { error: (j && j.error) || "data per jam terlalu sedikit" }; } catch (e) { v = { error: e.message }; }
+    mtfCache.set(sym, { at: Date.now(), v }); if (state.data && state.data.symbol === sym) { act.mtf = v; drawConf(); }
+  }
+  function confExtras() { // faktor non-teknikal: hanya kondisi sekarang, tidak ikut uji historis skor
+    const P = act.plan, M = act.ml && !act.ml.error ? act.ml : null, X = [];
+    if (P) { const v = isFinite(P.vRob) ? P.vRob : P.vAll; if (isFinite(v)) X.push(["Strategi " + (isFinite(P.vRob) ? `lolos uji (${P.nRobust})` : `semua (${P.nAll})`), v >= 0.55 ? 1 : v <= 0.4 ? -1 : 0, `${pct(v, 0)} bobot sedang beli`]); }
+    if (M) { X.push([`Machine learning ${M.H} hari`, !M.valid ? 0 : M.p >= 0.55 ? 1 : M.p <= 0.45 ? -1 : 0, `peluang naik ${pct(M.p, 0)} · ${M.valid ? "teruji" : "belum teruji → netral"}`]);
+      if (M.tb) X.push(["Triple barrier (ML)", !M.tb.valid ? 0 : M.tb.p >= M.tb.base + 0.05 ? 1 : M.tb.p <= M.tb.base - 0.05 ? -1 : 0, `menang ${pct(M.tb.p, 0)} vs dasar ${pct(M.tb.base, 0)} · ${M.tb.valid ? "teruji" : "belum teruji → netral"}`]); }
+    const V = act.val || (typeof valEnsemble === "function" ? valEnsemble() : null); if (V && V.methods && V.methods.length) X.push(["Valuasi gabungan", V.upside > 0.2 && V.agree >= 0.6 ? 1 : V.upside < -0.2 && V.agree >= 0.6 ? -1 : 0, `nilai wajar ${fmtNum(V.med)} (${spct(V.upside, 0)}) · ${V.methods.length} metode`]);
+    const N = act.news; if (N) X.push(["Berita 7 hari", N.net > 1 ? 1 : N.net < -1 ? -1 : 0, `${N.nRecent} berita · bersih ${N.net > 0 ? "+" : ""}${N.net}${N.reliable ? " · dampaknya teruji" : ""}`]);
+    if (state.math && state.math.hmm) { const p = state.math.hmm.probHighNow; X.push(["Rezim (HMM)", p < 0.3 ? 1 : p > 0.6 ? -1 : 0, `peluang bergejolak ${pct(p, 0)}`]); }
+    return X;
+  }
+  function selBox(C) {
+    const S = C.sel; if (!S) return ""; const B = S.best, H = C.H;
+    if (!B) return `<div class="cf-sel"><b>Setup A+:</b> belum ada versi yang teruji di aset ini (skor tinggi + tren harian & mingguan naik tidak terbukti lebih sering benar dari peluang dasar ${pct(C.base, 0)}). Keyakinan tinggi yang jujur tidak tersedia untuk aset ini; pertimbangkan aset lain di Watchlist.</div>`;
+    const N = S.need, miss = []; if (N.s < B.thr) miss.push(`skor ≥ +${B.thr} (sekarang ${N.s > 0 ? "+" : ""}${N.s})`); if (N.trend !== 1) miss.push("tren harian naik"); if (N.week !== 1) miss.push("tren mingguan naik");
+    return `<div class="cf-sel ${S.active ? "on" : ""}"><div><b>Setup A+ ${S.active ? '<span class="pos">TERPENUHI</span>' : "belum terpenuhi"}</b> · skor ≥ +${B.thr} dan tren harian & mingguan naik</div>
+      <div>Historis di aset ini: harga naik dalam ${H} hari <b>${pct(B.up, 0)}</b> dari waktu (batas bawah 95% ${pct(B.low, 0)}) vs dasar ${pct(C.base, 0)}, ≈${B.nEff} kejadian independen, muncul ±${nf(1).format(B.perYear)}× per tahun.</div>
+      <div class="note">${S.active ? "Keyakinan Rencana aksi memakai angka ini." : `Yang kurang: ${miss.join(", ")}. Keyakinan tinggi hanya muncul saat semuanya terpenuhi, jadi lebih jarang masuk tapi lebih sering benar.`}</div></div>`;
+  }
+  function drawConf() {
+    const el = $("actConf"); if (!el) return; const C = act.conf, P = act.plan;
+    if (!C || C.error || !P) { el.innerHTML = C && C.error ? `<p class="status err">Konfluensi gagal: ${esc(C.error)}</p>` : ""; return; }
+    const ar = (x) => (x > 0 ? '<b class="pos">▲</b>' : x < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
+    const s = C.sNow, b = C.bNow, X = confExtras(), xs = X.reduce((a, x) => a + x[1], 0), H = C.H;
+    const facRows = C.facs.map((f) => `<tr><td>${esc(f.name)}</td><td class="c">${f.now == null ? '<span class="note">–</span>' : ar(f.now)}</td><td>${f.k === "trend" || f.k === "big" || f.k === "rsi" || f.k === "mom" ? esc(C.why[f.k]) : ""}</td>
+      <td class="num">${isFinite(f.upP) ? pct(f.upP, 0) : "–"} / ${isFinite(f.upM) ? pct(f.upM, 0) : "–"}</td><td class="num ${f.edge > 0.03 ? "pos" : f.edge < -0.03 ? "neg" : ""}">${isFinite(f.edge) ? (f.edge > 0 ? "+" : "") + nf(0).format(f.edge * 100) + " poin" : "–"}</td></tr>`).join("");
+    const bRows = C.buckets.map((x) => `<tr class="${x === b ? "best" : ""}"><td>${x.lab}${x === b ? " ← sekarang" : ""}</td><td class="num">${nf(0).format(x.n)} (≈${x.nEff})</td><td class="num ${x.up - C.base > 0.04 ? "pos" : x.up - C.base < -0.04 ? "neg" : ""}">${isFinite(x.up) ? pct(x.up, 0) : "–"}</td><td class="num">${isFinite(x.ret) ? spct(x.ret, 1) : "–"}</td></tr>`).join("");
+    const M = act.mtf || {}, Dd = act.mtfD || {}, tf = [["Mingguan", Dd.week], ["Harian", Dd.day], ["4 jam", M.h4], ["1 jam", M.h1]];
+    const tfOk = tf.filter(([, x]) => x), nUp = tfOk.filter(([, x]) => x.dir > 0).length, nDn = tfOk.filter(([, x]) => x.dir < 0).length;
+    const tfCells = tf.map(([lab, x]) => `<div class="cf-tf ${x ? (x.dir > 0 ? "up" : x.dir < 0 ? "dn" : "") : "na"}"><div class="k">${lab}</div><div class="v">${x ? (x.dir > 0 ? "▲ naik" : x.dir < 0 ? "▼ turun" : "• datar") : M.loading && /jam/.test(lab) ? "memuat…" : "–"}</div><div class="h">${x && isFinite(x.rsi) ? "RSI " + nf(0).format(x.rsi) : ""}</div></div>`).join("");
+    const mtfTxt = tfOk.length < 2 ? "" : nUp === tfOk.length ? `Semua ${nUp} timeframe searah <b class="pos">naik</b>: kondisi paling bersih untuk beli.` : nDn === tfOk.length ? `Semua ${nDn} timeframe searah <b class="neg">turun</b>: jangan melawan arus.` :
+      Dd.week && Dd.day && Dd.week.dir > 0 && Dd.day.dir < 0 ? "Mingguan naik tapi harian turun: biasanya koreksi dalam tren naik. Tunggu harian/4 jam berbalik naik sebelum masuk." :
+      Dd.week && Dd.day && Dd.week.dir < 0 && Dd.day.dir > 0 ? "Harian naik tapi mingguan turun: kenaikan melawan tren besar. Kalau mau masuk, posisi kecil dan target dekat." : `Campuran: ${nUp} naik, ${nDn} turun, ${tfOk.length - nUp - nDn} datar. Belum ada kesepakatan antar-timeframe.`;
+    const warn = [];
+    if (P.action === "BELI" && s <= 0) warn.push(`Rencana bilang BELI tapi skor konfluensi ${s > 0 ? "+" : ""}${s}: sinyal tidak didukung mayoritas faktor. Kecilkan posisi atau tunggu.`);
+    if (P.action === "BELI" && Dd.week && Dd.week.dir < 0) warn.push("BELI melawan tren mingguan yang turun.");
+    if (P.action === "JUAL" && s >= 4) warn.push(`Rencana bilang JUAL padahal skor konfluensi +${s}: kemungkinan hanya koreksi; pemegang bisa jual bertahap.`);
+    const verdict = C.valid ? `<b class="pos">Teruji di aset ini.</b> Makin tinggi skor, makin sering harga naik dalam ${H} hari (korelasi peringkat ${nf(2).format(C.ic)}, p = ${nf(3).format(C.icP)}, ≈${C.nEff} kejadian independen sejak ${esc(C.from || "")}).`
+      : `<b>Belum terbukti memprediksi di aset ini</b> (korelasi skor–return ${isFinite(C.ic) ? nf(2).format(C.ic) : "–"}${isFinite(C.icP) ? `, p = ${nf(2).format(C.icP)}` : ""}${b && b.nEff < 10 ? `, kejadian skor seperti sekarang hanya ≈${b.nEff}` : ""}). Pakai sebagai checklist, bukan sinyal.`;
+    el.innerHTML = `<div class="cf-h"><h3>Konfluensi & multi-timeframe</h3><span class="note">9 faktor teknikal, bobot sama, ambang tetap (tidak di-fit ke data)</span></div>
+      <div class="cf-top"><div class="cf-score ${s >= 3 ? "up" : s <= -3 ? "dn" : ""}"><div class="note">Skor teknikal</div><div class="big">${s > 0 ? "+" : ""}${s}<small> / ${C.nNow}</small></div><div class="note">${C.facs.filter((f) => f.now > 0).length} naik · ${C.facs.filter((f) => f.now < 0).length} turun</div></div>
+        <div class="cf-hist"><p>Saat skor <b>${b ? b.lab : s}</b> di masa lalu, harga ${H} hari kemudian naik <b>${b && isFinite(b.up) ? pct(b.up, 0) : "–"}</b> dari waktu (rata-rata ${b && isFinite(b.ret) ? spct(b.ret, 1) : "–"} setelah biaya), dibanding peluang dasar <b>${pct(C.base, 0)}</b>.</p><p class="note">${verdict}</p>
+          <div class="cf-tfs">${tfCells}</div><p class="note">${mtfTxt}${M.error ? ` Data per jam: ${esc(M.error)}.` : ""}${isIdx() ? " Data jam saham IDX tertunda ±15 menit." : ""}</p></div></div>
+      ${selBox(C)}
+      ${warn.length ? `<div class="verdict">${warn.join(" ")}</div>` : ""}
+      <details class="cf-more"><summary>Rincian 9 faktor, uji historis per skor, dan faktor lain (${X.length})</summary>
+        <div class="table-wrap"><table class="cf-t"><thead><tr><th>Faktor</th><th>Sekarang</th><th>Keterangan</th><th>Naik ${H}h saat ▲ / saat ▼</th><th>Keunggulan</th></tr></thead><tbody>${facRows}</tbody></table></div>
+        <p class="note">Keunggulan = selisih peluang naik saat faktor ▲ dibanding saat ▼ di riwayat aset ini. Faktor dengan keunggulan negatif justru menyesatkan untuk aset ini.${C.hasV ? "" : " Volume tidak tersedia untuk aset ini, jadi OBV & CMF dilewati."}</p>
+        <div class="table-wrap"><table class="cf-t"><thead><tr><th>Skor</th><th>Hari (≈ independen)</th><th>Naik dalam ${H} hari</th><th>Rata-rata return</th></tr></thead><tbody>${bRows}</tbody></table></div>
+        <div class="subh">Setup A+ per ambang (skor ≥ ambang dan tren harian & mingguan naik)</div>
+        <div class="table-wrap"><table class="cf-t"><thead><tr><th>Ambang skor</th><th>Muncul / tahun</th><th>Kejadian (≈ independen)</th><th>Naik dalam ${H} hari</th><th>Batas bawah 95%</th><th>Teruji</th><th>Sekarang</th></tr></thead><tbody>${C.sel.tiers.map((t) => `<tr class="${C.sel.best === t ? "best" : ""}"><td>≥ +${t.thr}</td><td class="num">${nf(1).format(t.perYear)}</td><td class="num">${t.n} (≈${t.nEff})</td><td class="num">${isFinite(t.up) ? pct(t.up, 0) : "–"}</td><td class="num">${isFinite(t.low) ? pct(t.low, 0) : "–"}</td><td>${t.ok ? '<b class="pos">ya</b>' : "tidak"}</td><td>${t.now ? '<b class="pos">terpenuhi</b>' : "–"}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Teruji = minimal ≈10 kejadian independen, peluang naik ≥ dasar + 5 poin, dan selisihnya signifikan (z ≥ 1,96). Dari ambang yang teruji dipilih yang batas bawah 95%-nya tertinggi. Karena 4 ambang dicoba, angka ini sedikit optimistis.</p>
+        <div class="subh">Faktor lain (kondisi sekarang, tidak ikut uji historis) · bersih ${xs > 0 ? "+" : ""}${xs}</div>
+        <div class="table-wrap"><table class="cf-t"><tbody>${X.map(([k, v, h]) => `<tr><td>${esc(k)}</td><td class="c">${ar(v)}</td><td>${h}</td></tr>`).join("")}</tbody></table></div>
+        <p class="note">Total semua faktor: <b>${s + xs > 0 ? "+" : ""}${s + xs}</b> dari ${C.nNow + X.length}. Model yang belum teruji dihitung netral supaya tidak menambah keyakinan palsu.</p>
+      </details>`;
+  }
   function drawGoal() {
     const P = act.plan, pr = P && P.pr; if (!pr) { $("actGoalOut").innerHTML = ""; return; }
     const cap = Math.max(0, parseFloat($("actCap").value) || 0), goal = Math.max(0, parseFloat($("actGoal").value) || 0), rk = parseFloat($("actRisk").value) || 0.01;
@@ -2921,6 +3027,11 @@
       rencana: { aksi: P.action, keyakinan_aturan: P.conf, dasar: P.basis, mulai: P.when, antre_beli: P.entry, boleh_sampai: P.entryHi, batal_bila_di_atas: P.chase, stop_tutup_di_bawah: P.stop, target1: P.t1, target2: P.t2,
         rr1: rnd(P.rr1, 2), rr2: rnd(P.rr2, 2), risiko_persen: rnd(P.riskPctPx * 100, 3), reward1_persen: rnd(P.rewPct1 * 100, 3), horizon_hari: P.H, order_berlaku_sampai: P.expire, evaluasi_paling_lambat: P.review },
       peluang_bootstrap: { target1_sebelum_stop: rnd(pr.t1, 3), stop_dulu: rnd(pr.stop, 3), belum_kemana: rnd(pr.time, 3), target2: rnd(pr.t2, 3), ekspektasi_R: rnd(pr.expR, 3), peluang_untung: rnd(pr.win, 3) },
+      konfluensi: act.conf && !act.conf.error ? { skor: act.conf.sNow, dari: act.conf.nNow, teruji: act.conf.valid, korelasi_skor_return: rnd(act.conf.ic, 3), p: rnd(act.conf.icP, 3),
+        historis_skor_ini: act.conf.bNow ? { naik: rnd(act.conf.bNow.up, 3), return_rata: rnd(act.conf.bNow.ret, 3), kejadian_independen: act.conf.bNow.nEff } : null, peluang_dasar: rnd(act.conf.base, 3), setup_aplus: act.conf.sel && act.conf.sel.best ? { aktif: act.conf.sel.active, ambang_skor: act.conf.sel.best.thr, naik_historis: rnd(act.conf.sel.best.up, 3), batas_bawah95: rnd(act.conf.sel.best.low, 3), kejadian_independen: act.conf.sel.best.nEff, per_tahun: rnd(act.conf.sel.best.perYear, 2) } : "tidak teruji di aset ini",
+        faktor: Object.fromEntries(act.conf.facs.map((f) => [f.k, { sekarang: f.now, keunggulan_historis: rnd(f.edge, 2) }])),
+        timeframe: { mingguan: act.mtfD && act.mtfD.week.dir, harian: act.mtfD && act.mtfD.day.dir, jam4: act.mtf && act.mtf.h4 ? act.mtf.h4.dir : null, jam1: act.mtf && act.mtf.h1 ? act.mtf.h1.dir : null },
+        faktor_lain: confExtras().map(([k, v, h]) => ({ faktor: k, arah: v, ket: h.replace(/<[^>]+>/g, "") })) } : null,
       akurasi_historis: P.acc && isFinite(P.acc.p) ? { benar: rnd(P.acc.p, 3), dasar_tanpa_sinyal: rnd(P.acc.base, 3), kejadian_independen: P.acc.nInd, aturan: P.acc.rule, bias_in_sample: P.acc.inSample } : "belum cukup data",
       strategi: { lolos_uji: P.nRobust, dari: P.nAll, nama_lolos: P.robust.slice(0, 6).map((x) => x.name), suara_beli_semua: rnd(P.vAll, 2),
         pilih_teratas_walkforward: act.all.wf ? { sharpe: rnd(act.all.wf.s.sharpe, 3), sharpe_beli_tahan: rnd(act.all.wf.b.sharpe, 3) } : null },

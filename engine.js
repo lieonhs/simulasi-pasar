@@ -1611,15 +1611,20 @@
     if (ml && ml.tb && ml.tb.valid && action === "BELI" && ml.tb.p < Math.min(0.3, ml.tb.base - 0.05)) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model triple-barrier (teruji, AUC ${ml.tb.auc.toFixed(2)}) hanya memberi peluang ${(ml.tb.p * 100).toFixed(0)}% kena target sebelum stop`; }
     if (ml && ml.valid && action === "BELI" && ml.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) hanya memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
     if (ml && ml.valid && action === "TAHAN" && voteAction !== "JUAL" && ml.p >= 0.62 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
+    // setup selektif A+ yang teruji di aset ini: boleh menaikkan TAHAN → BELI (bila suara strategi bukan JUAL & ekspektasi positif)
+    const sel = o.sel && o.sel.active && o.sel.best ? o.sel.best : null;
+    if (sel && action === "TAHAN" && voteAction !== "JUAL" && !(pr && pr.expR <= 0) && !(ml && ml.valid && ml.p < 0.45)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena setup A+ terpenuhi (konfluensi ≥ +${sel.thr}, tren harian & mingguan naik), yang historis benar ${(sel.up * 100).toFixed(0)}% dari ≈${sel.nEff} kejadian`; }
     // keyakinan % untuk keputusan akhir: peluang ML terkalibrasi (bila teruji), selain itu akurasi historis
     let confPct = NaN, confSrc = "";
     if (ml && ml.valid) { confPct = action === "JUAL" ? 1 - ml.p : action === "BELI" ? ml.p : Math.max(ml.p, 1 - ml.p) * 0 + (acc && isFinite(acc.p) ? acc.p : NaN); confSrc = action === "TAHAN" ? "akurasi historis" : "model ML terkalibrasi"; }
     if (!isFinite(confPct) && acc && isFinite(acc.p) && acc.voteAction === action) { confPct = acc.p; confSrc = "akurasi historis"; }
+    // setup A+ aktif & teruji: keyakinan = tingkat benar historisnya (diambil batas bawah 95% bila lebih rendah dari bukti lain tidak dipakai)
+    if (sel && action === "BELI" && !(isFinite(confPct) && confPct >= sel.up)) { confPct = sel.up; confSrc = `setup A+ teruji (≈${sel.nEff} kejadian, batas bawah 95% ${(sel.low * 100).toFixed(0)}%)`; }
     // ukuran posisi: risiko maks riskPct dari modal bila stop kena
     const unit = o.unit || 1, cap = o.capital || 0, risk = cap * (o.riskPct ?? 0.01);
     let qty = R > 0 ? risk / R / unit : 0; qty = Math.min(qty, cap / (entry * unit)); qty = isIdx ? Math.floor(qty) : +qty.toFixed(6);
     const start = o.start || addBiz(D.d[n - 1], 1, o.crypto, o.market);
-    return { action, conf, basis, acc, ml, confPct, confSrc, setupsPerYear, voteAction, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
+    return { action, conf: sel && action === "BELI" ? "sedang–tinggi" : conf, basis, acc, ml, confPct, confSrc, sel, setupsPerYear, voteAction, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
       cost: qty * unit * entry, start, expire: addBiz(start, 2, o.crypto, o.market), review: addBiz(start, H, o.crypto, o.market), holUntil: HOL_UNTIL, nRobust: robust.length, robust: robust.map((x) => ({ name: x.name, pos: x.pos, posPrev: x.posPrev, dsr: x.dsr })),
       vRob, vAll, nAll: S.length };
   }
@@ -1644,6 +1649,83 @@
     return { list: out, n: R.length, skipped: out.filter((x) => x.res === "skip").length, ok: avg(R.map((x) => x.ok)), cpPred: avg(C.map((x) => x.cp)), cpAct: avg(C.map((x) => x.ok)), by, buckets, from: out.length ? out[0].d : null, step };
   }
 
+  // ---------- konfluensi: 9 faktor teknikal saling bebas (bobot sama, ambang tetap = tidak di-fit) + uji historis pada aset ini ----------
+  const CONF_F = [["trend", "Tren harian (harga vs MA50 & arahnya)"], ["big", "Tren besar (MA50 vs MA200)"], ["week", "Tren mingguan (vs MA 20 minggu)"], ["mom", "Momentum 3 bulan"],
+    ["rsi", "RSI 14"], ["obv", "Volume (OBV 20 hari)"], ["cmf", "Aliran dana (CMF 20)"], ["pos52", "Posisi di rentang 52 minggu"], ["vol", "Volatilitas (20 hari vs 1 tahun)"]];
+  function confSeries(D) {
+    const n = D.n, c = D.c, h = D.h, l = D.l, v = D.v, ma50 = T.sma(c, 50), ma200 = T.sma(c, 200), rsi = T.rsi(c, 14), hasV = v.filter((x) => x > 0).length > n * 0.8;
+    const F = {}; for (const [k] of CONF_F) F[k] = new Array(n).fill(null);
+    // mingguan kausal: minggu berjalan memakai tutup terakhir yang sudah ada
+    const wk = D.d.map((s) => Math.floor((Date.parse(s.slice(0, 10) + "T00:00:00Z") / 864e5 + 3) / 7)), wc = [];
+    // OBV, CMF, volatilitas
+    const obv = new Array(n).fill(0); for (let i = 1; i < n; i++) obv[i] = obv[i - 1] + (c[i] > c[i - 1] ? v[i] : c[i] < c[i - 1] ? -v[i] : 0);
+    const mfv = c.map((x, i) => (h[i] > l[i] ? ((x - l[i]) - (h[i] - x)) / (h[i] - l[i]) * v[i] : 0)), r = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0));
+    const vol20 = new Array(n).fill(null); for (let i = 20; i < n; i++) { let s = 0, q = 0; for (let j = i - 19; j <= i; j++) { s += r[j]; q += r[j] * r[j]; } vol20[i] = Math.sqrt(Math.max(0, q / 20 - (s / 20) ** 2)); }
+    let sv = 0, sm = 0;
+    for (let t = 0; t < n; t++) {
+      if (!wc.length || wk[t] !== wc[wc.length - 1].k) wc.push({ k: wk[t], c: c[t] }); else wc[wc.length - 1].c = c[t];
+      sv += v[t]; sm += mfv[t]; if (t >= 20) { sv -= v[t - 20]; sm -= mfv[t - 20]; }
+      if (t < 60) continue;
+      const m = ma50[t], m0 = ma50[t - 10];
+      if (m != null && m0 != null) F.trend[t] = c[t] > m && m > m0 ? 1 : c[t] < m && m < m0 ? -1 : 0;
+      if (ma200[t] != null) F.big[t] = ma50[t] > ma200[t] * 1.005 ? 1 : ma50[t] < ma200[t] * 0.995 ? -1 : 0;
+      if (wc.length >= 24) { const L = wc.length, sma = (e) => { let s = 0; for (let j = e - 19; j <= e; j++) s += wc[j].c; return s / 20; }, a = sma(L - 1), b = sma(L - 5), wcl = wc[L - 1].c;
+        F.week[t] = wcl > a && a > b ? 1 : wcl < a && a < b ? -1 : 0; }
+      const r63 = c[t] / c[t - 63] - 1; F.mom[t] = r63 > 0.03 ? 1 : r63 < -0.03 ? -1 : 0;
+      const R = rsi[t]; if (R != null) F.rsi[t] = R >= 50 && R <= 70 ? 1 : R < 50 && R >= 30 ? -1 : 0;
+      if (hasV && t >= 20 && sv > 0) { const ob = (obv[t] - obv[t - 20]) / sv; F.obv[t] = ob > 0.1 ? 1 : ob < -0.1 ? -1 : 0; const cm = sm / sv; F.cmf[t] = cm > 0.05 ? 1 : cm < -0.05 ? -1 : 0; }
+      if (t >= 251) { let hi = -Infinity, lo = Infinity; for (let j = t - 251; j <= t; j++) { if (h[j] > hi) hi = h[j]; if (l[j] < lo) lo = l[j]; } const p = hi > lo ? (c[t] - lo) / (hi - lo) : 0.5; F.pos52[t] = p > 0.8 ? 1 : p < 0.2 ? -1 : 0;
+        const vv = []; for (let j = t - 251; j <= t; j += 5) if (vol20[j] != null) vv.push(vol20[j]); vv.sort((x, y) => x - y); const med = vv[vv.length >> 1], q = vol20[t] / (med || 1); F.vol[t] = q < 0.8 ? 1 : q > 1.5 ? -1 : 0; }
+    }
+    const S = new Array(n).fill(null), N = new Array(n).fill(0);
+    for (let t = 0; t < n; t++) { let s = 0, k = 0; for (const [f] of CONF_F) { const x = F[f][t]; if (x != null) { s += x; k++; } } if (k >= 6) { S[t] = s; N[t] = k; } }
+    return { F, S, N, rsi, ma50, ma200, hasV };
+  }
+  const CONF_B = [[-99, -3, "≤ −3"], [-2, -1, "−2 s/d −1"], [0, 0, "0"], [1, 2, "+1 s/d +2"], [3, 4, "+3 s/d +4"], [5, 99, "≥ +5"]];
+  function confluence(D, o = {}) {
+    const n = D.n, H = Math.max(3, o.H || 10), cost = ((o.costBps ?? 20) * 2) / 1e4, Z = confSeries(D), t1 = n - 1;
+    if (Z.S[t1] == null) return null;
+    const pts = []; for (let t = 260; t < n - H; t++) if (Z.S[t] != null) pts.push({ t, s: Z.S[t], f: D.c[t + H] / D.c[t] - 1 - cost });
+    const up = (L) => (L.length ? L.filter((x) => x.f > 0).length / L.length : NaN), avg = (L) => (L.length ? mean(L.map((x) => x.f)) : NaN);
+    const base = up(pts), buckets = CONF_B.map(([lo, hi, lab]) => { const L = pts.filter((x) => x.s >= lo && x.s <= hi); return { lo, hi, lab, n: L.length, nEff: Math.round(L.length / H), up: up(L), ret: avg(L) }; });
+    // korelasi peringkat (Spearman) skor vs return H hari, uji dengan n efektif = n/H
+    let ic = NaN, icP = NaN; if (pts.length > 100) { const rk = (a) => { const idx = a.map((v, i) => i).sort((x, y) => a[x] - a[y]), r = new Array(a.length); let i = 0; while (i < idx.length) { let j = i; while (j + 1 < idx.length && a[idx[j + 1]] === a[idx[i]]) j++; for (let k = i; k <= j; k++) r[idx[k]] = (i + j) / 2; i = j + 1; } return r; };
+      const a = rk(pts.map((x) => x.s)), b = rk(pts.map((x) => x.f)), ma = mean(a), mb = mean(b); let sab = 0, saa = 0, sbb = 0; for (let i = 0; i < a.length; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+      ic = sab / Math.sqrt(saa * sbb); const ne = Math.max(3, pts.length / H), tt = ic * Math.sqrt((ne - 2) / Math.max(1e-9, 1 - ic * ic)); icP = 2 * (1 - ncdf(Math.abs(tt))); }
+    const facs = CONF_F.map(([k, name]) => { const L = pts.map((p) => ({ x: Z.F[k][p.t], f: p.f })).filter((p) => p.x != null), P = L.filter((p) => p.x > 0), M = L.filter((p) => p.x < 0);
+      const uP = up(P), uM = up(M); return { k, name, now: Z.F[k][t1], nP: P.length, nM: M.length, upP: uP, upM: uM, edge: P.length >= 3 * H && M.length >= 3 * H ? uP - uM : NaN }; });
+    const sNow = Z.S[t1], bNow = buckets.find((b) => sNow >= b.lo && sNow <= b.hi), valid = isFinite(ic) && ic > 0 && icP < 0.05 && bNow && bNow.nEff >= 10;
+    const R = Z.rsi[t1], c = D.c[t1];
+    const why = { trend: Z.F.trend[t1] > 0 ? "harga di atas MA50 yang sedang naik" : Z.F.trend[t1] < 0 ? "harga di bawah MA50 yang sedang turun" : "harga dan arah MA50 tidak sejalan",
+      big: Z.F.big[t1] > 0 ? "MA50 di atas MA200 (golden zone)" : Z.F.big[t1] < 0 ? "MA50 di bawah MA200" : "MA50 menempel MA200",
+      rsi: R != null ? `RSI ${R.toFixed(0)}${R > 70 ? " (jenuh beli: momentum kuat tapi rawan koreksi, dihitung netral)" : R < 30 ? " (jenuh jual: rawan pantulan, dihitung netral)" : ""}` : "",
+      mom: `return 3 bulan ${((c / D.c[t1 - 63] - 1) * 100).toFixed(1)}%` };
+    // setup selektif "A+": hanya ambil sinyal saat skor tinggi DAN tren harian & mingguan sama-sama naik → lebih jarang, tapi diuji apakah lebih sering benar
+    const wil = (p, k) => { if (!(k > 0)) return NaN; const z = 1.96, d = 1 + z * z / k; return (p + z * z / (2 * k) - z * Math.sqrt(p * (1 - p) / k + z * z / (4 * k * k))) / d; };
+    const yrs = Math.max(0.5, pts.length / (o.ppy || 252));
+    const tiers = [3, 4, 5, 6].map((thr) => { const L = pts.filter((p) => p.s >= thr && Z.F.trend[p.t] === 1 && Z.F.week[p.t] === 1);
+      let ent = 0, prev = -99; for (const p of L) { if (p.t - prev > H) ent++; prev = p.t; } // setup baru (tidak tumpang tindih)
+      const u = up(L), ne = Math.round(L.length / H), z = ne > 0 && base > 0 && base < 1 ? (u - base) / Math.sqrt(base * (1 - base) / ne) : NaN;
+      return { thr, n: L.length, nEff: ne, up: u, ret: avg(L), low: wil(u, ne), z, perYear: ent / yrs, ok: ne >= 10 && z >= 1.96 && u >= base + 0.05,
+        now: Z.S[t1] >= thr && Z.F.trend[t1] === 1 && Z.F.week[t1] === 1 }; });
+    const okT = tiers.filter((x) => x.ok), best = okT.length ? okT.reduce((a, b) => (b.low > a.low ? b : a)) : null;
+    const sel = { tiers, best, active: !!(best && best.now), need: best ? { thr: best.thr, s: Z.S[t1], trend: Z.F.trend[t1], week: Z.F.week[t1] } : null };
+    return { H, sNow, nNow: Z.N[t1], max: Z.N[t1], bNow, base, buckets, ic, icP, valid, facs, why, sel, hasV: Z.hasV, nPts: pts.length, nEff: Math.round(pts.length / H), from: pts.length ? D.d[pts[0].t] : null };
+  }
+  // ---------- multi-timeframe dari bar intraday [t,o,h,l,c,v] (detik) ----------
+  function mtfTrend(bars, group = 1, off = 0) {
+    let B = bars; if (group > 1) { B = []; let g = [], day = null; const push = () => { if (g.length) B.push([g[0][0], g[0][1], Math.max(...g.map((x) => x[2])), Math.min(...g.map((x) => x[3])), g[g.length - 1][4], g.reduce((s, x) => s + (x[5] || 0), 0)]); g = []; };
+      for (const b of bars) { const d = Math.floor((b[0] + off) / 86400); if (d !== day || g.length >= group) { push(); day = d; } g.push(b); } push(); } // 4 jam tidak menyeberang hari bursa
+    const c = B.map((b) => b[4]); if (c.length < 30) return null;
+    const e = T.ema(c, 20), r = T.rsi(c, 14), k = c.length - 1, e0 = e[k - 5];
+    const dir = e[k] != null && e0 != null ? (c[k] > e[k] && e[k] > e0 ? 1 : c[k] < e[k] && e[k] < e0 ? -1 : 0) : 0;
+    return { dir, rsi: r[k], px: c[k], ema: e[k], t: B[k][0], n: c.length };
+  }
+  function mtfDaily(D) { const c = D.c, n = D.n, e = T.ema(c, 20), r = T.rsi(c, 14), k = n - 1; const dir = c[k] > e[k] && e[k] > e[k - 5] ? 1 : c[k] < e[k] && e[k] < e[k - 5] ? -1 : 0;
+    const wc = []; let last = null; D.d.forEach((s, i) => { const w = Math.floor((Date.parse(s.slice(0, 10) + "T00:00:00Z") / 864e5 + 3) / 7); if (w !== last) { wc.push(c[i]); last = w; } else wc[wc.length - 1] = c[i]; });
+    const we = T.ema(wc, 20), wr = T.rsi(wc, 14), j = wc.length - 1, wdir = we[j] != null && we[j - 4] != null ? (wc[j] > we[j] && we[j] > we[j - 4] ? 1 : wc[j] < we[j] && we[j] < we[j - 4] ? -1 : 0) : 0;
+    return { day: { dir, rsi: r[k], px: c[k], ema: e[k] }, week: { dir: wdir, rsi: wr[j], px: wc[j], ema: we[j] } }; }
+
   // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
   function goalSim(o) {
     const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5, dep = Math.max(0, o.monthly || 0) * 12 / tpy;
@@ -1664,6 +1746,6 @@
     for (let i = 0; i < 22; i++) { const m = (lo + hi) / 2; if (P(m) >= conf) hi = m; else lo = m; } return hi; }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { STRAT_LIST, actionPlan, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

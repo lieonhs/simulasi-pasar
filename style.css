@@ -616,3 +616,21 @@ body.mode-simple .pro-only-v, body.mode-quick .pro-only-v { display: none !impor
 .tm-tg a { color: var(--dim); cursor: pointer; padding: 0 4px; font-weight: 700; } .tm-tg a.on { background: var(--amb); color: #000; }
 .act-ask { display: flex; gap: 8px; margin-top: 10px; } .act-ask input { flex: 1; }
 .act-qa .q { margin: 10px 0 2px; font-weight: 600; } .act-qa .a { white-space: pre-wrap; line-height: 1.5; }
+/* konfluensi & multi-timeframe */
+.act-conf { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.act-conf:empty { display: none; }
+.cf-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; } .cf-h h3 { margin: 0; font-size: 15px; }
+.cf-top { display: grid; grid-template-columns: 150px 1fr; gap: 14px; margin-top: 10px; align-items: start; }
+.cf-score { border: 1px solid var(--line); border-radius: 10px; padding: 10px; text-align: center; }
+.cf-score .big { font-size: 34px; font-weight: 800; font-family: var(--mono); line-height: 1.1; } .cf-score .big small { font-size: 14px; color: var(--muted); font-weight: 600; }
+.cf-score.up { border-color: var(--good); } .cf-score.up .big { color: var(--good); } .cf-score.dn { border-color: var(--bad); } .cf-score.dn .big { color: var(--bad); }
+.cf-hist p { margin: 0 0 6px; line-height: 1.5; }
+.cf-tfs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 4px; }
+.cf-tf { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; } .cf-tf .k { font-size: 11px; color: var(--muted); } .cf-tf .v { font-weight: 700; font-size: 13px; } .cf-tf .h { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.cf-tf.up { border-color: var(--good); } .cf-tf.up .v { color: var(--good); } .cf-tf.dn { border-color: var(--bad); } .cf-tf.dn .v { color: var(--bad); } .cf-tf.na { opacity: .6; }
+.cf-more { margin-top: 10px; } .cf-more summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.cf-t td.c { text-align: center; } .cf-t td.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+@media (max-width: 640px) { .cf-top { grid-template-columns: 1fr; } .cf-tfs { grid-template-columns: repeat(2, 1fr); } }
+.brk { font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+.cf-sel { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; line-height: 1.5; }
+.cf-sel.on { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }

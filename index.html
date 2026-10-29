@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029090010">
+<link rel="stylesheet" href="style.css?v=20261029094931">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -305,6 +305,11 @@
         <div id="dLimitWrap" hidden><label class="lbl" for="dLimit">Harga limit</label><input id="dLimit" type="number" step="any" min="0"></div>
         <div><label class="lbl" for="dQty" id="dQtyLbl">Jumlah (lot)</label><input id="dQty" type="number" step="any" min="0"></div>
       </div>
+      <div class="grid" id="dBrkWrap">
+        <div><label class="lbl" for="dStop">Stop loss <span class="note">opsional</span></label><input id="dStop" type="number" step="any" min="0" placeholder="jual semua bila ≤"></div>
+        <div><label class="lbl" for="dT1">Target 1 · jual ½</label><input id="dT1" type="number" step="any" min="0" placeholder="opsional"></div>
+        <div><label class="lbl" for="dT2">Target 2 · jual sisa</label><input id="dT2" type="number" step="any" min="0" placeholder="opsional"></div>
+      </div>
       <div id="dPreview" class="verdict"></div>
       <button id="dSend" class="run">Kirim order demo</button>
       <div id="dStatus" class="status"></div>
@@ -312,7 +317,7 @@
         <li><b>Market</b> terisi langsung di harga terakhir. <b>Limit</b> beli terisi bila harga ≤ limit, limit jual bila harga ≥ limit; dicek tiap 60 detik selama web terbuka.</li>
         <li>Fee: saham IDX beli 0,15%, jual 0,25% (termasuk pajak 0,1%); kripto 0,3%; aset lain 0,1%. Saham IDX per lot (100 lembar) dan harga limit dibulatkan ke fraksi BEI.</li>
         <li>Tidak ada short selling dan margin. Aset dolar dihitung ke rupiah dengan kurs USD/IDR terakhir.</li>
-        <li>Hasil demo tidak memperhitungkan slippage dan antrean; di pasar nyata harga isi bisa lebih buruk.</li></ul></details>
+        <li><b>Stop & target otomatis</b> (khusus beli): setelah order terisi, posisi dijaga otomatis. Harga ≤ stop → jual semua. Harga ≥ target 1 → jual ½ lalu stop naik ke harga masuk (impas). Harga ≥ target 2 → jual sisa. Dicek tiap 60 detik selama web terbuka dan diisi di harga yang terlihat saat dicek, jadi bisa lebih buruk dari angka stop bila harga melompat.</li><li>Hasil demo tidak memperhitungkan slippage dan antrean; di pasar nyata harga isi bisa lebih buruk.</li></ul></details>
     </section>
     <div>
       <div class="kpis" id="dKpi"></div>
@@ -585,6 +590,7 @@
     <div class="card price-only act-card" id="actCard" hidden>
       <div class="card-h"><h2>Rencana aksi <span class="tag" id="actTag">beli · jual · tahan</span></h2><span class="note" id="actAsOf"></span></div>
       <div id="actBody"><p class="note">Menyiapkan rencana…</p></div>
+      <div id="actConf" class="act-conf"></div>
       <div class="act-inputs">
         <div><label class="lbl" for="actCap">Modal kamu (Rp)</label><input id="actCap" type="number" min="0" step="1000000" value="10000000"></div>
         <div><label class="lbl" for="actRisk">Risiko per transaksi</label><select id="actRisk"><option value="0.005">0,5% modal</option><option value="0.01" selected>1% modal</option><option value="0.02">2% modal</option><option value="0.05">5% modal (agresif)</option></select></div>
@@ -1017,8 +1023,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029090010";</script>
-<script src="engine.js?v=20261029090010"></script>
-<script src="app.js?v=20261029090010"></script>
+<script>window.APP_V = "20261029094931";</script>
+<script src="engine.js?v=20261029094931"></script>
+<script src="app.js?v=20261029094931"></script>
 </body>
 </html>
