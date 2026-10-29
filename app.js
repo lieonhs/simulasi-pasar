@@ -1191,8 +1191,9 @@
   function setView(v) {
     document.querySelectorAll(".view-btn").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
     $("screenView").hidden = v !== "screen"; $("detailView").hidden = v !== "detail"; $("quantView").hidden = v !== "quant";
-    $("marketView").hidden = v !== "market"; $("pfView").hidden = v !== "pf"; $("tradeView").hidden = v !== "trade";
-    $("focusBar").hidden = v !== "detail";
+    $("marketView").hidden = v !== "market"; $("pfView").hidden = v !== "pf"; $("tradeView").hidden = v !== "trade"; $("termView").hidden = v !== "term";
+    $("focusBar").hidden = v !== "detail"; document.body.classList.toggle("in-term", v === "term");
+    if (v === "term") { stopOB(); stopLive(); tmStart(); return; }
     if (v !== "detail") stopOB();
     if (v === "market") { stopLive(); if (!mk.at || Date.now() - mk.at > 120000) runMarket(); return; }
     if (v === "trade") { stopLive(); mountTicket("trade"); setTradeTab(document.querySelector("#trTabs .seg-btn.active").dataset.t); renderPaper(); refreshPaper(); return; }
@@ -2279,6 +2280,7 @@
   // PANDUAN DALAM BENTUK CHAT
   // =====================================================================
   const KB = [
+    ["terminal f7 launchpad panel monitor bloomberg pro layar banyak", "Terminal (F7)", "Mode Pro saja. Tekan <b>F7</b> atau ketik <code>TERM</code>. 8 panel terhubung: jam dunia & status bursa, montase kuotasi (IHSG, S&P, USD/IDR, emas, minyak, BTC), peta pasar watchlist, monitor watchlist (klik judul kolom untuk urut), grafik 6 bulan, fokus aset (rencana aksi, ML, prediksi), scatter risiko vs return, dan penggerak. Klik satu saham → semua panel ikut; klik ganda → buka Analisis. Data diperbarui tiap 15 detik. Tombol <b>PANEL</b> untuk menyembunyikan panel, □ untuk memperbesar."],
     ["machine learning ml model peluang auc brier kalibrasi", "Machine learning", "Kartu <b>Machine learning</b> di Analisis (perintah <code>ML</code>). Model buatan sendiri (regresi logistik + gradient boosting) menebak apakah harga H hari lagi naik melebihi biaya. Diuji walk-forward di data yang belum pernah dilihat. <b>AUC</b> 0,5 = tebak koin; <b>Teruji</b> bila AUC ≥ 0,53 dan nilai-p &lt; 0,05 serta Brier skill &gt; 0 — hanya model teruji yang boleh mengubah Rencana aksi."],
     ["prediksi harga forecast rentang conformal keyakinan 80 90", "Prediksi harga", "Di kartu Machine learning: titik tengah harga H hari lagi plus rentang 50%/80%/90%. Rentang dibuat dari kesalahan model di data yang belum dilihat (conformal), lalu diuji: kolom <b>teruji</b> menunjukkan seberapa sering harga benar-benar jatuh di rentang itu. Kalau R² ≤ 0, pegang rentangnya, bukan titik tengahnya."],
     ["valuasi gabungan nilai wajar graham residual income ddm murah mahal", "Valuasi gabungan", "Hingga 6 metode: DCF Damodaran, Graham number, residual income, dividend discount (Gordon), P/E wajar, dan laba tahun depan. Median = nilai wajar gabungan; <b>kesepakatan</b> = porsi metode yang setuju murah/mahal. Valuasi menjawab murah atau mahal, bukan kapan naik."],
@@ -2409,6 +2411,7 @@
     document.body.classList.toggle("mode-simple", mode === "simple"); document.body.classList.toggle("mode-quick", mode === "quick");
     $("modeBtn").textContent = mode === "simple" ? "MODE: PEMULA" : mode === "quick" ? "MODE: QUICK" : "MODE: PRO";
     $("modeBtn").title = mode === "simple" ? "Tampilan ringkas untuk pemula. Klik untuk Pro." : mode === "quick" ? "Satu lembar untuk trading cepat: rencana aksi + AI + grafik + order. Klik untuk Pemula." : "Semua fitur tampil. Klik untuk Quick (trading cepat).";
+    if (mode !== "pro" && $("termView") && !$("termView").hidden) setView("screen");
     if (mode === "quick") { if (state.focus && state.focus !== "all") setFocus("all", false); if (act.plan && !$("detailView").hidden) { runBrief(true); window.scrollTo({ top: 0 }); } }
     if (mode === "simple" && ["math", "trust", "quant"].includes(state.focus)) setFocus("all", false);
     try { localStorage.setItem("sp_mode", mode); } catch { /* */ } if (save) saveSettings({ mode });
@@ -2488,10 +2491,10 @@
     FA: ["Laporan keuangan & valuasi", "aset"], N: ["Berita + analisis AI", "aset"], SIG: ["Sinyal beli/jual + backtest", "aset"], MC: ["Proyeksi Monte Carlo/GARCH", "aset"],
     PLAN: ["Rencana jual per lot", "aset"], MATH: ["Lab matematika: Gaussian, Student-t, GMM, HMM, Hurst", "aset"], COMP: ["Perbandingan vs indeks/aset lain", "aset"], OMON: ["Opsi, risiko & metrik hedge fund", "aset"], TRUST: ["Keyakinan model (backtest)", "aset"],
     ALRT: ["Alarm harga", "opsional"], WEI: ["Indeks dunia", ""], WCRS: ["Kurs rupiah", ""], CMDTY: ["Komoditas", ""], GOVT: ["Obligasi & suku bunga", ""], MOST: ["Saham IDX paling aktif", ""],
-    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
+    ECO: ["Kalender ekonomi", ""], SHIP: ["Shipping & freight", ""], W: ["Watchlist", ""], EQS: ["Screener watchlist (tab Sinyal)", ""], PORT: ["Portofolio saya", ""], QL: ["Quant Lab", ""], TOUR: ["Tur pengenalan", ""], DEMO: ["Akun demo (paper trading)", ""], STRAT: ["Uji 50 strategi + noise band", "opsional"], ML: ["Machine learning: peluang naik, prediksi harga, valuasi gabungan, dampak berita", "aset"], ACT: ["Rencana aksi: beli/jual/tahan, harga & waktu", "aset"], QUICK: ["Mode Quick (satu lembar trading cepat)", ""], SETUP: ["Aktifkan persetujuan admin (SQL siap salin + tutorial)", ""], TERM: ["Terminal: 8 panel terhubung (jam dunia, montase, peta pasar, monitor, fokus, grafik, scatter, penggerak)", ""], BUY: ["Tiket beli demo untuk aset ini", "aset"], SELL: ["Tiket jual demo untuk aset ini", "aset"], HELP: ["Daftar perintah", ""],
   };
   const FN_ALIAS = { G: "GP", GPC: "GP", GPO: "GP", INTRA: "GIP", NEWS: "N", CN: "N", TOP: "SHIP", FRT: "SHIP", FREIGHT: "SHIP", FXIP: "WCRS", FX: "WCRS", GLCO: "CMDTY", WB: "GOVT", BOND: "GOVT",
-    CAL: "ECO", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
+    CAL: "ECO", LP: "TERM", BLP: "TERM", LAUNCHPAD: "TERM", TERMINAL: "TERM", AI: "ML", FORECAST: "ML", PREDIKSI: "ML", VALUASI: "FA", RENCANA: "ACT", PLANAKSI: "ACT", Q: "QUICK", APPROVAL: "SETUP", ADMIN: "SETUP", BT: "STRAT", BACKTEST: "STRAT", NOISE: "STRAT", B: "BUY", S: "SELL", PAPER: "DEMO", TRADE: "DEMO", GAUSS: "MATH", HMM: "MATH", REGIME: "MATH", STAT: "MATH", PRTU: "PORT", PF: "PORT", BETA: "COMP", RV: "COMP", OV: "OMON", GF: "MC", FCST: "MC", DVD: "DES", RELS: "DES", WL: "W", MON: "W", ALERT: "ALRT", "?": "HELP", MENU: "MENU" };
   const YELLOW = new Set(["EQUITY", "EQ", "IJ", "INDEX", "CURNCY", "CMDTY", "COMDTY", "GOVT", "CORP", "GO"]);
   function normTicker(t, us) { t = t.toUpperCase(); if (us) return t;
     const al = ALIASES.find(([k]) => k === t.toLowerCase()); if (al) return al[1];
@@ -2513,6 +2516,7 @@
     if (fn === "HELP") return showHelp();
     if (fn === "TOUR") { closeFn(); return startTour(); }
     if (fn === "SETUP") return showApprovalSetup();
+    if (fn === "TERM") { closeFn(); if (document.body.classList.contains("mode-simple") || document.body.classList.contains("mode-quick")) applyMode("pro"); if (sym) tm.sel = sym; setView("term"); return; }
     if (fn === "QUICK") { closeFn(); applyMode("quick"); if (sym && sym !== state.symbol) await openDetail(sym); else setView("detail"); return; }
     if (fn === "ALRT") return showAlerts(sym);
     const market = { WEI: "mkIdx", WCRS: "mkFx", CMDTY: "mkCmd", GOVT: "mkBond", MOST: "mkMov", ECO: "mkCal", SHIP: "shipCard" };
@@ -2679,7 +2683,7 @@
     themeBtnLbl();
     attachAC($("cmdQ"), { onPick: (sym) => runCommand(sym) }); bindBbg();
     $("tape").addEventListener("click", (e) => { const t = e.target.closest(".tape-item[data-s]"); if (t) openDetail(t.dataset.s); });
-    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf", F6: "trade" }, k = e.altKey && /^[1-6]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf", "trade"][+e.key - 1] : map[e.key];
+    document.addEventListener("keydown", (e) => { const map = { F1: "screen", F2: "quant", F3: "detail", F4: "market", F5: "pf", F6: "trade", F7: "term" }, k = e.altKey && /^[1-7]$/.test(e.key) ? ["screen", "quant", "detail", "market", "pf", "trade", "term"][+e.key - 1] : map[e.key];
       if (k && $("authGate").hidden) { e.preventDefault(); setView(k); }
       if (e.key === "/" && document.activeElement && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $("cmdQ").focus(); } });
     tickClock(); setInterval(tickClock, 1000); updateTape(); setInterval(updateTape, 60000);
@@ -2812,7 +2816,8 @@
       try { // ML memakai riwayat terpanjang (10 tahun) terlepas dari rentang analisis yang dipilih
         const news = await newsHist(d.symbol);
         let DM = D, vote = act.all.votes.all; if (D.n < 2000) { try { const dl = await fetchSymbol(d.symbol, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) { DM = D2; vote = null; } } catch { /* pakai data yang ada */ } }
-        const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map } }); M.newsInfo = news; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
+        const ext = await mlExt(d.symbol);
+        const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map, ext } }); M.newsInfo = news; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
         if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; } // jangkarkan ke harga terkini
         act.ml = M; }
       catch (e) { if (act.mlKey !== mk) return; act.ml = { error: e.message }; }
@@ -2998,6 +3003,9 @@
       top: rec.slice(0, 6).map((x) => { const ai = aiOf(x); return { judul: x.title.slice(0, 140), tanggal: new Date(x.time * 1000).toISOString().slice(0, 10), arah: ai ? ai.arah : x.sent && x.sent.score > 0 ? "naik" : x.sent && x.sent.score < 0 ? "turun" : "netral", reaksi_abnormal: x.ar != null ? +(x.ar * 100).toFixed(2) : null }; }) };
   }
   // ---------- Machine learning (kartu) ----------
+  // data lintas pasar untuk ML: indeks acuan, kurs, VIX (riwayat 10 tahun)
+  async function mlExt(sym) { const L = /\.JK$/i.test(sym) ? [["^JKSE", "IHSG"], ["IDR=X", "USD/IDR"]] : /-USDT?$/i.test(sym) || isCrypto() ? [["BTC-USD", "Bitcoin"], ["^GSPC", "S&P 500"]] : [["^GSPC", "S&P 500"], ["^VIX", "VIX"]];
+    const out = []; for (const [s, name] of L) { if (s === sym) continue; try { const d = await fetchSymbol(s, "10y"); out.push({ name, map: Object.fromEntries(d.dates.map((x, i) => [x, d.values[i]])) }); } catch { /* lewati */ } } return out; }
   const nhCache = new Map();
   async function newsHist(sym) { const c = nhCache.get(sym); if (c && Date.now() - c.at < 600e3) return c.v;
     let v = { map: null, days: 0, installed: false, from: null };
@@ -3010,17 +3018,20 @@
     const st = M.valid ? '<span class="pill pos">teruji — ikut menentukan Rencana aksi</span>' : '<span class="pill">belum teruji — hanya informasi</span>';
     const k = (a, b, c, hl) => `<div class="kpi ${hl ? "hl" : ""}"><div class="k">${a}</div><div class="v">${b}</div><div class="h">${c}</div></div>`;
     const maxAcc = Math.max(M.base, 1 - M.base);
-    $("mlBody").innerHTML = `<div class="act-tiles">${k(`Peluang naik > biaya dalam ${M.H} hari`, pct(M.p, 0), `logistik ${pct(M.pLog, 0)} · boosting ${pct(M.pGb, 0)} (sebelum kalibrasi)`, M.valid)}
-        ${k("AUC out-of-sample", nf(3).format(M.auc), `nilai-p ${nf(3).format(M.aucP)} · logistik ${nf(2).format(M.aucLog)} · boosting ${nf(2).format(M.aucGb)}`)}
+    $("mlBody").innerHTML = `<div class="act-tiles">${k(`Peluang naik > biaya dalam ${M.H} hari`, pct(M.p, 0), `logistik ${pct(M.pLog, 0)} · boosting ${pct(M.pGb, 0)} · pola mirip ${pct(M.pKnn, 0)} (sebelum kalibrasi)`, M.valid)}
+        ${k("AUC out-of-sample (gabungan)", nf(3).format(M.auc), `nilai-p ${nf(3).format(M.aucP)} · ${M.nFeat} fitur${M.ext && M.ext.length ? " + " + esc(M.ext.join(", ")) : ""}`)}
         ${k("Brier skill", spct(M.bss, 1), "> 0 = lebih baik dari menebak rata-rata")}
         ${k("Akurasi", pct(M.acc, 0), `patokan selalu-tebak-mayoritas ${pct(maxAcc, 0)}`)}
         ${k("Data uji", `${nf(0).format(M.nOos)} hari`, `≈ ${M.nEff} sampel independen · sejak ${M.from} · dilatih ${nf(0).format(M.nTrain)} hari (±${nf(0).format(M.yrs || 0)} th)`)}</div>
       <p class="note" style="margin:8px 0 0">Berita sebagai fitur: ${M.newsUsed ? `<b class="pos">dipakai</b> — ${nf(0).format(M.newsDays)} hari bursa punya data sentimen (sejak ${esc(M.newsInfo && M.newsInfo.from || "")}).` : M.newsInfo && M.newsInfo.installed ? `belum dipakai — baru ${nf(0).format(M.newsDays)} hari riwayat berita (butuh ≥ 60). Riwayat terisi otomatis tiap kali berita aset ini dibuka (±6 bulan sekaligus dari Google News), jadi segera cukup.` : "belum dipakai — tabel riwayat berita belum dipasang (jalankan SQL di perintah SETUP)."}</p>
       <p style="margin:10px 0 0">Status: ${st}. ${M.valid ? `Model menemukan pola yang <b>bertahan di data yang belum pernah dilihatnya</b> untuk aset ini.` : `Pada data yang belum pernah dilihatnya, model <b>belum lebih baik secara meyakinkan</b> daripada tebakan dasar (${pct(M.base, 0)} hari naik). Itu hasil yang jujur — kebanyakan harga memang sulit ditebak.`}</p>
+      <div class="subh">Perbandingan model (semua diuji di data yang belum pernah dilihatnya)</div>
+      <div class="table-wrap"><table><thead><tr><th>Model</th><th>AUC out-of-sample</th><th>Bobot di gabungan</th></tr></thead><tbody>${(M.models || []).map(([nm, a, w]) => `<tr><td>${esc(nm)}</td><td class="${a >= 0.53 ? "pos" : a < 0.5 ? "neg" : ""}">${nf(3).format(a)}</td><td>${pct(w, 0)}</td></tr>`).join("")}
+        <tr class="best"><td><b>Gabungan (stacking)</b></td><td><b>${nf(3).format(M.auc)}</b></td><td>bobot dipelajari dari periode sebelumnya saja</td></tr></tbody></table></div>
       <div class="ml-grid"><div><div class="subh">Kalibrasi: peluang yang diberikan vs yang terjadi</div><div class="chart-box" style="height:200px"><canvas id="mlCal"></canvas></div>
           <p class="note">Kalau titik-titik mendekati garis diagonal, angka "${pct(M.p, 0)}" bisa dibaca apa adanya.</p></div>
-        <div><div class="subh">Fitur paling berpengaruh</div><div class="ml-imp">${M.imp.slice(0, 8).map((f) => `<span>${esc(f.name)}</span><span><i class="${f.dir < 0 ? "neg" : ""}" style="width:${Math.max(4, (f.v / M.imp[0].v) * 100).toFixed(0)}%"></i></span><span class="note">${f.dir > 0 ? "↑ naik" : f.dir < 0 ? "↓ turun" : ""}</span>`).join("")}</div>
-          <p class="note">Biru: nilai fitur yang lebih tinggi menaikkan peluang (menurut regresi logistik); merah: menurunkan. Panjang batang = seberapa banyak model memakai fitur itu.</p></div></div>
+        <div><div class="subh">Fitur paling berpengaruh (uji permutasi)</div><div class="ml-imp">${M.imp.slice(0, 10).map((f) => `<span>${esc(f.name)}</span><span><i class="${f.dir < 0 ? "neg" : ""}" style="width:${Math.max(3, (Math.max(0, f.v) / Math.max(1e-6, M.imp[0].v)) * 100).toFixed(0)}%"></i></span><span class="note">${f.v > 0 ? "−" + nf(3).format(f.v) : "0"} AUC</span>`).join("")}</div>
+          <p class="note">Panjang batang = seberapa turun AUC kalau fitur itu diacak di data uji (makin panjang, makin diandalkan). Biru: nilai lebih tinggi menaikkan peluang; merah: menurunkan. Fitur dengan 0 tidak membantu dan bisa diabaikan.</p></div></div>
       ${M.bt ? `<div class="subh">Kalau dipakai trading (out-of-sample sejak ${M.bt.from}): pegang besok bila peluang &gt; 50%</div>
         <div class="table-wrap"><table><thead><tr><th></th><th>Return</th><th>CAGR</th><th>Sharpe</th><th>Max DD</th></tr></thead><tbody>
           <tr><td>Strategi ML (setelah biaya)</td><td>${pc(M.bt.s.total)}</td><td>${pc(M.bt.s.cagr)}</td><td class="${M.bt.s.sharpe > M.bt.b.sharpe ? "pos" : "neg"}">${nf(2).format(M.bt.s.sharpe)}</td><td>${pct(M.bt.s.maxDD)}</td></tr>
@@ -3122,6 +3133,116 @@
       $("sqlCheck").disabled = false; const okk = me && !me._nodb;
       $("sqlState").innerHTML = okk ? `<span class="pos">aktif</span> · peranmu: ${me.role === "admin" ? "ADMIN" : esc(me.role)}` : '<span class="neg">belum aktif</span> — cek lagi apakah Run berhasil tanpa error merah';
       if (okk) { $("cmdUser").textContent = (me.name || (session.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); if (me.role === "admin") refreshAdminBadge(); toast("Persetujuan admin aktif."); } };
+  }
+
+  // =====================================================================
+  // TERMINAL (mode Pro): banyak panel terhubung, data diperbarui tiap 15 detik
+  // =====================================================================
+  const tm = { q: {}, h: {}, sel: null, timer: null, sort: "pc", dir: -1, prev: {}, busy: false, at: 0 };
+  const TM_MONT = [["^JKSE", "IHSG"], ["^JKLQ45", "LQ45"], ["^GSPC", "S&P 500"], ["^IXIC", "Nasdaq"], ["IDR=X", "USD/IDR"], ["GC=F", "Emas"], ["CL=F", "Minyak WTI"], ["BTC-USD", "Bitcoin"]];
+  const TM_CLK = [["Jakarta", "Asia/Jakarta", 540, 960, "IDX"], ["Tokyo", "Asia/Tokyo", 540, 900], ["Hong Kong", "Asia/Hong_Kong", 570, 960], ["Singapura", "Asia/Singapore", 540, 1020],
+    ["London", "Europe/London", 480, 990], ["New York", "America/New_York", 570, 960, "US"], ["Sydney", "Australia/Sydney", 600, 960]];
+  const TM_PANELS = [["clk", "Jam dunia"], ["mont", "Montase kuotasi"], ["map", "Peta pasar"], ["mon", "Monitor"], ["foc", "Fokus"], ["sc", "Scatter risiko"], ["gr", "Grafik"], ["mov", "Penggerak"]];
+  const tmWatch = () => [...new Set($("wlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))].slice(0, 30);
+  const tmName = (s) => { const m = TM_MONT.find((x) => x[0] === s); return m ? m[1] : s.replace(/\.JK$/, ""); };
+  const fx2 = (v) => (v == null || !isFinite(v) ? "–" : Math.abs(v) >= 1000 ? nf(0).format(v) : Math.abs(v) >= 10 ? nf(2).format(v) : nf(4).format(v));
+  function tmLine(arr, w = 300, h = 70, col) { if (!arr || arr.length < 2) return ""; const mn = Math.min(...arr), mx = Math.max(...arr), sx = w / (arr.length - 1), sy = mx > mn ? (h - 6) / (mx - mn) : 0;
+    const pts = arr.map((v, i) => `${(i * sx).toFixed(1)},${(h - 3 - (v - mn) * sy).toFixed(1)}`).join(" "), c = col || (arr[arr.length - 1] >= arr[0] ? "#19c37d" : "#ff4d4f");
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polygon points="0,${h} ${pts} ${w},${h}" fill="${c}" opacity=".12"/><polyline fill="none" stroke="${c}" stroke-width="1.4" points="${pts}" vector-effect="non-scaling-stroke"/></svg>`; }
+  function tmStats(s) { const d = tm.h[s]; if (!d || !d.values || d.values.length < 30) return null; if (d._st) return d._st;
+    const v = d.values, n = v.length, c = v[n - 1], r = (k) => (n > k ? c / v[n - 1 - k] - 1 : NaN), lr = []; for (let i = Math.max(1, n - 63); i < n; i++) lr.push(Math.log(v[i] / v[i - 1]));
+    const ma = (k) => MCEngine.mean(v.slice(-k)), rsiA = (() => { let g = 0, l = 0; for (let i = n - 14; i < n; i++) { const x = v[i] - v[i - 1]; if (x > 0) g += x; else l -= x; } return 100 - 100 / (1 + g / (l || 1e-9)); })();
+    const oh = d.ohlc || [], val = oh.length ? MCEngine.mean(oh.slice(-20).map((b) => (b[5] || 0) * b[4])) : 0, hi = Math.max(...v.slice(-252)), lo = Math.min(...v.slice(-252));
+    const m20 = ma(20), m50 = ma(50), tr = c > m50 && m20 > m50 && rsiA < 75 ? "BELI" : c < m50 && m20 < m50 ? "JUAL" : "TAHAN";
+    return (d._st = { r1m: r(21), r3m: r(63), vol: MCEngine.std(lr) * Math.sqrt(252), rsi: rsiA, val, hi, lo, pHi: c / hi - 1, tr, spark: v.slice(-63), six: v.slice(-126) }); }
+  async function tmLoadHist(list) { await pool(list.filter((s) => !tm.h[s]), 4, async (s) => { try { tm.h[s] = await fetchSymbol(s, "1y"); } catch { tm.h[s] = { error: true }; } }); }
+  async function tmRefresh(full = false) {
+    if (tm.busy || $("termView").hidden) return; tm.busy = true;
+    try { const W = tmWatch(), all = [...new Set([...W, ...TM_MONT.map((x) => x[0])])]; if (!tm.sel) tm.sel = (state.data && state.data.symbol) || W[0] || "^JKSE";
+      const q = await quotesFor(all); for (const k in q) { tm.prev[k] = tm.q[k] ? tm.q[k].price : null; tm.q[k] = q[k]; } tm.at = Date.now();
+      $("tmUpd").textContent = new Date().toLocaleTimeString("id-ID", { hour12: false });
+      tmDraw(); if (full || Object.keys(tm.h).length < all.length) { await tmLoadHist([tm.sel, ...all]); tmDraw(); } }
+    finally { tm.busy = false; } }
+  function tmDraw() { tmClock(); tmMont(); tmMon(); tmMap(); tmGrid(); tmFocus(); tmScatter(); tmMovers(); $("tmLink").textContent = tm.sel || "—"; }
+  function tmClock() { const now = new Date();
+    $("tmClk").innerHTML = TM_CLK.map(([city, tz, o, c, mkt]) => { const f = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false }).formatToParts(now),
+        g = (t) => (f.find((x) => x.type === t) || {}).value, hh = +g("hour") % 24, mm = +g("minute"), wd = g("weekday"), day = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now), min = hh * 60 + mm;
+      const wk = !["Sat", "Sun"].includes(wd) && !(mkt && MCEngine.isHoliday(day, mkt)), st = wk && min >= o && min < c ? ["open", "BUKA"] : wk && min >= o - 60 && min < o ? ["pre", "PRA"] : ["closed", wk ? "TUTUP" : "LIBUR"];
+      return `<div class="ck"><div><div class="t">${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}</div><div class="c">${city} · ${wd}</div></div><span class="st ${st[0]}">${st[1]}</span></div>`; }).join(""); }
+  function tmMont() { $("tmMont").innerHTML = `<div class="mt-grid">${TM_MONT.map(([s, nm]) => { const q = tm.q[s], ch = qChg(q), k = !isFinite(ch) ? "flat" : ch > 0.0005 ? "up" : ch < -0.0005 ? "dn" : "flat";
+      const fl = q && tm.prev[s] != null && q.price !== tm.prev[s] ? (q.price > tm.prev[s] ? "fl-u" : "fl-d") : "";
+      return `<div class="mt ${k}" data-tl="${s}"><div class="n"><span>${nm}</span><span>${q && q.open ? "●" : ""}</span></div><div class="v ${fl}">${q ? fx2(q.price) : "…"}</div><div class="d ${ch >= 0 ? "tm-u" : "tm-d"}">${q && q.prevClose ? `${ch >= 0 ? "+" : ""}${fx2(q.price - q.prevClose)}  ${spct(ch, 2)}` : ""}</div></div>`; }).join("")}</div>`; }
+  function tmRows() { return tmWatch().map((s) => { const q = tm.q[s], st = tmStats(s); return { s, q, st, px: q ? q.price : NaN, ch: q && q.prevClose ? q.price - q.prevClose : NaN, pc: qChg(q), vol: q ? q.volume : NaN,
+      val: st ? st.val : NaN, r1m: st ? st.r1m : NaN, r3m: st ? st.r3m : NaN, v3: st ? st.vol : NaN, rsi: st ? st.rsi : NaN, phi: st ? st.pHi : NaN, tr: st ? st.tr : "" }; }); }
+  function tmMon() { const R = tmRows(), k = tm.sort; R.sort((a, b) => ((isFinite(b[k]) ? b[k] : -1e99) - (isFinite(a[k]) ? a[k] : -1e99)) * (tm.dir < 0 ? 1 : -1));
+    const C = [["s", "Ticker"], ["px", "Last"], ["ch", "Chg"], ["pc", "%Chg"], ["vol", "Volume"], ["val", "Nilai/hr"], ["r1m", "1B"], ["r3m", "3B"], ["v3", "Vol 3B"], ["rsi", "RSI"], ["phi", "vs 52mg"], ["tr", "Tren"], ["sp", "3 bulan"]];
+    const cc = (v) => (!isFinite(v) ? "" : v > 0 ? "cu" : v < 0 ? "cd" : "");
+    $("tmMon").innerHTML = `<table class="tm-t"><thead><tr>${C.map(([c, n]) => `<th data-ts="${c}">${n}${c === k ? (tm.dir < 0 ? " ▼" : " ▲") : ""}</th>`).join("")}</tr></thead><tbody>${R.map((r) => {
+      const fl = r.q && tm.prev[r.s] != null && r.q.price !== tm.prev[r.s] ? (r.q.price > tm.prev[r.s] ? "fl-u" : "fl-d") : "";
+      return `<tr data-tl="${r.s}" class="${r.s === tm.sel ? "sel" : ""}"><td><span class="sym">${esc(tmName(r.s))}</span></td><td class="${fl}">${fx2(r.px)}</td><td class="${r.ch >= 0 ? "u" : "d"}">${isFinite(r.ch) ? (r.ch > 0 ? "+" : "") + fx2(r.ch) : "–"}</td>
+        <td class="${cc(r.pc)}">${spct(r.pc, 2)}</td><td>${big(r.vol)}</td><td>${big(r.val)}</td><td class="${cls(r.r1m)}">${spct(r.r1m, 1)}</td><td class="${cls(r.r3m)}">${spct(r.r3m, 1)}</td><td>${pct(r.v3, 0)}</td>
+        <td class="${r.rsi > 70 ? "d" : r.rsi < 30 ? "u" : ""}">${isFinite(r.rsi) ? nf(0).format(r.rsi) : "–"}</td><td class="${cls(r.phi)}">${spct(r.phi, 1)}</td><td>${r.tr ? `<span class="sig-b ${r.tr === "BELI" ? "b" : r.tr === "JUAL" ? "s" : "h"}">${r.tr}</span>` : ""}</td>
+        <td style="width:90px">${r.st ? tmLine(r.st.spark, 90, 18) : ""}</td></tr>`; }).join("")}</tbody></table>`; }
+  function squarify(items, x, y, w, h) { // treemap "squarified" (Bruls dkk.)
+    const out = [], total = items.reduce((a, b) => a + b.v, 0) || 1, sc = (w * h) / total; let rest = items.map((it) => ({ ...it, a: it.v * sc }));
+    while (rest.length) { const short = Math.min(w, h); let row = [], best = Infinity;
+      for (const it of rest) { const r2 = [...row, it], s2 = r2.reduce((a, b) => a + b.a, 0), worst = Math.max(...r2.map((z) => Math.max((short * short * z.a) / (s2 * s2), (s2 * s2) / (short * short * z.a)))); if (worst > best) break; best = worst; row = r2; }
+      const s2 = row.reduce((a, b) => a + b.a, 0), th = s2 / short; let off = 0;
+      for (const it of row) { const len = it.a / th; if (w >= h) out.push({ ...it, x, y: y + off, w: th, h: len }); else out.push({ ...it, x: x + off, y, w: len, h: th }); off += len; }
+      if (w >= h) { x += th; w -= th; } else { y += th; h -= th; } rest = rest.slice(row.length); }
+    return out; }
+  function tmMap() { const el = $("tmMap"), W = el.clientWidth || 400, H = Math.max(180, el.clientHeight - 8);
+    const R = tmRows().filter((r) => isFinite(r.pc)).map((r) => ({ s: r.s, pc: r.pc, v: isFinite(r.val) && r.val > 0 ? r.val : 1 })).sort((a, b) => b.v - a.v);
+    if (!R.length) { el.innerHTML = '<p class="tm-dim">Menunggu kuotasi…</p>'; return; } const sumV = R.reduce((a, b) => a + b.v, 0); R.forEach((r) => (r.v = Math.max(r.v, sumV * 0.01)));
+    const col = (p) => { const k = Math.min(1, Math.abs(p) / 0.03); return p >= 0 ? `rgb(${Math.round(20 - 10 * k)},${Math.round(70 + 110 * k)},${Math.round(45 + 40 * k)})` : `rgb(${Math.round(80 + 150 * k)},${Math.round(30 - 10 * k)},${Math.round(35 - 10 * k)})`; };
+    el.innerHTML = `<div class="tm-map" style="height:${H}px">${squarify(R, 0, 0, W - 8, H).map((b) => `<div data-tl="${b.s}" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;background:${col(b.pc)}">${b.w > 40 && b.h > 22 ? `<b>${esc(tmName(b.s))}</b>${spct(b.pc, 2)}` : ""}</div>`).join("")}</div>`; }
+  function tmGrid() { const L = [tm.sel, "^JKSE", "^GSPC", "IDR=X", "GC=F", "BTC-USD"].filter((s, i, a) => s && a.indexOf(s) === i).slice(0, 6);
+    $("tmGr").innerHTML = `<div class="gr-grid">${L.map((s) => { const st = tmStats(s), q = tm.q[s], ch = st ? st.six[st.six.length - 1] / st.six[0] - 1 : NaN;
+      return `<div class="gr" data-tl="${s}"><div class="h"><span>${esc(tmName(s))} ${q ? fx2(q.price) : ""}</span><span class="${ch >= 0 ? "tm-u" : "tm-d"}">6B ${spct(ch, 1)}</span></div>${st ? tmLine(st.six, 300, 70) : '<p class="tm-dim">memuat…</p>'}</div>`; }).join("")}</div>`; }
+  function tmFocus() { const s = tm.sel; if (!s) return; const q = tm.q[s], st = tmStats(s), ch = qChg(q), P = act.plan && state.data && state.data.symbol === s ? act.plan : null, M = P && P.ml;
+    $("tmFocT").textContent = `${s} · ${(tm.h[s] && tm.h[s].name) || ""}`;
+    const kv = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+    $("tmFoc").innerHTML = `<div class="foc-h"><span class="px">${q ? fx2(q.price) : "…"}</span><span class="${ch >= 0 ? "tm-u" : "tm-d"}">${spct(ch, 2)}</span>${P ? `<span class="foc-act ${P.action}">${P.action}</span><span class="tm-dim">keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}</span>` : ""}</div>
+      ${st ? `<div class="gr" style="border:0;padding:0">${tmLine(st.six, 400, 60)}</div>` : ""}
+      <div class="foc-kv">${P ? kv("Antre beli", fmtNum(P.entry)) + kv("Stop (tutup <)", fmtNum(P.stop)) + kv("Target 1 / 2", `${fmtNum(P.t1)} / ${fmtNum(P.t2)}`) + kv(`ML naik ${M ? M.H + "h" : ""}`, M ? `${pct(M.p, 0)} ${M.valid ? "✓" : "·"}` : "–") +
+          kv("Prediksi 80%", act.ml && act.ml.fc ? `${fmtNum(act.ml.fc.bands[1].lo)}–${fmtNum(act.ml.fc.bands[1].hi)}` : "–") + kv("Evaluasi", fmtDay(P.review)) : ""}
+        ${st ? kv("52 mg", `${fx2(st.lo)}–${fx2(st.hi)}`) + kv("RSI 14", nf(0).format(st.rsi)) + kv("Vol 3B", pct(st.vol, 0)) + kv("1 / 3 bulan", `${spct(st.r1m, 1)} / ${spct(st.r3m, 1)}`) : ""}</div>
+      ${P ? "" : `<p class="tm-dim" style="margin:6px 0 0">Rencana aksi, ML & prediksi muncul setelah aset ini dianalisis.</p>`}
+      <div class="fn-actions" style="margin-top:6px"><button class="tm-btn" data-cmd="${esc(s)}">ANALISIS F3 ⟶</button><button class="tm-btn" data-cmd="${esc(s)} ML">ML</button><button class="tm-btn" data-cmd="${esc(s)} STRAT">STRAT</button><button class="tm-btn" data-cmd="${esc(s)} BUY">BELI DEMO</button></div>
+      ${state.news && state.data && state.data.symbol === s ? `<div class="tm-news">${state.news.slice(0, 5).map((x) => `<a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)} <em>${esc(x.publisher || "")}</em></a>`).join("")}</div>` : ""}`; }
+  function tmScatter() { const R = tmRows().filter((r) => isFinite(r.v3) && isFinite(r.r3m)); const el = $("tmSc"); if (R.length < 2) { el.innerHTML = '<p class="tm-dim">Memuat riwayat harga…</p>'; return; }
+    const W = Math.max(260, el.clientWidth - 8), H = Math.max(180, el.clientHeight - 10), P = 26, xs = R.map((r) => r.v3), ys = R.map((r) => r.r3m), x0 = 0, x1 = Math.max(...xs) * 1.1, y0 = Math.min(0, ...ys) * 1.1, y1 = Math.max(0, ...ys) * 1.1 || 0.1;
+    const X = (v) => P + ((v - x0) / (x1 - x0 || 1)) * (W - P - 6), Y = (v) => 6 + (1 - (v - y0) / (y1 - y0 || 1)) * (H - P - 6);
+    el.innerHTML = `<div class="tm-sc"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><line x1="${P}" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" stroke="#333"/><line x1="${P}" x2="${P}" y1="0" y2="${H - P}" stroke="#333"/>
+      <text x="${W - 4}" y="${H - 8}" text-anchor="end">volatilitas 3 bln →</text><text x="${P + 4}" y="12">return 3 bln ↑</text>
+      ${R.map((r) => `<g data-tl="${r.s}" style="cursor:pointer"><circle cx="${X(r.v3)}" cy="${Y(r.r3m)}" r="${r.s === tm.sel ? 6 : 4}" fill="${r.r3m >= 0 ? "#19c37d" : "#ff4d4f"}" stroke="${r.s === tm.sel ? "#ffa028" : "none"}" stroke-width="2"/><text x="${X(r.v3) + 6}" y="${Y(r.r3m) + 3}">${esc(tmName(r.s))}</text></g>`).join("")}</svg></div>`; }
+  function tmMovers() { const R = tmRows().filter((r) => isFinite(r.pc)), up = R.slice().sort((a, b) => b.pc - a.pc).slice(0, 5), dn = R.slice().sort((a, b) => a.pc - b.pc).slice(0, 5);
+    const sb = R.filter((r) => r.tr === "BELI"), ss = R.filter((r) => r.tr === "JUAL"), row = (r) => `<tr data-tl="${r.s}"><td><span class="sym">${esc(tmName(r.s))}</span></td><td>${fx2(r.px)}</td><td class="${r.pc >= 0 ? "cu" : "cd"}">${spct(r.pc, 2)}</td></tr>`;
+    $("tmMov").innerHTML = `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      <div><div class="tm-amb">NAIK TERBESAR</div><table class="tm-t"><tbody>${up.map(row).join("")}</tbody></table></div>
+      <div><div class="tm-amb">TURUN TERBESAR</div><table class="tm-t"><tbody>${dn.map(row).join("")}</tbody></table></div>
+      <div><div class="tm-amb">TREN (MA20/50 + RSI)</div><p><span class="sig-b b">BELI</span> ${sb.map((r) => `<a href="#" data-tl="${r.s}" class="tm-u">${esc(tmName(r.s))}</a>`).join(" ") || "–"}</p>
+        <p><span class="sig-b s">JUAL</span> ${ss.map((r) => `<a href="#" data-tl="${r.s}" class="tm-d">${esc(tmName(r.s))}</a>`).join(" ") || "–"}</p>
+        <p class="tm-dim">Tren hanya filter cepat. Keputusan lengkap (50 strategi + ML + rencana harga) ada di Analisis → Rencana aksi.</p></div></div>`; }
+  function tmSelect(s) { if (tm.sel === s) return; tm.sel = s; $("tmLink").textContent = s; // tabel tidak digambar ulang supaya klik ganda tetap kena barisnya
+    document.querySelectorAll("#tmMon tr[data-tl]").forEach((r) => r.classList.toggle("sel", r.dataset.tl === s)); tmGrid(); tmFocus(); tmScatter();
+    if (!tm.h[s]) tmLoadHist([s]).then(() => { tmGrid(); tmFocus(); }); }
+  function tmPanelsMenu() { let off = []; try { off = JSON.parse(localStorage.getItem("sp_tm_off") || "[]"); } catch { /* */ }
+    $("tmMenu").innerHTML = TM_PANELS.map(([k, n]) => `<label><input type="checkbox" data-pk="${k}" ${off.includes(k) ? "" : "checked"}> ${n}</label>`).join("");
+    document.querySelectorAll("#tmGrid .tp").forEach((p) => p.classList.toggle("off", off.includes(p.dataset.tp))); }
+  function tmStart() { tmPanelsMenu(); try { $("termView").classList.toggle("dense", localStorage.getItem("sp_tm_dense") === "1"); } catch { /* */ }
+    tmRefresh(true); clearInterval(tm.timer); tm.timer = setInterval(() => { if ($("termView").hidden) { clearInterval(tm.timer); return; } tmRefresh(); }, 15000);
+    clearInterval(tm.ck); tm.ck = setInterval(() => { if (!$("termView").hidden) tmClock(); }, 20000); }
+  function bindTerm() {
+    $("termView").addEventListener("click", (e) => { const th = e.target.closest("th[data-ts]"); if (th) { const k = th.dataset.ts; if (tm.sort === k) tm.dir *= -1; else { tm.sort = k; tm.dir = -1; } tmMon(); return; }
+      const mx = e.target.closest(".tp-max"); if (mx) { const p = mx.closest(".tp"); p.classList.toggle("max"); mx.textContent = p.classList.contains("max") ? "×" : "□"; if (p.dataset.tp === "map") setTimeout(tmMap, 30); return; }
+      if (e.target.closest("[data-cmd]")) return; const t = e.target.closest("[data-tl]"); if (t) { e.preventDefault(); tmSelect(t.dataset.tl); } });
+    $("termView").addEventListener("dblclick", (e) => { const t = e.target.closest("[data-tl]"); if (t) runCommand(t.dataset.tl); });
+    $("tmRefresh").onclick = () => { for (const k in tm.h) if (tm.h[k]) delete tm.h[k]._st; tmRefresh(true); };
+    $("tmDense").onclick = () => { const on = $("termView").classList.toggle("dense"); try { localStorage.setItem("sp_tm_dense", on ? "1" : "0"); } catch { /* */ } setTimeout(tmMap, 30); };
+    $("tmPanels").onclick = () => { $("tmMenu").hidden = !$("tmMenu").hidden; };
+    $("tmMenu").addEventListener("change", () => { const off = [...document.querySelectorAll("#tmMenu input")].filter((i) => !i.checked).map((i) => i.dataset.pk); try { localStorage.setItem("sp_tm_off", JSON.stringify(off)); } catch { /* */ } tmPanelsMenu(); setTimeout(tmMap, 30); });
+    window.addEventListener("resize", () => { if (!$("termView").hidden) { clearTimeout(tm.rz); tm.rz = setTimeout(tmMap, 150); } });
   }
 
   // ---------- event ----------
@@ -3285,9 +3406,9 @@
     if (me.role === "admin") refreshAdminBadge();
     if (me._nodb && isOwner()) setTimeout(() => toast("Persetujuan admin belum aktif — ketik SETUP di baris perintah (atau buka PROFIL) untuk SQL siap salin + langkahnya."), 2500);
     if (booted) return; booted = true;
-    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade(); bindStrat(); bindChat(); bindAction();
+    readUrl(); setMode(state.mode, true); bind(); wlLoad(); await loadSettings(); setRangeTabs(); bindComfort(); bindTrade(); bindStrat(); bindChat(); bindAction(); bindTerm();
     const P = new URLSearchParams(location.search);
-    if (P.get("s")) { setView("detail"); run(); } else { setView("screen"); runWatchlist(); }
+    if (P.get("s")) { setView("detail"); run(); } else if (!document.body.classList.contains("mode-simple") && !document.body.classList.contains("mode-quick")) setView("term"); else { setView("screen"); runWatchlist(); }
   }
   async function refreshAdminBadge() {
     try { const { data } = await sb.from("sp_members").select("user_id").eq("status", "pending"); const n = (data || []).length;

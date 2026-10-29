@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029083155">
+<link rel="stylesheet" href="style.css?v=20261029084507">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -131,7 +131,7 @@
   <path d="M25 18V42" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="21.5" y="24" width="7" height="12" rx="1.2" fill="#2ec4a9"/>
   <path d="M35 13V36" stroke="#2ec4a9" stroke-width="1.8" stroke-linecap="round"/><rect x="31.5" y="17" width="7" height="13" rx="1.2" fill="#2ec4a9"/>
 </svg><span>RAM CAPITAL</span></span><div class="search cmd-search"><input id="cmdQ" autocomplete="off" spellcheck="false" placeholder="TICKER FUNGSI lalu ENTER ⟨GO⟩ · mis. BBCA DES · TLKM HP · WEI · HELP"><ul class="sugg" hidden></ul></div><span class="cmd-clock" id="cmdClock"></span><button class="cmd-btn" id="modeBtn" title="Mode tampilan">MODE: PRO</button><button class="cmd-btn" id="helpBtn" title="Daftar perintah (ketik HELP)">HELP</button><button class="cmd-btn" id="alBtn" title="Alarm harga">ALRT 0</button><button class="cmd-btn" id="themeBtn" title="Ganti tema">TEMA</button><button class="cmd-btn prof-btn" id="cmdUser" title="Profil"></button><button class="cmd-btn" id="cmdLogout" title="Keluar dari akun">KELUAR</button></div>
-<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Akun trading</button></nav>
+<nav class="wrap views" id="views"><button class="view-btn" data-v="screen"><span class="fk">F1</span>Watchlist</button><button class="view-btn" data-v="quant"><span class="fk">F2</span>Quant Lab</button><button class="view-btn active" data-v="detail"><span class="fk">F3</span>Analisis 1 aset</button><button class="view-btn" data-v="market"><span class="fk">F4</span>Pasar</button><button class="view-btn" data-v="pf"><span class="fk">F5</span>Portofolio</button><button class="view-btn" data-v="trade"><span class="fk">F6</span>Akun trading</button><button class="view-btn pro-only-v" data-v="term"><span class="fk">F7</span>Terminal</button></nav>
 <nav class="wrap focus-bar" id="focusBar" hidden aria-label="Fokus tampilan">
   <span class="fb-lbl">Fokus:</span>
   <button class="fchip active" data-f="all">Semua</button>
@@ -204,6 +204,22 @@
   </div>
 </section>
 
+<section class="term-wrap" id="termView" hidden>
+  <div class="tm-bar"><span class="tm-brand">RAM&nbsp;TERMINAL</span><span class="tm-k">LINK</span><span class="tm-link" id="tmLink">—</span>
+    <span class="tm-k">UPD</span><span id="tmUpd">—</span><span class="tm-k">SRC</span><span>Yahoo · Binance · tertunda ±15 mnt (IDX)</span>
+    <span class="tm-sp"></span><button class="tm-btn" id="tmPanels">PANEL ▾</button><button class="tm-btn" id="tmRefresh">REFRESH ⟳</button><button class="tm-btn" id="tmDense">KERAPATAN</button></div>
+  <div class="tm-menu" id="tmMenu" hidden></div>
+  <div class="tm-grid" id="tmGrid">
+    <div class="tp tp-clk" data-tp="clk"><div class="tp-h"><b>1</b> WCLK <span>Jam dunia &amp; status bursa</span><i class="tp-max">□</i></div><div class="tp-b" id="tmClk"></div></div>
+    <div class="tp tp-mont" data-tp="mont"><div class="tp-h"><b>2</b> MONT <span>Montase kuotasi</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMont"></div></div>
+    <div class="tp tp-map" data-tp="map"><div class="tp-h"><b>3</b> IMAP <span>Peta pasar watchlist (luas = nilai transaksi, warna = % hari ini)</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMap"></div></div>
+    <div class="tp tp-mon" data-tp="mon"><div class="tp-h"><b>4</b> MON <span>Monitor watchlist · klik = hubungkan, klik ganda = analisis</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMon"></div></div>
+    <div class="tp tp-gr" data-tp="gr"><div class="tp-h"><b>5</b> GRID <span>Grafik 6 bulan</span><i class="tp-max">□</i></div><div class="tp-b" id="tmGr"></div></div>
+    <div class="tp tp-foc" data-tp="foc"><div class="tp-h"><b>6</b> FOCUS <span id="tmFocT">Aset terhubung</span><i class="tp-max">□</i></div><div class="tp-b" id="tmFoc"></div></div>
+    <div class="tp tp-sc" data-tp="sc"><div class="tp-h"><b>7</b> SCAT <span>Risiko vs return 3 bulan</span><i class="tp-max">□</i></div><div class="tp-b" id="tmSc"></div></div>
+    <div class="tp tp-mov" data-tp="mov"><div class="tp-h"><b>8</b> MOST <span>Penggerak &amp; sinyal</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMov"></div></div>
+  </div>
+</section>
 <section class="wrap" id="marketView" hidden>
   <div class="card mk-bar">
     <div class="card-h"><h2>Pasar hari ini</h2><div class="row" style="margin:0"><span id="mkStatus" class="status" style="margin:0"></span><button id="mkRun" class="btn">Muat ulang</button></div></div>
@@ -625,8 +641,9 @@
       <div id="mlBody"><p class="note">Model dilatih otomatis setelah analisis selesai.</p></div>
       <details class="formula"><summary>Cara kerja model</summary><div class="fx">
         <p><b>Pertanyaan yang dijawab:</b> apakah harga H hari lagi lebih tinggi dari sekarang setelah biaya beli + jual? (ya = 1, tidak = 0).</p>
-        <p><b>17 fitur</b> dihitung hanya dari data sampai hari itu: return 1/5/20/60 hari, jarak ke MA20/50/200, RSI, volatilitas 20 hari dan rasionya ke 60 hari, ATR/harga, volume relatif, posisi di rentang 20 hari, histogram MACD, jarak dari puncak 1 tahun, %B Bollinger, dan suara 50 strategi.</p>
-        <p><b>Dua model, dirata-rata:</b> regresi logistik dengan penalti L2 (Newton–Raphson) dan gradient boosting 60 pohon kedalaman 2 (fitur dibagi 16 kuantil, subsampel 80%). Keduanya ditulis sendiri di aplikasi ini — tidak memakai layanan luar.</p>
+        <p><b>±30 fitur</b> dihitung hanya dari data sampai hari itu: return 1/5/20/60 hari, jarak ke MA20/50/200, RSI, volatilitas & rasionya, ATR, volume relatif, tekanan beli-jual, korelasi harga–volume, posisi di rentang 20 hari, MACD, jarak dari puncak 1 tahun, %B Bollinger, suara 50 strategi, sentimen & jumlah berita 5 hari (bila riwayatnya cukup), musim (akhir/awal bulan, bulan), serta data lintas pasar: return 5/20 hari indeks acuan & kurs (IHSG + USD/IDR untuk saham IDX; S&P 500 + VIX untuk saham AS; Bitcoin + S&P 500 untuk kripto) dan kekuatan relatif terhadapnya.</p>
+        <p><b>Tiga model:</b> regresi logistik dengan penalti L2 (Newton–Raphson), gradient boosting 60 pohon kedalaman 2 (fitur dibagi 16 kuantil, subsampel 80%), dan "pola mirip" (k tetangga terdekat: hari-hari lampau dengan kondisi paling mirip). <b>Bobot gabungan</b> tiap periode dipelajari hanya dari kinerja out-of-sample periode sebelumnya (∝ (AUC − 0,5)²). Semua ditulis sendiri di aplikasi ini — tidak memakai layanan luar. Riwayat harga yang dipakai ±10 tahun.</p>
+        <p><b>Kepentingan fitur</b> diukur dengan uji permutasi: kolom fitur diacak di data uji, lalu dilihat seberapa turun AUC-nya.</p>
         <p><b>Uji jujur (walk-forward):</b> mulai 40% data, model dilatih ulang tiap 63 hari memakai data sampai H hari sebelumnya (jeda H mencegah label yang tumpang tindih bocor), lalu memprediksi 63 hari berikutnya yang belum pernah dilihat. Semua metrik di atas berasal dari prediksi ini.</p>
         <p><b>AUC</b> = peluang model memberi skor lebih tinggi ke hari "naik" daripada hari "tidak naik" (0,5 = tebak koin). Nilai-p memakai jumlah sampel efektif n/H karena hari-hari berurutan saling tumpang tindih. <b>Brier skill</b> &gt; 0 = lebih akurat daripada selalu menebak rata-rata. Peluang dikalibrasi (Platt) supaya "60%" benar-benar terjadi ±60% kali.</p>
         <p><b>Teruji</b> bila AUC ≥ 0,53, nilai-p &lt; 0,05, dan Brier skill &gt; 0. Hanya model yang teruji yang boleh mengubah keputusan Rencana aksi.</p>
@@ -995,8 +1012,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029083155";</script>
-<script src="engine.js?v=20261029083155"></script>
-<script src="app.js?v=20261029083155"></script>
+<script>window.APP_V = "20261029084507";</script>
+<script src="engine.js?v=20261029084507"></script>
+<script src="app.js?v=20261029084507"></script>
 </body>
 </html>

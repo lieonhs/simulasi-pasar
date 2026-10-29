@@ -1344,7 +1344,11 @@
   const ML_FEATS = ["Return 1 hari", "Return 5 hari", "Return 20 hari", "Return 60 hari", "Jarak ke MA20", "Jarak ke MA50", "Jarak ke MA200", "RSI 14", "Volatilitas 20 hari",
     "Rasio vol 20/60", "ATR / harga", "Volume vs rata-rata 20h", "Posisi di rentang 20h", "MACD hist / harga", "Jarak dari puncak 1 th", "%B Bollinger", "Suara 50 strategi",
     "Volume 5h vs 60h", "Tekanan beli-jual 5h (volume bertanda)", "Korelasi harga–volume 20h", "Sentimen berita 5h", "Jumlah berita 5h"];
-  function mlFeatures(D, vote, news) {
+  const ML_CAL = ["Akhir/awal bulan", "Musim (sin bulan)", "Musim (cos bulan)"];
+  function mlNames(ext) { return [...ML_FEATS, ...ML_CAL, ...(ext || []).flatMap((e) => [`${e.name}: return 5h`, `${e.name}: return 20h`, `Kekuatan relatif vs ${e.name} 20h`])]; }
+  function alignExt(D, map) { const a = new Array(D.n).fill(null); let last = null; for (let t = 0; t < D.n; t++) { const v = map[D.d[t]]; if (v > 0) last = v; a[t] = last; } return a; }
+  function mlFeatures(D, vote, news, ext) {
+    const EX = (ext || []).map((e) => alignExt(D, e.map));
     const c = D.c, n = D.n, lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0));
     const m20 = T.sma(c, 20), m50 = T.sma(c, 50), m200 = T.sma(c, 200), rsi = T.rsi(c, 14), s20 = T.std(lr, 20), s60 = T.std(lr, 60), atr = T.atr(D.h, D.l, c, 14);
     const hh = T.hh(D.h, 20), ll = T.ll(D.l, 20), e12 = T.ema(c, 12), e26 = T.ema(c, 26), sd20 = T.std(c, 20), hi252 = T.hh(D.h, 252);
@@ -1359,6 +1363,9 @@
       if (hasVol) { row[17] = lv5[t] - lv60[t]; let sv = 0, va = 0; for (let j = t - 4; j <= t; j++) { sv += Math.sign(lr[j]) * (D.v[j] || 0); va += D.v[j] || 0; } row[18] = va > 0 ? sv / va : 0;
         let ma = 0, mb = 0; for (let j = t - 19; j <= t; j++) { ma += Math.abs(lr[j]); mb += lv[j]; } ma /= 20; mb /= 20; let sab = 0, saa = 0, sbb = 0;
         for (let j = t - 19; j <= t; j++) { const a = Math.abs(lr[j]) - ma, b = lv[j] - mb; sab += a * b; saa += a * a; sbb += b * b; } row[19] = saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0; }
+      const dt = new Date(D.d[t] + "T00:00:00Z"), dom = dt.getUTCDate(), mo = dt.getUTCMonth();
+      row.push(dom >= 26 || dom <= 4 ? 1 : 0, Math.sin((2 * Math.PI * mo) / 12), Math.cos((2 * Math.PI * mo) / 12));
+      for (const a of EX) { const r5 = a[t] && a[t - 5] ? Math.log(a[t] / a[t - 5]) : 0, r20 = a[t] && a[t - 20] ? Math.log(a[t] / a[t - 20]) : 0; row.push(r5, r20, Math.log(c[t] / c[t - 20]) - r20); }
       if (row.every((x) => isFinite(x))) X[t] = row; }
     return X;
   }
@@ -1412,7 +1419,8 @@
   function mlModel(D, o = {}) {
     const H = o.horizon || 10, cost = ((o.costBps ?? 20) * 2) / 1e4, n = D.n, c = D.c;
     // berita ikut sebagai fitur bila riwayat hariannya cukup (≥ 60 hari bursa); selain itu fitur berita = 0 (netral)
-    const newsDays = o.news ? D.d.filter((d) => o.news[d]).length : 0, X = mlFeatures(D, o.vote, newsDays >= 60 ? o.news : null);
+    const newsDays = o.news ? D.d.filter((d) => o.news[d]).length : 0, ext = (o.ext || []).filter((e) => e && e.map && D.d.filter((d) => e.map[d]).length > D.n * 0.6);
+    const X = mlFeatures(D, o.vote, newsDays >= 60 ? o.news : null, ext), NAMES = mlNames(ext), rngP = makeRng(17);
     const y = new Array(n).fill(null), yr = new Array(n).fill(null); for (let t = 0; t < n - H; t++) { y[t] = c[t + H] / c[t] - 1 > cost ? 1 : 0; yr[t] = Math.log(c[t + H] / c[t]); }
     const sig = (t) => Math.max(1e-4, X[t][8] * Math.sqrt(H / 252)); // volatilitas 20h (fitur ke-9) diskalakan ke horizon
     const lab = []; for (let t = 0; t < n; t++) if (X[t] && y[t] != null) lab.push(t);
@@ -1420,14 +1428,28 @@
     const fitBoth = (tr) => { const Xt = tr.map((t) => X[t]), yt = tr.map((t) => y[t]), d = Xt[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0);
       for (const r of Xt) r.forEach((v, j) => (mu[j] += v / Xt.length)); for (const r of Xt) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xt.length)); for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
       const Z = Xt.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), ys = tr.map((t) => yr[t] / sig(t)); // regresi pada return yang dinormalkan volatilitas
-      return { mu, sd, w: fitLogit(Z, yt, o.lam ?? 2), g: fitGBM(Xt, yt, { trees: o.trees ?? 60, seed: tr.length }), rw: fitRidge(Z, ys, 20), rg: fitGBM(Xt, ys, { reg: true, trees: 50, lr: 0.05, lam: 5, seed: tr.length + 1 }) }; };
-    const predBoth = (M, x) => { const z = x.map((v, j) => (v - M.mu[j]) / M.sd[j]), a = predLogit(M.w, z), b = predGBM(M.g, x); return { a, b, p: 0.5 * a + 0.5 * b, f: 0.5 * predRidge(M.rw, z) + 0.5 * predGBMraw(M.rg, x) }; };
+      return { mu, sd, Z, yt, base: mean(yt), w: fitLogit(Z, yt, o.lam ?? 2), g: fitGBM(Xt, yt, { trees: o.trees ?? 60, seed: tr.length }), rw: fitRidge(Z, ys, 20), rg: fitGBM(Xt, ys, { reg: true, trees: 50, lr: 0.05, lam: 5, seed: tr.length + 1 }) }; };
+    // model ke-3: "pola mirip" (k tetangga terdekat) — cari k hari lampau dengan kondisi fitur paling mirip, lihat berapa yang naik
+    const knn = (M, z) => { const K = Math.max(25, Math.round(Math.sqrt(M.Z.length))), dist = new Float64Array(M.Z.length);
+      for (let i = 0; i < M.Z.length; i++) { let s2 = 0; const r = M.Z[i]; for (let j = 0; j < z.length; j++) { const d = r[j] - z[j]; s2 += d * d; } dist[i] = s2; }
+      const idx = Array.from(dist.keys()).sort((a, b) => dist[a] - dist[b]).slice(0, K); let s1 = 0; for (const i of idx) s1 += M.yt[i]; return (s1 + 5 * M.base) / (K + 5); };
+    let W = [1 / 3, 1 / 3, 1 / 3];
+    const predBoth = (M, x, w = W, noK = false) => { const z = x.map((v, j) => (v - M.mu[j]) / M.sd[j]), a = predLogit(M.w, z), b = predGBM(M.g, x), k = noK ? NaN : knn(M, z);
+      const p = noK ? (w[0] * a + w[1] * b) / (w[0] + w[1] || 1) : w[0] * a + w[1] * b + w[2] * k; return { a, b, k, p, f: 0.5 * predRidge(M.rw, z) + 0.5 * predGBMraw(M.rg, x) }; };
+    // bobot gabungan dipelajari hanya dari prediksi out-of-sample periode SEBELUMNYA (∝ (AUC − 0,5)², minimal 150 baris), selain itu rata
+    const stackW = (rows) => { const R = rows.filter((r) => r.y != null); if (R.length < 150) return [1 / 3, 1 / 3, 1 / 3]; const Y = R.map((r) => r.y);
+      const e = ["a", "b", "k"].map((m) => Math.max(0, aucOf(R.map((r) => r[m]), Y) - 0.5) ** 2), s2 = e.reduce((x, y) => x + y, 0); return s2 > 0 ? e.map((v) => v / s2) : [1 / 3, 1 / 3, 1 / 3]; };
+    const permP = NAMES.map(() => []), baseAB = [];
     // walk-forward: latih pada data s/d (a − H) — jarak H mencegah label tumpang tindih bocor — lalu prediksi 63 hari berikutnya
     const first = lab[0], s0 = Math.max(first + 250, lab[Math.floor(lab.length * 0.4)]), oos = [], step = 63;
-    for (let a = s0; a < n; a += step) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const M = predBoth.bind(null, fitBoth(tr));
-      for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = M(X[t]); oos.push({ t, p: q.p, a: q.a, b: q.b, y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }); } }
+    for (let a = s0; a < n; a += step) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const MM = fitBoth(tr); W = stackW(oos);
+      const rows = []; for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = predBoth(MM, X[t], W); const r = { t, p: q.p, a: q.a, b: q.b, k: q.k, w: W.slice(), y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }; oos.push(r); rows.push(r); }
+      // uji kepentingan fitur (permutasi): acak satu kolom di data uji fold ini, lihat seberapa turun kemampuan model (logistik + boosting)
+      const lr2 = rows.filter((r) => r.y != null); if (lr2.length > 5) { for (const r of lr2) baseAB.push({ p: predBoth(MM, X[r.t], W, true).p, y: r.y });
+        for (let j = 0; j < NAMES.length; j++) { const col = lr2.map((r) => X[r.t][j]); for (let i = col.length - 1; i > 0; i--) { const k2 = rngP.int(i + 1); [col[i], col[k2]] = [col[k2], col[i]]; }
+          lr2.forEach((r, i) => { const xx = X[r.t].slice(); xx[j] = col[i]; permP[j].push(predBoth(MM, xx, W, true).p); }); } } }
     const ev = oos.filter((r) => r.y != null), P = ev.map((r) => r.p), Y = ev.map((r) => r.y);
-    const auc = aucOf(P, Y), aucA = aucOf(ev.map((r) => r.a), Y), aucB = aucOf(ev.map((r) => r.b), Y), base = mean(Y), brier = mean(ev.map((r) => (r.p - r.y) ** 2)), brierBase = base * (1 - base);
+    const auc = aucOf(P, Y), aucA = aucOf(ev.map((r) => r.a), Y), aucB = aucOf(ev.map((r) => r.b), Y), aucK = aucOf(ev.map((r) => r.k), Y), base = mean(Y), brier = mean(ev.map((r) => (r.p - r.y) ** 2)), brierBase = base * (1 - base);
     const platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p)), brierCal = mean(cal.map((p, i) => (p - Y[i]) ** 2));
     // signifikansi AUC (Hanley–McNeil) dengan jumlah sampel efektif ≈ n / H karena label tumpang tindih
     const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
@@ -1441,9 +1463,9 @@
     for (const r of oos) { if (r.t >= n - 1) continue; const pos = r.p > 0.5 ? 1 : 0, ret = c[r.t + 1] / c[r.t] - 1; rs.push(pos * ret - cst * Math.abs(pos - prev)); rb.push(ret); dts.push(D.d[r.t + 1]); prev = pos; }
     const bt = rs.length > 20 ? { s: perf(rs, dts, o.ppy || 252), b: perf(rb, dts, o.ppy || 252), from: dts[0] } : null; if (bt) { bt.s.curveDates = dts; }
     // model akhir: semua data berlabel → peluang untuk hari terakhir
-    const MF = fitBoth(lab), xNow = X[n - 1]; const now = xNow ? predBoth(MF, xNow) : null;
-    const gi = MF.g.imp, gs = gi.reduce((a, b) => a + b, 0) || 1, ls = MF.w.slice(1).map(Math.abs), lsum = ls.reduce((a, b) => a + b, 0) || 1;
-    const imp = ML_FEATS.map((name, j) => ({ name, v: 0.5 * gi[j] / gs + 0.5 * ls[j] / lsum, dir: Math.sign(MF.w[j + 1]) })).sort((a, b) => b.v - a.v);
+    const MF = fitBoth(lab), xNow = X[n - 1], Wf = stackW(oos); const now = xNow ? predBoth(MF, xNow, Wf) : null;
+    const aucAB = aucOf(baseAB.map((r) => r.p), baseAB.map((r) => r.y)), BY = baseAB.map((r) => r.y);
+    const imp = NAMES.map((name, j) => ({ name, v: permP[j].length === BY.length ? aucAB - aucOf(permP[j], BY) : 0, dir: Math.sign(MF.w[j + 1]) })).sort((a, b) => b.v - a.v);
     const pCal = now ? applyPlatt(platt, now.p) : NaN, bss = 1 - brierCal / brierBase;
     // ---- prediksi harga: titik tengah + rentang conformal (dikalibrasi dari kesalahan out-of-sample) ----
     // titik tengah disusutkan ke nol: bobot w = argmin galat di paruh pertama data uji (0 = model tak berguna → "tidak berubah")
@@ -1456,9 +1478,10 @@
     const dirHit = mean(er.filter((r) => Math.abs(r.fRaw) > 1e-9).map((r) => (Math.sign(r.fRaw) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? wAll * now.f * sNow : NaN;
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
       r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
-    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, auc, aucLog: aucA, aucGb: aucB, aucP, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
+    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucP, weights: Wf,
+      models: [["Regresi logistik (L2)", aucA, Wf[0]], ["Gradient boosting (60 pohon)", aucB, Wf[1]], ["Pola mirip (k tetangga terdekat)", aucK, Wf[2]]], ext: ext.map((e) => e.name), nFeat: NAMES.length, impBase: aucAB, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
       nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
-      oosP: oos.map((r) => ({ t: r.t, d: D.d[r.t], p: applyPlatt(platt, r.p) })), fc, featNames: ML_FEATS, newsDays, newsUsed: newsDays >= 60, feats: xNow ? ML_FEATS.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
+      oosP: oos.map((r) => ({ t: r.t, d: D.d[r.t], p: applyPlatt(platt, r.p) })), fc, featNames: NAMES, newsDays, newsUsed: newsDays >= 60, feats: xNow ? NAMES.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
   }
 
   // ---------- Rencana aksi: beli / jual / tahan, harga, waktu ----------
