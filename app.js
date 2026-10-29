@@ -3303,7 +3303,7 @@
   const RD_UNI = { us: ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V", "LLY", "BRK-B"], crypto: ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD"] };
   const rd = { rows: [], busy: false, sort: "score" };
   function rdUniverse() { const u = $("rdUni").value; if (u === "idx") return MK.stocks.slice(); if (u === "wl") return $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean);
-    if (u === "all") return [...MK.stocks, ...RD_UNI.us, ...RD_UNI.crypto]; return RD_UNI[u].slice(); }
+    if (u === "all") return [...MK.stocks, ...RD_UNI.us, ...RD_UNI.crypto]; if (GM_UNI[u]) return GM_UNI[u].slice(); return RD_UNI[u].slice(); }
   function rdScore(r) { // skor 0-100-an dari bukti; status hanya "Perhatikan" bila ada bukti yang teruji
     let s = 0; const why = [], C = r.conf, B = r.bin, F = r.ml, V = r.val;
     if (C) { if (C.aplus) { s += 30; why.push("A+ aktif"); } else if (C.valid && C.s >= 3) { s += 12; why.push(`konfluensi +${C.s} teruji`); } else s += (C.s / 9) * 8; if (C.trend > 0 && C.week > 0) s += 4; if (C.week < 0) s -= 4; }
@@ -3322,7 +3322,7 @@
     try {
       await pool(syms, 4, async (s) => {
         try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari");
-          const crypto = /CRYPTO/i.test(d.type || "") || /-USD$/.test(s), R = await compute("radar", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10 } });
+          const crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(s), R = await compute("radar", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10 } });
           let val = null; const eq = !crypto && !/^\^/.test(s) && !/=/.test(s);
           if (wantF && eq) { try { const F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(s)}`)).json(); val = valEnsemble(F, R.px, (d.currency || "") !== "IDR", null); } catch { /* */ } }
           const row = { s, name: d.name, cur: d.currency, ...R, val }; Object.assign(row, rdScore(row)); rd.rows.push(row); tick(`${s} ✓`); drawRadar(); }
@@ -3402,6 +3402,11 @@
       "GJTL", "HEAL", "HMSP", "HRUM", "INDY", "INKP", "INTP", "ISAT", "JPFA", "JSMR", "KIJA", "LPKR", "LPPF", "LSIP", "MAPA", "MAPI", "MARK", "MBMA", "MEDC", "MIKA", "MNCN", "MPMX", "MTEL", "MYOR", "NCKL", "NISP",
       "PGEO", "PNLF", "PTBA", "PTPP", "PWON", "RAJA", "SCMA", "SIDO", "SILO", "SMDR", "SMGR", "SMRA", "SMSM", "SRTG", "SSIA", "TAPG", "TBIG", "TINS", "TKIM", "TMAS", "TOWR", "WIKA", "ADMR", "AADI", "PTRO", "ARTO",
       "BUKA", "EMTK", "KLBF", "CPIN", "ITMG", "INCO", "MDKA", "ANTM", "PGAS", "UNTR"].map((s) => s + ".JK"),
+    meme: ["DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "BOME", "MEME", "PEOPLE", "TURBO", "NEIRO", "PNUT", "TRUMP", "1000SATS", "ORDI", "DOGS", "NOT", "ACT"].map((s) => s + "-USDT"),
+    ai: ["FET", "RENDER", "TAO", "WLD", "ARKM", "GRT", "NEAR", "ICP", "IO", "THETA", "AR", "FIL"].map((s) => s + "-USDT"),
+    defi: ["UNI", "AAVE", "MKR", "LDO", "CRV", "COMP", "SNX", "SUSHI", "1INCH", "DYDX", "PENDLE", "JUP", "RAY", "CAKE", "GMX", "ENA"].map((s) => s + "-USDT"),
+    l1: ["ETH", "SOL", "ADA", "AVAX", "DOT", "ATOM", "NEAR", "APT", "SUI", "SEI", "ARB", "OP", "POL", "STX", "TIA", "INJ", "TON", "HBAR", "ALGO", "TRX"].map((s) => s + "-USDT"),
+    game: ["AXS", "SAND", "MANA", "GALA", "IMX", "ENJ", "APE", "ILV", "YGG", "PIXEL", "MAGIC", "FLOW"].map((s) => s + "-USDT"),
     alt: ["LINK", "AVAX", "DOT", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ", "FIL", "ALGO", "HBAR", "VET", "AAVE", "UNI", "MKR", "LDO", "RNDR", "GRT", "SAND", "MANA", "AXS", "IMX", "XLM", "ETC", "LTC", "BCH", "TRX", "SUI", "SEI"].map((s) => s + "-USD"),
     usm: ["PLTR", "CRWD", "SNOW", "DDOG", "NET", "ZS", "MDB", "SHOP", "SQ", "ROKU", "ETSY", "PINS", "SNAP", "U", "RBLX", "AFRM", "SOFI", "HOOD", "COIN", "DKNG", "ENPH", "FSLR", "RIVN", "LCID", "CELH", "DUOL", "TTD", "OKTA", "TWLO", "PATH"] };
   const gm = { rows: [], busy: false };
@@ -3427,12 +3432,15 @@
   function gmThesis(r) { const p = r.pro.slice(0, 4), c = r.con.slice(0, 2); return (p.length ? p.join(", ") : "belum ada alasan kuat") + (c.length ? `. Risiko: ${c.join(", ")}` : "") + "."; }
   async function runGems() {
     if (gm.busy) return; gm.busy = true; $("gmRun").disabled = true; $("gmNote").hidden = false;
-    const u = $("gmUni").value, syms = [...new Set(u === "wl" ? $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean) : GM_UNI[u])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0;
+    const u = $("gmUni").value; let uni = GM_UNI[u];
+    if (u === "wl") uni = $("wlQ").value.split(/[,\s]+/).map((s) => normTicker(s.trim())).filter(Boolean);
+    if (u === "idxc") { await idxPairsLoad(); uni = (ix.pairs || []).filter((p) => p.base !== "usdt" && p.base !== "usdc" && !p.suspended && p.volIdr > 5e7).slice(0, 80).map((p) => p.base.toUpperCase() + "-USDT"); }
+    const syms = [...new Set(uni || [])].slice(0, 100), N = syms.length, deep = $("gmDeep").checked; let done = 0;
     const tick = (m) => { done++; $("gmBar").style.width = Math.round((100 * done) / (N + (deep ? 5 : 0))) + "%"; $("gmStatus").textContent = m; };
     gm.rows = []; $("gmStatus").textContent = `Menyaring ${N} aset…`; await ensureUsRf(); if (!pp.fx) { try { await ppQuotes([]); } catch { /* */ } }
     try {
       await pool(syms, 4, async (s) => {
-        try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); const crypto = /-USD$/.test(s);
+        try { const d = await fetchSymbol(s, "5y"); if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); const crypto = /-USDT?$/.test(s) || /CRYPTO/i.test(d.type || "");
           const R = await compute("gem", { D: buildD(d), o: { ppy: crypto ? 365 : 252, H: 10, F: 40 } }); let F = null, val = null;
           if (!crypto) { try { F = await (await apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(s)}`)).json(); val = valEnsemble(F, R.px, (d.currency || "") !== "IDR", null); } catch { /* */ } }
           const row = { s, name: d.name, ...R, F, val }; Object.assign(row, gmScore(row)); gm.rows.push(row); tick(`${s} ✓`); drawGems(); }
@@ -3451,7 +3459,7 @@
     const bar = (v) => `<i class="gm-b"><i style="width:${Math.max(2, Math.min(100, v * 100)).toFixed(0)}%"></i></i>`;
     $("gmTable").innerHTML = `<thead><tr><th>#</th><th>Aset</th><th>Status</th><th>Gem</th><th>Turun dari puncak</th><th>Berbalik</th><th>Akumulasi</th><th>Nilai</th><th>Model</th><th>Tesis RAM AI</th></tr></thead><tbody>` + R.filter((r) => r.st !== "Gagal").slice(0, 60).map((r, i) => {
       const G = r.gem || {}, F = r.deep && !r.deep.err ? r.deep : r.ml, dl = r.deep && r.deep.dl;
-      return `<tr class="rd-row" data-s="${esc(r.s)}"><td>${i + 1}</td><td><b>${esc(r.s.replace(".JK", "").replace("-USD", ""))}</b><div class="note">${esc(String(r.name || "").slice(0, 22))}</div></td><td><span class="rd-pill gm-${r.st.replace(" ", "")}">${r.st}</span></td><td class="num"><b>${nf(0).format(r.gs)}</b></td>
+      return `<tr class="rd-row" data-s="${esc(r.s)}"><td>${i + 1}</td><td><b>${esc(r.s.replace(".JK", "").replace(/-USDT?$/, ""))}</b><div class="note">${esc(String(r.name || "").slice(0, 22))}</div></td><td><span class="rd-pill gm-${r.st.replace(" ", "")}">${r.st}</span></td><td class="num"><b>${nf(0).format(r.gs)}</b></td>
         <td class="num">${isFinite(G.dd) ? pct(G.dd, 0) : "–"}</td><td>${bar(G.turn || 0)}</td><td>${bar(G.accum || 0)}</td><td class="num">${r.val && r.val.methods && (r.val.methods.length || r.val.methods) ? `<span class="${r.val.upside > 0 ? "pos" : "neg"}">${spct(r.val.upside, 0)}</span>` : "–"}</td>
         <td class="num">${F ? `<span class="${F.valid ? (F.p > F.base ? "pos" : "neg") : "note"}">${pct(F.p, 0)}${F.valid ? "" : "·x"}</span>` : "–"}${dl ? ` <span class="note">DL</span> <span class="${dl.valid ? (dl.p > dl.base ? "pos" : "neg") : "note"}">${pct(dl.p, 0)}</span>` : ""}${G.hist && G.hist.valid ? ' <b class="pos" title="pola gem teruji di aset ini">◆</b>' : ""}</td>
         <td class="gm-th">${esc(gmThesis(r))}</td></tr>`; }).join("") + "</tbody>";
@@ -3689,12 +3697,13 @@
   const TM_GRP = { mix: ["Lintas aset", ["^JKSE", "^GSPC", "^IXIC", "^N225", "^HSI", "BBCA.JK", "BBRI.JK", "TLKM.JK", "AAPL", "NVDA", "MSFT", "TSLA", "BTC-USD", "ETH-USD", "SOL-USD", "GC=F", "CL=F", "IDR=X", "^TNX"]],
     wl: ["Watchlist", null], idx: ["IDX", null], us: ["AS", ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V", "LLY", "BRK-B", "NFLX", "AMD", "COST"]],
     crypto: ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "LINK-USD", "TON11419-USD", "DOT-USD", "TRX-USD"]],
+    meme: ["Meme", ["DOGE-USD", "SHIB-USD", "PEPE-USDT", "WIF-USDT", "BONK-USDT", "FLOKI-USDT", "BOME-USDT", "TRUMP-USDT", "PNUT-USDT", "NEIRO-USDT", "TURBO-USDT", "PEOPLE-USDT"]],
     macro: ["Indeks · FX · Komoditas", ["^JKSE", "^GSPC", "^IXIC", "^DJI", "^N225", "^HSI", "^FTSE", "^GDAXI", "IDR=X", "EURUSD=X", "JPY=X", "SGDIDR=X", "GC=F", "SI=F", "CL=F", "BZ=F", "NG=F", "HG=F", "^TNX", "^VIX"]] };
   const TM_NAMES = { "^JKSE": "IHSG", "^JKLQ45": "LQ45", "^GSPC": "S&P 500", "^IXIC": "Nasdaq", "^DJI": "Dow Jones", "^N225": "Nikkei", "^HSI": "Hang Seng", "^FTSE": "FTSE 100", "^GDAXI": "DAX", "IDR=X": "USD/IDR", "EURUSD=X": "EUR/USD", "JPY=X": "USD/JPY", "SGDIDR=X": "SGD/IDR",
     "GC=F": "Emas", "SI=F": "Perak", "CL=F": "Minyak WTI", "BZ=F": "Brent", "NG=F": "Gas alam", "HG=F": "Tembaga", "^TNX": "US 10Y", "^VIX": "VIX", "TON11419-USD": "TON" };
   try { tm.grp = localStorage.getItem("sp_tm_grp") || "mix"; } catch { tm.grp = "mix"; }
   const tmWatch = () => { const g = tm.grp || "mix", list = g === "wl" ? $("wlQ").value.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean) : g === "idx" ? MK.stocks.slice(0, 30) : (TM_GRP[g] || TM_GRP.mix)[1]; return [...new Set(list)].slice(0, 30); };
-  const tmName = (s) => TM_NAMES[s] || s.replace(/\.JK$/, "").replace(/-USD$/, "");
+  const tmName = (s) => TM_NAMES[s] || s.replace(/\.JK$/, "").replace(/-USDT?$/, "");
   function tmGrpBar() { const el = $("tmGrp"); if (!el) return; el.innerHTML = Object.entries(TM_GRP).map(([k, [n]]) => `<a data-tg="${k}" class="${k === (tm.grp || "mix") ? "on" : ""}">${n}</a>`).join(""); }
   const fx2 = (v) => (v == null || !isFinite(v) ? "–" : Math.abs(v) >= 1000 ? nf(0).format(v) : Math.abs(v) >= 10 ? nf(2).format(v) : nf(4).format(v));
   function tmLine(arr, w = 300, h = 70, col) { if (!arr || arr.length < 2) return ""; const mn = Math.min(...arr), mx = Math.max(...arr), sx = w / (arr.length - 1), sy = mx > mn ? (h - 6) / (mx - mn) : 0;
