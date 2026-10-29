@@ -771,3 +771,10 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 .prof-btn { overflow: visible; display: inline-flex; align-items: center; } .prof-btn .pn { display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .prof-btn.hot::after { flex: none; }
 @media (max-width: 760px) { .prof-btn { max-width: none; } .prof-btn .pn { max-width: 70px; } }
+/* cegah isi kolom melebar keluar kartu (tabel lebar menggulir di dalam kartunya sendiri) */
+.trade-grid > *, #apPane > *, #apPane .card, #apPane section { min-width: 0; max-width: 100%; }
+#apPane .table-wrap, #tradeView .table-wrap { max-width: 100%; overflow-x: auto; }
+.tg-odds { width: 100%; table-layout: fixed; font-size: 12px; } .tg-odds th, .tg-odds td { white-space: normal !important; word-break: break-word; padding: 4px 6px; }
+.ap-tgt, .ap-adv { max-width: 100%; overflow: hidden; } .ap-tgt .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ap-tgt .grid input, .ap-tgt .grid select { min-width: 0; width: 100%; }
+#apPane > section.card { position: static; }

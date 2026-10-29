@@ -497,6 +497,7 @@ lap("berita");
 
   // ---- Mode target compounding: risiko besar sampai target tercapai, lalu kecil. Ukuran posisi selalu dari nilai run sekarang (bunga berbunga).
   function apPhase() { const c = ap.cfg, R0 = apRun(), r = c.run; r.peak = Math.max(r.peak || r.cap, R0.eq);
+    if (r.cap >= c.tgAmt) return { ph: "tidak aktif", risk: parseFloat($("actRisk").value) || 0.01, eq: R0.eq, peak: r.peak, why: `dana run (${fmtIdr(r.cap)}) sudah ≥ target. Klik “Mulai run target dari Rp 1 jt”`, off: true };
     if (R0.eq >= c.tgAmt && !r.reached) { r.reached = new Date().toISOString(); apLogAdd("—", `TARGET ${fmtIdr(c.tgAmt)} TERCAPAI (nilai ${fmtIdr(R0.eq)}). Mulai mode hati-hati: risiko ${pct(c.tgSafe, 2)} per transaksi.`, "buy"); }
     if (r.reached) return { ph: "hati-hati", risk: c.tgSafe, eq: R0.eq, peak: r.peak, why: "target sudah tercapai" };
     if (R0.eq < r.peak * (1 - c.tgBrake)) return { ph: "rem", risk: c.tgSafe, eq: R0.eq, peak: r.peak, why: `turun ${pct(1 - R0.eq / r.peak, 0)} dari puncak; risiko diperkecil sampai pulih` };
@@ -513,10 +514,10 @@ lap("berita");
       out.push({ yrs, hit: hit / N, ruin: ruin / N }); }
     return { out, src }; }
   function drawTg() { const c = ap.cfg, el = $("tgStat"); if (!c.tgOn) { el.innerHTML = ""; return; } if (c.target !== "demo") { el.innerHTML = '<p class="note">Mode target hanya untuk akun demo. Indodax tetap memakai nilai per order tetap.</p>'; return; }
-    const st = (c.run && c.run.cap) || 1, P = apPhase(), prog = Math.min(1, Math.max(0, Math.log(P.eq / st) / Math.log(c.tgAmt / st))), O = ap.tgOdds && ap.tgOddsAt > Date.now() - 600e3 ? ap.tgOdds : ((ap.tgOdds = apTgOdds()), (ap.tgOddsAt = Date.now()), ap.tgOdds);
+    const st = (c.run && c.run.cap) || 1, P = apPhase(); if (P.off) { el.innerHTML = `<div class="tg-ph"><b class="neg">Belum aktif</b> · ${esc(P.why)}</div>`; return; } const P2 = P, prog = Math.min(1, Math.max(0, Math.log(P.eq / st) / Math.log(c.tgAmt / st))), O = ap.tgOdds && ap.tgOddsAt > Date.now() - 600e3 ? ap.tgOdds : ((ap.tgOdds = apTgOdds()), (ap.tgOddsAt = Date.now()), ap.tgOdds);
     el.innerHTML = `<div class="tg-ph tg-${P.ph}">Fase: <b>${P.ph.toUpperCase()}</b> · risiko ${pct(P.risk, 2)} per transaksi · ${esc(P.why)}</div>
       <div class="tg-bar"><i style="width:${(prog * 100).toFixed(1)}%"></i></div><div class="note keep">${fmtIdr(P.eq)} dari target ${fmtIdr(c.tgAmt)} (${pct(prog, 0)} jalan, skala log) · puncak ${fmtIdr(P.peak)}</div>
-      <table class="tg-odds"><thead><tr><th>Dalam</th><th>Peluang capai target</th><th>Peluang run gagal (−50%)</th></tr></thead><tbody>${O.out.map((o) => `<tr><td>${o.yrs} tahun</td><td class="${o.hit >= 0.5 ? "pos" : ""}"><b>${o.hit < 0.001 ? "< 0,1%" : pct(o.hit, 1)}</b></td><td class="${o.ruin >= 0.2 ? "neg" : ""}">${pct(o.ruin, 1)}</td></tr>`).join("")}</tbody></table>
+      <div class="table-wrap"><table class="tg-odds"><thead><tr><th>Dalam</th><th>Capai target</th><th>Run gagal (−50%)</th></tr></thead><tbody>${O.out.map((o) => `<tr><td>${o.yrs} tahun</td><td class="${o.hit >= 0.5 ? "pos" : ""}"><b>${o.hit < 0.001 ? "< 0,1%" : pct(o.hit, 1)}</b></td><td class="${o.ruin >= 0.2 ? "neg" : ""}">${pct(o.ruin, 1)}</td></tr>`).join("")}</tbody></table></div>
       <p class="note keep">Simulasi ${esc(O.src)}, ±8 transaksi/bulan. Angka ini dihitung ulang otomatis setelah ada ≥ 20 transaksi autopilot demo.</p>`; }
 
   // =====================================================================
@@ -760,7 +761,8 @@ lap("berita");
     ap.porto = R.map((r) => ({ s: r.s, w: r.w, cur: r.cur / B, net: r.net })); }
   function drawAp() { if (!ap.cfg || !$("apTable")) return; const g = demoGate(), c = ap.cfg;
     $("apGate").innerHTML = (c.target === "idx" ? gateText(g) : `Eksekusi di <b>akun demo</b>. ${gateText(g)}`) + ` · Order baru hari ini ${c.nDay || 0}/${c.maxDay} · posisi autopilot ${apPositions().length}/${c.maxPos}`;
-    const S = [...new Set([...apSyms(), ...(ap.scan || [])])], ar = (v, ok) => (ok === false ? '<span class="note" title="belum teruji">✗</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
+    const S0 = [...new Set([...apSyms(), ...(ap.scan || [])])], rk = (s) => { const st = ap.st[s] || {}, V = st.V; return apPositions().includes(s) ? 0 : V && (V.act === "BELI" || V.act === "SHORT") ? 1 : V && V.act === "JUAL" ? 2 : st.X ? 3 : 4; };
+    const S = S0.slice().sort((x, y) => rk(x) - rk(y)).slice(0, ap.stAll ? 200 : 25); $("apStTog").hidden = S0.length <= 25; $("apStTog").textContent = ap.stAll ? "Ringkas" : `Tampilkan semua (${S0.length})`; const ar = (v, ok) => (ok === false ? '<span class="note" title="belum teruji">✗</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
     $("apTable").innerHTML = S.length ? `<thead><tr><th>Aset</th><th>Keputusan</th><th>Rencana</th><th>Keyakinan</th><th>ML</th><th>DL</th><th>AI</th><th>Target dulu<br><span class="note">MC · binomial</span></th><th>Nilai wajar</th><th title="mata: berita 24 jam terbaru · sentimen">👁 Mata</th><th title="model pengalaman demo">Peng.</th><th title="otak kanan: dari pola historis yang mirip, peluang naik 10 hari · 10% terburuk">Otak kanan</th><th>Posisi swing</th><th>Posisi harian</th><th>Status</th><th>Diperiksa</th></tr></thead><tbody>` + S.map((s) => { const st = ap.st[s] || {}, X = st.X, V = st.V;
       const hasPos = pp.a.pos[s] && pp.a.pos[s].ap, hasPend = pp.a.orders.some((o) => o.ap && o.s === s && o.status === "terbuka");
       return `<tr><td><b>${esc(s)}</b></td><td>${V ? `<span class="rd-pill ap-${V.act}">${V.act}</span>` : "–"}</td><td>${X ? X.P.action : "–"}</td><td>${X && isFinite(X.P.confPct) ? pct(X.P.confPct, 0) : "–"}</td>
@@ -836,6 +838,7 @@ lap("berita");
       ppSnap(); ppSave(); renderPaper(); apSave(); drawAp(); });
     $("lr80").checked = settings.gate80 !== false; $("lr80").onchange = () => { saveSettings({ gate80: $("lr80").checked }); drawAp(); };
     $("apLogTog").onclick = () => { ap.logAll = !ap.logAll; drawAp(); };
+    $("apStTog").onclick = () => { ap.stAll = !ap.stAll; drawAp(); };
     $("apNow").onclick = () => apCycle(true); $("apQuick").onclick = () => apQuick();
     $("apNewRun").onclick = () => { apRead(); if (apPositions().length) { toast("Tutup dulu posisi autopilot (tombol Matikan & tutup)."); return; } const n = ((ap.cfg.run && ap.cfg.run.n) || 0) + 1; ap.cfg.run = { start: new Date().toISOString(), cap: ap.cfg.budget, n }; apLogAdd("—", `Run #${n} dimulai · dana uji ${fmtIdr(ap.cfg.budget)}`); apSave(); drawAp(); };
     $("apKill").onclick = async () => { apRead(); ap.cfg.on = false; $("apOn").checked = false; for (const s of apPositions()) { try { const m = await apSell({ sym: s }); apLogAdd(s, `DITUTUP manual · ${m}`, "sell"); } catch (e) { apLogAdd(s, "gagal tutup: " + e.message, "err"); } } apLogAdd("—", "Autopilot dimatikan & posisi autopilot ditutup"); apSave(); drawAp(); toast("Autopilot dimatikan."); };
