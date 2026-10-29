@@ -2812,14 +2812,14 @@
       catch (e) { $("actBody").innerHTML = `<p class="status err">${esc(e.message)}</p>`; return; } }
     if (!act.all) return;
     const mH = parseInt($("mlH").value, 10) || 5, mk = `${key}|${mH}`;
-    if (act.mlKey !== mk) { act.mlKey = mk; $("mlCard").hidden = false; $("mlBody").innerHTML = '<p class="status">Melatih model machine learning (walk-forward)…</p>';
-      if (act.plan === null) $("actBody").innerHTML = '<p class="status">Melatih model machine learning…</p>';
+    if (act.mlKey !== mk) { act.mlKey = mk; $("mlCard").hidden = false; $("mlBody").innerHTML = '<p class="status">Melatih regresi logistik, gradient boosting, pola mirip, jaringan saraf & triple barrier secara walk-forward (±10 detik)…</p>';
+      if (act.plan === null) $("actBody").innerHTML = '<p class="status">Melatih 4 model machine learning + triple barrier (±10 detik)…</p>';
       try { // ML memakai riwayat terpanjang (10 tahun) terlepas dari rentang analisis yang dipilih
         const news = await newsHist(d.symbol);
         let DM = D, vote = act.all.votes.all; if (D.n < 2000) { try { const dl = await fetchSymbol(d.symbol, "10y"); const D2 = buildD(dl); if (D2.n > D.n + 100) { DM = D2; vote = null; } } catch { /* pakai data yang ada */ } }
         const ext = await mlExt(d.symbol);
         const M = await compute("ml", { D: DM, o: { horizon: mH, costBps: stratOpts().costBps, vote, news: news.map, ext } }); M.newsInfo = news; if (act.mlKey !== mk) return; M.yrs = DM.n / (isCrypto() ? 365 : 252);
-        if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; } // jangkarkan ke harga terkini
+        if (M.fc && state.res && state.res.s0 > 0) { const k = state.res.s0 / M.fc.lastPx; M.fc.px *= k; M.fc.bands.forEach((b) => { b.lo *= k; b.hi *= k; }); M.fc.lastPx = state.res.s0; if (M.tb) { M.tb.tgt *= k; M.tb.stp *= k; } } // jangkarkan ke harga terkini
         act.ml = M; }
       catch (e) { if (act.mlKey !== mk) return; act.ml = { error: e.message }; }
       renderML(); }
@@ -2847,7 +2847,8 @@
       [`Prediksi harga ${fc ? act.ml.H + " hari" : ""}`, fc ? fmtNum(fc.px) : "–", fc ? `80%: ${fmtNum(fc.bands[1].lo)}–${fmtNum(fc.bands[1].hi)} (teruji ${pct(fc.bands[1].cover, 0)})` : "", ""],
       ["Akurasi historis", accTxt, acc && isFinite(acc.p) ? `dasar ${pct(acc.base, 0)} · ≈${acc.nInd} kejadian · out-of-sample` : "belum cukup kejadian serupa", ""],
       ["Keyakinan AI", aiAdj ? `${nf(0).format(aiAdj.v)}%` : "–", aiAdj ? (aiAdj.v !== aiAdj.raw ? `AI bilang ${aiAdj.raw}% → disesuaikan ke bukti teruji` : `sikap: ${esc(act.ai.sikap || "?")}`) : "klik Minta AI merangkum", ""],
-      ["Peluang kena target 1", pr ? pct(pr.t1, 0) : "–", pr ? `sebelum stop · stop ${pct(pr.stop, 0)}` : "", ""],
+      ["Peluang kena target 1", pr ? pct(pr.t1, 0) : "–", pr ? `sebelum stop · stop ${pct(pr.stop, 0)} (bootstrap)` : "", ""],
+      ...(ml && ml.tb ? [["Peluang menang (ML)", pct(ml.tb.p, 0), `+${ml.tb.up}×ATR sebelum −${ml.tb.dn}×ATR · ${ml.tb.valid ? "teruji" : "belum teruji"} · dasar ${pct(ml.tb.base, 0)}`, ml.tb.valid ? "hl" : ""]] : []),
       ["Risk : Reward", `1 : ${nf(1).format(P.rr1)} / 1 : ${nf(1).format(P.rr2)}`, `risiko −${pct(P.riskPctPx, 1)} · target +${pct(P.rewPct1, 1)} / +${pct(P.rewPct2, 1)}`, ""],
       ["Ekspektasi / transaksi", pr ? `${pr.expR >= 0 ? "+" : ""}${nf(2).format(pr.expR)} R` : "–", pr && P.qty > 0 ? `≈ ${pr.expR >= 0 ? "+" : "−"}${rp(Math.abs(pr.expR) * P.R * P.qty * (idx ? 100 : 1))} · menang ${pct(pr.win, 0)}` : "", pr && pr.expR > 0 ? "hl" : ""],
       ["Ukuran posisi", P.qty > 0 ? `${idx ? nf(0).format(P.qty) : nf(4).format(P.qty)} ${unitW}` : "–", P.qty > 0 ? `≈ ${rp(P.cost)} · rugi maks ≈ ${rp(P.riskAmt)}` : "modal terlalu kecil untuk 1 lot", ""],
@@ -2942,9 +2943,11 @@
   function mlForAi() { const M = act.ml; if (!M || M.error) return null; const r = (x, k = 3) => (isFinite(x) ? +(+x).toPrecision(k) : null), fv = Object.fromEntries((M.feats || []).map((f) => [f.name, f.v]));
     return { horizon_hari: M.H, target: `harga ${M.H} hari bursa lagi > harga sekarang + biaya pulang-pergi`, peluang_naik_terkalibrasi: r(M.p), peluang_dasar_historis: r(M.base),
       teruji: M.valid, syarat_teruji: "AUC ≥ 0,53, nilai-p < 0,05, Brier skill > 0", auc_gabungan: r(M.auc), p_value: r(M.aucP), brier_skill: r(M.bss), akurasi: r(M.acc), sampel_uji_independen: M.nEff,
-      model: (M.models || []).map(([nm, a, w]) => ({ nama: nm, auc: r(a), bobot: r(w, 2) })), peluang_per_model_hari_ini: { logistik: r(M.pLog), boosting: r(M.pGb), pola_mirip: r(M.pKnn) },
+      model: (M.models || []).map(([nm, a, w]) => ({ nama: nm, auc: r(a), bobot: r(w, 2) })), peluang_per_model_hari_ini: { logistik: r(M.pLog), boosting: r(M.pGb), pola_mirip: r(M.pKnn), jaringan_saraf: r(M.pMlp) },
       fitur_terpenting: M.imp.slice(0, 8).map((f) => ({ nama: f.name, turun_auc_bila_diacak: r(f.v), arah: f.dir > 0 ? "nilai tinggi → peluang naik" : f.dir < 0 ? "nilai tinggi → peluang turun" : "netral", nilai_hari_ini: r(fv[f.name], 4) })),
-      kalibrasi: (M.calib || []).map((c) => ({ dijanjikan: r(c.pred), terjadi: r(c.act), n: c.n })), data_lintas_pasar: M.ext, berita_sebagai_fitur: M.newsUsed ? `${M.newsDays} hari` : "tidak (riwayat belum cukup)",
+      kalibrasi: (M.calib || []).map((c) => ({ dijanjikan: r(c.pred), terjadi: r(c.act), n: c.n })), ketidakpastian_antar_model: r(M.disagree),
+      triple_barrier: M.tb ? { arti: `peluang kena +${M.tb.up}×ATR sebelum −${M.tb.dn}×ATR dalam ${M.tb.H} hari`, peluang: r(M.tb.p), dasar: r(M.tb.base), auc: r(M.tb.auc), p_value: r(M.tb.aucP), teruji: M.tb.valid } : null,
+      struktur_waktu: (M.term || []).map((t) => ({ hari: t.h, peluang_naik: r(t.p), rata_rata: r(t.base) })), data_lintas_pasar: M.ext, berita_sebagai_fitur: M.newsUsed ? `${M.newsDays} hari` : "tidak (riwayat belum cukup)",
       uji_trading_oos: M.bt ? { sharpe_ml: r(M.bt.s.sharpe), sharpe_beli_tahan: r(M.bt.b.sharpe), return_ml: r(M.bt.s.total), return_beli_tahan: r(M.bt.b.total) } : null,
       prediksi_harga: M.fc ? { titik_tengah: r(M.fc.px, 6), penyusutan_ke_tidak_berubah: r(M.fc.shrink, 2), r2_oos: r(M.fc.r2), arah_benar_oos: r(M.fc.dirHit),
         rentang: M.fc.bands.map((b) => ({ keyakinan: b.q, bawah: r(b.lo, 6), atas: r(b.hi, 6), terbukti: r(b.cover) })) } : null }; }
@@ -3041,7 +3044,8 @@
     const st = M.valid ? '<span class="pill pos">teruji — ikut menentukan Rencana aksi</span>' : '<span class="pill">belum teruji — hanya informasi</span>';
     const k = (a, b, c, hl) => `<div class="kpi ${hl ? "hl" : ""}"><div class="k">${a}</div><div class="v">${b}</div><div class="h">${c}</div></div>`;
     const maxAcc = Math.max(M.base, 1 - M.base);
-    $("mlBody").innerHTML = `<div class="act-tiles">${k(`Peluang naik > biaya dalam ${M.H} hari`, pct(M.p, 0), `logistik ${pct(M.pLog, 0)} · boosting ${pct(M.pGb, 0)} · pola mirip ${pct(M.pKnn, 0)} (sebelum kalibrasi)`, M.valid)}
+    $("mlBody").innerHTML = `<div class="act-tiles">${k(`Peluang naik > biaya dalam ${M.H} hari`, pct(M.p, 0), `logistik ${pct(M.pLog, 0)} · boosting ${pct(M.pGb, 0)} · pola mirip ${pct(M.pKnn, 0)} · saraf ${pct(M.pMlp, 0)} (sebelum kalibrasi)`, M.valid)}
+        ${k("Ketidakpastian model", isFinite(M.disagree) ? `±${nf(0).format(M.disagree * 100)} poin` : "–", M.disagree > 0.12 ? "4 model berbeda pendapat — hati-hati" : "4 model cukup sepakat")}
         ${k("AUC out-of-sample (gabungan)", nf(3).format(M.auc), `nilai-p ${nf(3).format(M.aucP)} · ${M.nFeat} fitur${M.ext && M.ext.length ? " + " + esc(M.ext.join(", ")) : ""}`)}
         ${k("Brier skill", spct(M.bss, 1), "> 0 = lebih baik dari menebak rata-rata")}
         ${k("Akurasi", pct(M.acc, 0), `patokan selalu-tebak-mayoritas ${pct(maxAcc, 0)}`)}
@@ -3059,6 +3063,13 @@
         <div class="table-wrap"><table><thead><tr><th></th><th>Return</th><th>CAGR</th><th>Sharpe</th><th>Max DD</th></tr></thead><tbody>
           <tr><td>Strategi ML (setelah biaya)</td><td>${pc(M.bt.s.total)}</td><td>${pc(M.bt.s.cagr)}</td><td class="${M.bt.s.sharpe > M.bt.b.sharpe ? "pos" : "neg"}">${nf(2).format(M.bt.s.sharpe)}</td><td>${pct(M.bt.s.maxDD)}</td></tr>
           <tr><td>Beli & tahan</td><td>${pc(M.bt.b.total)}</td><td>${pc(M.bt.b.cagr)}</td><td>${nf(2).format(M.bt.b.sharpe)}</td><td>${pct(M.bt.b.maxDD)}</td></tr></tbody></table></div>` : ""}
+      ${M.tb ? `<div class="subh">Triple barrier: kena target (+${M.tb.up}×ATR) sebelum stop (−${M.tb.dn}×ATR) dalam ${M.tb.H} hari?</div>
+        <div class="act-tiles">${k("Peluang menang (ML)", pct(M.tb.p, 0), `target ±${fmtNum(M.tb.tgt)} · stop ±${fmtNum(M.tb.stp)}`, M.tb.valid)}
+          ${k("Peluang dasar", pct(M.tb.base, 0), "seberapa sering setup seperti ini menang secara umum")}${k("AUC out-of-sample", nf(3).format(M.tb.auc), `nilai-p ${nf(3).format(M.tb.aucP)} · ${M.tb.valid ? "teruji" : "belum teruji"}`)}</div>
+        <p class="note">Ini metode label "triple barrier" (López de Prado): model belajar langsung apakah sebuah posisi beli akan kena target dulu atau kena stop dulu — sama dengan cara kerja Rencana aksi. Bila teruji dan peluangnya rendah, rencana BELI otomatis diturunkan jadi TAHAN.</p>` : ""}
+      ${M.term && M.term.length ? `<div class="subh">Struktur waktu peluang naik (regresi logistik)</div><div class="table-wrap"><table><thead><tr><th>Horizon</th>${M.term.map((t) => `<th>${t.h} hari</th>`).join("")}</tr></thead><tbody>
+        <tr><td>Peluang naik hari ini</td>${M.term.map((t) => `<td class="${t.p > t.base + 0.05 ? "pos" : t.p < t.base - 0.05 ? "neg" : ""}">${pct(t.p, 0)}</td>`).join("")}</tr><tr><td>Rata-rata historis</td>${M.term.map((t) => `<td>${pct(t.base, 0)}</td>`).join("")}</tr></tbody></table></div>
+        <p class="note">Belum dikalibrasi & belum diuji walk-forward per horizon — pakai untuk melihat arah (jangka pendek vs menengah), bukan angka pasti.</p>` : ""}
       <div id="mlFc"></div><div id="mlVal"></div><div id="mlNews"></div>`;
     renderForecast();
     drawChart("mlCal", { type: "scatter", data: { datasets: [{ label: "Terjadi", data: M.calib.map((c) => ({ x: c.pred * 100, y: c.act * 100 })), backgroundColor: css("--accent"), pointRadius: 6 },
@@ -3248,7 +3259,7 @@
     const kv = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
     $("tmFoc").innerHTML = `<div class="foc-h"><span class="px">${q ? fx2(q.price) : "…"}</span><span class="${ch >= 0 ? "tm-u" : "tm-d"}">${spct(ch, 2)}</span>${P ? `<span class="foc-act ${P.action}">${P.action}</span><span class="tm-dim">keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}</span>` : ""}</div>
       ${st ? `<div class="gr" style="border:0;padding:0">${tmLine(st.six, 400, 60)}</div>` : ""}
-      <div class="foc-kv">${P ? kv("Antre beli", fmtNum(P.entry)) + kv("Stop (tutup <)", fmtNum(P.stop)) + kv("Target 1 / 2", `${fmtNum(P.t1)} / ${fmtNum(P.t2)}`) + kv(`ML naik ${M ? M.H + "h" : ""}`, M ? `${pct(M.p, 0)} ${M.valid ? "✓" : "·"}` : "–") +
+      <div class="foc-kv">${P ? kv("Antre beli", fmtNum(P.entry)) + kv("Stop (tutup <)", fmtNum(P.stop)) + kv("Target 1 / 2", `${fmtNum(P.t1)} / ${fmtNum(P.t2)}`) + kv(`ML naik ${M ? M.H + "h" : ""}`, M ? `${pct(M.p, 0)} ${M.valid ? "✓" : "·"}` : "–") + kv("ML menang (TB)", M && M.tb ? `${pct(M.tb.p, 0)} ${M.tb.valid ? "✓" : "·"}` : "–") +
           kv("Prediksi 80%", act.ml && act.ml.fc ? `${fmtNum(act.ml.fc.bands[1].lo)}–${fmtNum(act.ml.fc.bands[1].hi)}` : "–") + kv("Evaluasi", fmtDay(P.review)) : ""}
         ${st ? kv("52 mg", `${fx2(st.lo)}–${fx2(st.hi)}`) + kv("RSI 14", nf(0).format(st.rsi)) + kv("Vol 3B", pct(st.vol, 0)) + kv("1 / 3 bulan", `${spct(st.r1m, 1)} / ${spct(st.r3m, 1)}`) : ""}</div>
       ${P ? "" : `<p class="tm-dim" style="margin:6px 0 0">Rencana aksi, ML & prediksi muncul setelah aset ini dianalisis.</p>`}

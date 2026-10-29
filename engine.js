@@ -1405,6 +1405,30 @@
     return { f0, trees, imp };
   }
   const predGBMraw = (mdl, x) => { let z = mdl.f0; for (const t of mdl.trees) z += treeOut(t, x); return z; };
+  // jaringan saraf kecil (MLP d→16→8→1, tanh, Adam, L2, berhenti dini pada 15% data latih terakhir — urutan waktu dijaga)
+  function fitMLP(Z, y, o = {}) {
+    const n = Z.length, d = Z[0].length, H1 = o.h1 || 16, H2 = o.h2 || 8, rng = makeRng(o.seed || 9), lr = o.lr || 0.01, l2 = o.l2 ?? 1e-3, nVal = Math.max(30, Math.floor(n * 0.15)), nTr = n - nVal;
+    const init = (a, b) => Array.from({ length: a * b }, () => rng.normal() * Math.sqrt(1 / a));
+    let P = { W1: init(d, H1), b1: new Array(H1).fill(0), W2: init(H1, H2), b2: new Array(H2).fill(0), W3: init(H2, 1), b3: [0] };
+    const keys = Object.keys(P), m = {}, v = {}; keys.forEach((k) => { m[k] = new Array(P[k].length).fill(0); v[k] = new Array(P[k].length).fill(0); });
+    const fwd = (Q, x) => { const a1 = new Array(H1), a2 = new Array(H2); for (let j = 0; j < H1; j++) { let z = Q.b1[j]; for (let i = 0; i < d; i++) z += x[i] * Q.W1[i * H1 + j]; a1[j] = Math.tanh(z); }
+      for (let j = 0; j < H2; j++) { let z = Q.b2[j]; for (let i = 0; i < H1; i++) z += a1[i] * Q.W2[i * H2 + j]; a2[j] = Math.tanh(z); } let z = Q.b3[0]; for (let i = 0; i < H2; i++) z += a2[i] * Q.W3[i]; return { a1, a2, p: sigm(z) }; };
+    const loss = (Q) => { let L = 0; for (let i = nTr; i < n; i++) { const p = Math.min(1 - 1e-6, Math.max(1e-6, fwd(Q, Z[i]).p)); L -= y[i] * Math.log(p) + (1 - y[i]) * Math.log(1 - p); } return L / nVal; };
+    let best = { L: loss(P), P: JSON.parse(JSON.stringify(P)) }, bad = 0, step = 0; const B = 64, idx = Array.from({ length: nTr }, (_, i) => i);
+    for (let ep = 0; ep < (o.epochs || 30) && bad < 5; ep++) {
+      for (let i = nTr - 1; i > 0; i--) { const k = rng.int(i + 1); [idx[i], idx[k]] = [idx[k], idx[i]]; }
+      for (let s0 = 0; s0 < nTr; s0 += B) { const G = {}; keys.forEach((k) => (G[k] = new Array(P[k].length).fill(0))); const bs = Math.min(B, nTr - s0);
+        for (let q = s0; q < s0 + bs; q++) { const x = Z[idx[q]], f = fwd(P, x), e = f.p - y[idx[q]], d2 = new Array(H2), d1 = new Array(H1);
+          for (let i = 0; i < H2; i++) { G.W3[i] += e * f.a2[i]; d2[i] = e * P.W3[i] * (1 - f.a2[i] ** 2); } G.b3[0] += e;
+          for (let i = 0; i < H1; i++) { let sum = 0; for (let j = 0; j < H2; j++) { G.W2[i * H2 + j] += d2[j] * f.a1[i]; sum += d2[j] * P.W2[i * H2 + j]; } d1[i] = sum * (1 - f.a1[i] ** 2); }
+          for (let j = 0; j < H2; j++) G.b2[j] += d2[j]; for (let i = 0; i < d; i++) for (let j = 0; j < H1; j++) G.W1[i * H1 + j] += d1[j] * x[i]; for (let j = 0; j < H1; j++) G.b1[j] += d1[j]; }
+        step++; const c1 = 1 - 0.9 ** step, c2 = 1 - 0.999 ** step;
+        for (const k of keys) { const isW = k[0] === "W"; for (let i = 0; i < P[k].length; i++) { const g = G[k][i] / bs + (isW ? l2 * P[k][i] : 0); m[k][i] = 0.9 * m[k][i] + 0.1 * g; v[k][i] = 0.999 * v[k][i] + 0.001 * g * g;
+          P[k][i] -= (lr * (m[k][i] / c1)) / (Math.sqrt(v[k][i] / c2) + 1e-8); } } }
+      const L = loss(P); if (L < best.L - 1e-4) { best = { L, P: JSON.parse(JSON.stringify(P)) }; bad = 0; } else bad++; }
+    return { P: best.P, fwd };
+  }
+  const predMLP = (net, z) => net.fwd(net.P, z).p;
   function fitRidge(Z, y, lam = 5) { const d = Z[0].length + 1, A = Array.from({ length: d }, () => new Array(d).fill(0)), b = new Array(d).fill(0);
     for (let i = 0; i < Z.length; i++) { const x = [1, ...Z[i]]; for (let j = 0; j < d; j++) { b[j] += x[j] * y[i]; for (let k = j; k < d; k++) A[j][k] += x[j] * x[k]; } }
     for (let j = 0; j < d; j++) { for (let k = 0; k < j; k++) A[j][k] = A[k][j]; if (j) A[j][j] += lam; } return solveLin(A, b); }
@@ -1428,28 +1452,28 @@
     const fitBoth = (tr) => { const Xt = tr.map((t) => X[t]), yt = tr.map((t) => y[t]), d = Xt[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0);
       for (const r of Xt) r.forEach((v, j) => (mu[j] += v / Xt.length)); for (const r of Xt) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xt.length)); for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
       const Z = Xt.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), ys = tr.map((t) => yr[t] / sig(t)); // regresi pada return yang dinormalkan volatilitas
-      return { mu, sd, Z, yt, base: mean(yt), w: fitLogit(Z, yt, o.lam ?? 2), g: fitGBM(Xt, yt, { trees: o.trees ?? 60, seed: tr.length }), rw: fitRidge(Z, ys, 20), rg: fitGBM(Xt, ys, { reg: true, trees: 50, lr: 0.05, lam: 5, seed: tr.length + 1 }) }; };
+      return { mu, sd, Z, yt, base: mean(yt), w: fitLogit(Z, yt, o.lam ?? 2), net: fitMLP(Z, yt, { seed: tr.length + 3, epochs: o.epochs || 30 }), g: fitGBM(Xt, yt, { trees: o.trees ?? 60, seed: tr.length }), rw: fitRidge(Z, ys, 20), rg: fitGBM(Xt, ys, { reg: true, trees: 50, lr: 0.05, lam: 5, seed: tr.length + 1 }) }; };
     // model ke-3: "pola mirip" (k tetangga terdekat) — cari k hari lampau dengan kondisi fitur paling mirip, lihat berapa yang naik
     const knn = (M, z) => { const K = Math.max(25, Math.round(Math.sqrt(M.Z.length))), dist = new Float64Array(M.Z.length);
       for (let i = 0; i < M.Z.length; i++) { let s2 = 0; const r = M.Z[i]; for (let j = 0; j < z.length; j++) { const d = r[j] - z[j]; s2 += d * d; } dist[i] = s2; }
       const idx = Array.from(dist.keys()).sort((a, b) => dist[a] - dist[b]).slice(0, K); let s1 = 0; for (const i of idx) s1 += M.yt[i]; return (s1 + 5 * M.base) / (K + 5); };
-    let W = [1 / 3, 1 / 3, 1 / 3];
-    const predBoth = (M, x, w = W, noK = false) => { const z = x.map((v, j) => (v - M.mu[j]) / M.sd[j]), a = predLogit(M.w, z), b = predGBM(M.g, x), k = noK ? NaN : knn(M, z);
-      const p = noK ? (w[0] * a + w[1] * b) / (w[0] + w[1] || 1) : w[0] * a + w[1] * b + w[2] * k; return { a, b, k, p, f: 0.5 * predRidge(M.rw, z) + 0.5 * predGBMraw(M.rg, x) }; };
+    const EQ = [0.25, 0.25, 0.25, 0.25]; let W = EQ.slice();
+    const predBoth = (M, x, w = W, noK = false) => { const z = x.map((v, j) => (v - M.mu[j]) / M.sd[j]), a = predLogit(M.w, z), b = predGBM(M.g, x), k = noK ? NaN : knn(M, z), mm = predMLP(M.net, z);
+      const p = noK ? (w[0] * a + w[1] * b + w[3] * mm) / (w[0] + w[1] + w[3] || 1) : w[0] * a + w[1] * b + w[2] * k + w[3] * mm; return { a, b, k, m: mm, p, f: 0.5 * predRidge(M.rw, z) + 0.5 * predGBMraw(M.rg, x) }; };
     // bobot gabungan dipelajari hanya dari prediksi out-of-sample periode SEBELUMNYA (∝ (AUC − 0,5)², minimal 150 baris), selain itu rata
-    const stackW = (rows) => { const R = rows.filter((r) => r.y != null); if (R.length < 150) return [1 / 3, 1 / 3, 1 / 3]; const Y = R.map((r) => r.y);
-      const e = ["a", "b", "k"].map((m) => Math.max(0, aucOf(R.map((r) => r[m]), Y) - 0.5) ** 2), s2 = e.reduce((x, y) => x + y, 0); return s2 > 0 ? e.map((v) => v / s2) : [1 / 3, 1 / 3, 1 / 3]; };
+    const stackW = (rows) => { const R = rows.filter((r) => r.y != null); if (R.length < 150) return EQ.slice(); const Y = R.map((r) => r.y);
+      const e = ["a", "b", "k", "m"].map((m) => Math.max(0, aucOf(R.map((r) => r[m]), Y) - 0.5) ** 2), s2 = e.reduce((x, y) => x + y, 0); return s2 > 0 ? e.map((v) => v / s2) : EQ.slice(); };
     const permP = NAMES.map(() => []), baseAB = [];
     // walk-forward: latih pada data s/d (a − H) — jarak H mencegah label tumpang tindih bocor — lalu prediksi 63 hari berikutnya
     const first = lab[0], s0 = Math.max(first + 250, lab[Math.floor(lab.length * 0.4)]), oos = [], step = 63;
     for (let a = s0; a < n; a += step) { const tr = lab.filter((t) => t < a - H); if (tr.length < 200) continue; const MM = fitBoth(tr); W = stackW(oos);
-      const rows = []; for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = predBoth(MM, X[t], W); const r = { t, p: q.p, a: q.a, b: q.b, k: q.k, w: W.slice(), y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }; oos.push(r); rows.push(r); }
+      const rows = []; for (let t = a; t < Math.min(n, a + step); t++) if (X[t]) { const q = predBoth(MM, X[t], W); const r = { t, p: q.p, a: q.a, b: q.b, k: q.k, m: q.m, w: W.slice(), y: y[t], f: q.f * sig(t), yr: yr[t], s: sig(t) }; oos.push(r); rows.push(r); }
       // uji kepentingan fitur (permutasi): acak satu kolom di data uji fold ini, lihat seberapa turun kemampuan model (logistik + boosting)
       const lr2 = rows.filter((r) => r.y != null); if (lr2.length > 5) { for (const r of lr2) baseAB.push({ p: predBoth(MM, X[r.t], W, true).p, y: r.y });
         for (let j = 0; j < NAMES.length; j++) { const col = lr2.map((r) => X[r.t][j]); for (let i = col.length - 1; i > 0; i--) { const k2 = rngP.int(i + 1); [col[i], col[k2]] = [col[k2], col[i]]; }
           lr2.forEach((r, i) => { const xx = X[r.t].slice(); xx[j] = col[i]; permP[j].push(predBoth(MM, xx, W, true).p); }); } } }
     const ev = oos.filter((r) => r.y != null), P = ev.map((r) => r.p), Y = ev.map((r) => r.y);
-    const auc = aucOf(P, Y), aucA = aucOf(ev.map((r) => r.a), Y), aucB = aucOf(ev.map((r) => r.b), Y), aucK = aucOf(ev.map((r) => r.k), Y), base = mean(Y), brier = mean(ev.map((r) => (r.p - r.y) ** 2)), brierBase = base * (1 - base);
+    const auc = aucOf(P, Y), aucA = aucOf(ev.map((r) => r.a), Y), aucB = aucOf(ev.map((r) => r.b), Y), aucK = aucOf(ev.map((r) => r.k), Y), aucM = aucOf(ev.map((r) => r.m), Y), base = mean(Y), brier = mean(ev.map((r) => (r.p - r.y) ** 2)), brierBase = base * (1 - base);
     const platt = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(platt, p)), brierCal = mean(cal.map((p, i) => (p - Y[i]) ** 2));
     // signifikansi AUC (Hanley–McNeil) dengan jumlah sampel efektif ≈ n / H karena label tumpang tindih
     const n1 = Y.filter(Boolean).length / H, n0 = (Y.length - Y.filter(Boolean).length) / H, A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
@@ -1467,6 +1491,28 @@
     const aucAB = aucOf(baseAB.map((r) => r.p), baseAB.map((r) => r.y)), BY = baseAB.map((r) => r.y);
     const imp = NAMES.map((name, j) => ({ name, v: permP[j].length === BY.length ? aucAB - aucOf(permP[j], BY) : 0, dir: Math.sign(MF.w[j + 1]) })).sort((a, b) => b.v - a.v);
     const pCal = now ? applyPlatt(platt, now.p) : NaN, bss = 1 - brierCal / brierBase;
+    // ---- triple barrier (López de Prado): kena target (+tbUp×ATR) sebelum stop (−tbDn×ATR) dalam tbH hari? = peluang menang rencana ----
+    const tbH = o.tbH || 20, tbUp = o.tbUp || 3, tbDn = o.tbDn || 2, ATR = T.atr(D.h, D.l, c, 14), ytb = new Array(n).fill(null);
+    for (let t = 0; t < n - 1; t++) { if (!ATR[t]) continue; const up = c[t] + tbUp * ATR[t], dn = c[t] - tbDn * ATR[t]; let lab2 = null;
+      for (let i = t + 1; i <= Math.min(n - 1, t + tbH); i++) { if (D.l[i] <= dn) { lab2 = 0; break; } if (D.h[i] >= up) { lab2 = 1; break; } }
+      if (lab2 == null && t + tbH < n) lab2 = 0; ytb[t] = lab2; }
+    const labT = []; for (let t = 0; t < n; t++) if (X[t] && ytb[t] != null) labT.push(t);
+    let tb = null;
+    if (labT.length > 300) { const fitT = (tr) => { const Xt = tr.map((t) => X[t]), yt = tr.map((t) => ytb[t]), d = Xt[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0);
+        for (const r of Xt) r.forEach((v, j) => (mu[j] += v / Xt.length)); for (const r of Xt) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xt.length)); for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
+        return { mu, sd, w: fitLogit(Xt.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), yt, 2), g: fitGBM(Xt, yt, { trees: 50, seed: tr.length + 7 }) }; };
+      const prT = (M, x) => 0.5 * predLogit(M.w, x.map((v, j) => (v - M.mu[j]) / M.sd[j])) + 0.5 * predGBM(M.g, x), oT = [];
+      for (let a = s0; a < n; a += step) { const tr = labT.filter((t) => t < a - tbH); if (tr.length < 200) continue; const MT = fitT(tr); for (let t = a; t < Math.min(n, a + step); t++) if (X[t] && ytb[t] != null) oT.push({ p: prT(MT, X[t]), y: ytb[t] }); }
+      if (oT.length > 100) { const PT = oT.map((r) => r.p), YT = oT.map((r) => r.y), aT = aucOf(PT, YT), plT = fitPlatt(PT, YT), bT = mean(YT), brT = mean(PT.map((p, i) => (applyPlatt(plT, p) - YT[i]) ** 2));
+        const n1t = YT.filter(Boolean).length / tbH, n0t = (YT.length - YT.filter(Boolean).length) / tbH, A2 = aT, q1t = A2 / (2 - A2), q2t = (2 * A2 * A2) / (1 + A2);
+        const seT = Math.sqrt(Math.max(1e-9, (A2 * (1 - A2) + (n1t - 1) * (q1t - A2 * A2) + (n0t - 1) * (q2t - A2 * A2)) / Math.max(1, n1t * n0t))), pvT = 1 - ncdf((A2 - 0.5) / seT);
+        const MTF = fitT(labT); tb = { p: xNow ? applyPlatt(plT, prT(MTF, xNow)) : NaN, auc: aT, aucP: pvT, base: bT, bss: 1 - brT / (bT * (1 - bT)), valid: aT >= 0.53 && pvT < 0.05 && 1 - brT / (bT * (1 - bT)) > 0, H: tbH, up: tbUp, dn: tbDn, n: oT.length,
+          tgt: xNow ? c[n - 1] + tbUp * ATR[n - 1] : NaN, stp: xNow ? c[n - 1] - tbDn * ATR[n - 1] : NaN }; } }
+    // ---- struktur waktu: peluang naik untuk 5/10/20 hari (regresi logistik pada semua data berlabel) ----
+    const term = xNow ? [5, 10, 20].map((h) => { const L2 = []; for (let t = 0; t < n - h; t++) if (X[t]) L2.push(t); if (L2.length < 300) return { h, p: NaN, base: NaN };
+      const yy = L2.map((t) => (c[t + h] / c[t] - 1 > cost ? 1 : 0)), Xs = L2.map((t) => X[t]), d = Xs[0].length, mu = new Array(d).fill(0), sd = new Array(d).fill(0);
+      for (const r of Xs) r.forEach((v, j) => (mu[j] += v / Xs.length)); for (const r of Xs) r.forEach((v, j) => (sd[j] += (v - mu[j]) ** 2 / Xs.length)); for (let j = 0; j < d; j++) sd[j] = Math.sqrt(sd[j]) || 1;
+      const w = fitLogit(Xs.map((r) => r.map((v, j) => (v - mu[j]) / sd[j])), yy, 4); return { h, p: predLogit(w, xNow.map((v, j) => (v - mu[j]) / sd[j])), base: mean(yy) }; }) : [];
     // ---- prediksi harga: titik tengah + rentang conformal (dikalibrasi dari kesalahan out-of-sample) ----
     // titik tengah disusutkan ke nol: bobot w = argmin galat di paruh pertama data uji (0 = model tak berguna → "tidak berubah")
     const er0 = oos.filter((r) => r.yr != null), h0 = Math.floor(er0.length / 2), wOf = (A) => { let a = 0, b = 0; for (const r of A) { a += r.f * r.yr; b += r.f * r.f; } return b > 0 ? Math.max(0, Math.min(1, a / b)) : 0; };
@@ -1478,8 +1524,9 @@
     const dirHit = mean(er.filter((r) => Math.abs(r.fRaw) > 1e-9).map((r) => (Math.sign(r.fRaw) === Math.sign(r.yr) ? 1 : 0))), sNow = xNow ? Math.max(1e-4, xNow[8] * Math.sqrt(H / 252)) : NaN, fNow = now ? wAll * now.f * sNow : NaN;
     const fc = now ? { ret: fNow, px: c[n - 1] * Math.exp(fNow), bands: LV.map((q, i) => ({ q, lo: c[n - 1] * Math.exp(fNow - qAll[i] * sNow), hi: c[n - 1] * Math.exp(fNow + qAll[i] * sNow), cover: cover[i] })),
       r2: 1 - sse / sse0, dirHit, nEval: er.length - half, sdNow: sNow, lastPx: c[n - 1], shrink: wAll, shrinkHalf: wHalf } : null;
-    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucP, weights: Wf,
-      models: [["Regresi logistik (L2)", aucA, Wf[0]], ["Gradient boosting (60 pohon)", aucB, Wf[1]], ["Pola mirip (k tetangga terdekat)", aucK, Wf[2]]], ext: ext.map((e) => e.name), nFeat: NAMES.length, impBase: aucAB, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
+    return { H, cost, p: pCal, pRaw: now ? now.p : NaN, pLog: now ? now.a : NaN, pGb: now ? now.b : NaN, pKnn: now ? now.k : NaN, pMlp: now ? now.m : NaN, auc, aucLog: aucA, aucGb: aucB, aucKnn: aucK, aucMlp: aucM, aucP, weights: Wf,
+      models: [["Regresi logistik (L2)", aucA, Wf[0]], ["Gradient boosting (60 pohon)", aucB, Wf[1]], ["Pola mirip (k tetangga terdekat)", aucK, Wf[2]], ["Jaringan saraf (MLP 16-8, Adam)", aucM, Wf[3]]],
+      disagree: now ? std([now.a, now.b, now.k, now.m], 0) : NaN, tb, term, ext: ext.map((e) => e.name), nFeat: NAMES.length, impBase: aucAB, base, brier: brierCal, bss, acc: mean(cal.map((p, i) => ((p > 0.5 ? 1 : 0) === Y[i] ? 1 : 0))),
       nOos: ev.length, nEff: Math.round(ev.length / H), from: D.d[ev.length ? ev[0].t : n - 1], calib, imp, bt, valid: auc >= 0.53 && aucP < 0.05 && bss > 0, nTrain: lab.length,
       oosP: oos.map((r) => ({ t: r.t, d: D.d[r.t], p: applyPlatt(platt, r.p) })), fc, featNames: NAMES, newsDays, newsUsed: newsDays >= 60, feats: xNow ? NAMES.map((k, j) => ({ name: k, v: xNow[j] })) : [] };
   }
@@ -1561,6 +1608,7 @@
       acc = m >= 10 ? { p: k / m, n: m, nInd: Math.max(1, Math.round(m / H)), base: mb ? kb / mb : NaN, voteAction, rule: voteAction === "BELI" ? `sinyal BELI → harga ${H} hari kemudian lebih tinggi (setelah biaya)` : voteAction === "JUAL" ? `harga ${H} hari kemudian lebih rendah` : `harga ${H} hari kemudian tidak turun lebih dari 1 simpangan baku`, inSample: false, src: useRob ? "lolos-OOS" : "semua" } : { p: NaN, n: m }; }
     // machine learning (bila lolos uji out-of-sample) ikut memutuskan: veto BELI bila peluangnya rendah
     const ml = o.ml && isFinite(o.ml.p) ? o.ml : null;
+    if (ml && ml.tb && ml.tb.valid && action === "BELI" && ml.tb.p < Math.min(0.3, ml.tb.base - 0.05)) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model triple-barrier (teruji, AUC ${ml.tb.auc.toFixed(2)}) hanya memberi peluang ${(ml.tb.p * 100).toFixed(0)}% kena target sebelum stop`; }
     if (ml && ml.valid && action === "BELI" && ml.p < 0.45) { action = "TAHAN"; basis += `; diturunkan jadi TAHAN karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) hanya memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
     if (ml && ml.valid && action === "TAHAN" && voteAction !== "JUAL" && ml.p >= 0.62 && !(pr && pr.expR <= 0)) { action = "BELI"; basis += `; dinaikkan jadi BELI karena model ML (teruji, AUC ${ml.auc.toFixed(2)}) memberi peluang ${(ml.p * 100).toFixed(0)}% naik`; }
     // keyakinan % untuk keputusan akhir: peluang ML terkalibrasi (bila teruji), selain itu akurasi historis

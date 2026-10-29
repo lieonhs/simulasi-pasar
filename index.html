@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029085251">
+<link rel="stylesheet" href="style.css?v=20261029090010">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -644,7 +644,7 @@
       <details class="formula"><summary>Cara kerja model</summary><div class="fx">
         <p><b>Pertanyaan yang dijawab:</b> apakah harga H hari lagi lebih tinggi dari sekarang setelah biaya beli + jual? (ya = 1, tidak = 0).</p>
         <p><b>±30 fitur</b> dihitung hanya dari data sampai hari itu: return 1/5/20/60 hari, jarak ke MA20/50/200, RSI, volatilitas & rasionya, ATR, volume relatif, tekanan beli-jual, korelasi harga–volume, posisi di rentang 20 hari, MACD, jarak dari puncak 1 tahun, %B Bollinger, suara 50 strategi, sentimen & jumlah berita 5 hari (bila riwayatnya cukup), musim (akhir/awal bulan, bulan), serta data lintas pasar: return 5/20 hari indeks acuan & kurs (IHSG + USD/IDR untuk saham IDX; S&P 500 + VIX untuk saham AS; Bitcoin + S&P 500 untuk kripto) dan kekuatan relatif terhadapnya.</p>
-        <p><b>Tiga model:</b> regresi logistik dengan penalti L2 (Newton–Raphson), gradient boosting 60 pohon kedalaman 2 (fitur dibagi 16 kuantil, subsampel 80%), dan "pola mirip" (k tetangga terdekat: hari-hari lampau dengan kondisi paling mirip). <b>Bobot gabungan</b> tiap periode dipelajari hanya dari kinerja out-of-sample periode sebelumnya (∝ (AUC − 0,5)²). Semua ditulis sendiri di aplikasi ini — tidak memakai layanan luar. Riwayat harga yang dipakai ±10 tahun.</p>
+        <p><b>Empat model:</b> jaringan saraf (MLP 16-8 neuron, tanh, optimizer Adam, regularisasi L2, berhenti dini pada 15% data latih terakhir), regresi logistik dengan penalti L2 (Newton–Raphson), gradient boosting 60 pohon kedalaman 2 (fitur dibagi 16 kuantil, subsampel 80%), dan "pola mirip" (k tetangga terdekat: hari-hari lampau dengan kondisi paling mirip). <b>Triple barrier</b>: model terpisah (logistik + boosting) yang belajar apakah harga kena +3×ATR sebelum −2×ATR dalam 20 hari — langsung mengukur peluang menang sebuah posisi beli. <b>Bobot gabungan</b> tiap periode dipelajari hanya dari kinerja out-of-sample periode sebelumnya (∝ (AUC − 0,5)²). Semua ditulis sendiri di aplikasi ini — tidak memakai layanan luar. Riwayat harga yang dipakai ±10 tahun.</p>
         <p><b>Kepentingan fitur</b> diukur dengan uji permutasi: kolom fitur diacak di data uji, lalu dilihat seberapa turun AUC-nya.</p>
         <p><b>Uji jujur (walk-forward):</b> mulai 40% data, model dilatih ulang tiap 63 hari memakai data sampai H hari sebelumnya (jeda H mencegah label yang tumpang tindih bocor), lalu memprediksi 63 hari berikutnya yang belum pernah dilihat. Semua metrik di atas berasal dari prediksi ini.</p>
         <p><b>AUC</b> = peluang model memberi skor lebih tinggi ke hari "naik" daripada hari "tidak naik" (0,5 = tebak koin). Nilai-p memakai jumlah sampel efektif n/H karena hari-hari berurutan saling tumpang tindih. <b>Brier skill</b> &gt; 0 = lebih akurat daripada selalu menebak rata-rata. Peluang dikalibrasi (Platt) supaya "60%" benar-benar terjadi ±60% kali.</p>
@@ -1017,8 +1017,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029085251";</script>
-<script src="engine.js?v=20261029085251"></script>
-<script src="app.js?v=20261029085251"></script>
+<script>window.APP_V = "20261029090010";</script>
+<script src="engine.js?v=20261029090010"></script>
+<script src="app.js?v=20261029090010"></script>
 </body>
 </html>
