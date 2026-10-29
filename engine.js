@@ -1215,10 +1215,10 @@
     const S = STRATS.find((x) => x[0] === id); if (!S) throw new Error("Strategi tidak dikenal");
     const raw = S[4](D), cost = (o.costBps ?? 20) / 1e4, allowShort = !!o.short, ppy = o.ppy || 252, rf = o.rf || 0;
     const pos = raw.map((x) => (x == null || !isFinite(x) ? 0 : x < 0 ? (allowShort ? Math.max(-1, x) : 0) : Math.min(1, x)));
-    const r = [], rb = [], dates = [], trades = []; let prev = 0, open = null;
+    const r = [], rb = [], dates = [], trades = []; let prev = 0, open = null, gsum = 0, turn = 0;
     for (let t = 0; t < D.n - 1; t++) { // posisi ditentukan saat tutup hari t, berlaku untuk return t → t+1
       const ret = D.c[t + 1] / D.c[t] - 1, chg = Math.abs(pos[t] - prev);
-      r.push(pos[t] * ret - cost * chg); rb.push(ret); dates.push(D.d[t + 1]);
+      r.push(pos[t] * ret - cost * chg); rb.push(ret); dates.push(D.d[t + 1]); gsum += pos[t] * ret; turn += chg;
       if (prev === 0 && pos[t] !== 0) open = { in: D.d[t], px: D.c[t], side: Math.sign(pos[t]), w: Math.abs(pos[t]) };
       else if (prev !== 0 && (pos[t] === 0 || Math.sign(pos[t]) !== Math.sign(prev)) && open) { trades.push({ ...open, out: D.d[t], pxOut: D.c[t], ret: open.side * (D.c[t] / open.px - 1) - 2 * cost, days: D.d.indexOf(D.d[t]) - D.d.indexOf(open.in) }); open = pos[t] !== 0 ? { in: D.d[t], px: D.c[t], side: Math.sign(pos[t]), w: Math.abs(pos[t]) } : null; }
       prev = pos[t]; }
@@ -1228,15 +1228,45 @@
     return { id, name: S[2], cat: S[1], desc: S[3], dates, r, rb, pos: pos[D.n - 1], posPrev: pos[D.n - 2], trades,
       all: perf(r, dates, ppy, rf), bh: perf(rb, dates, ppy, rf), is: perf(r.slice(0, k), dates, ppy, rf), oos: perf(r.slice(k), dates, ppy, rf), oosBh: perf(rb.slice(k), dates, ppy, rf), splitDate: dates[k],
       exposure: pos.filter((x) => x !== 0).length / pos.length, nTrades: closed.length, winRate: closed.length ? wins.length / closed.length : NaN, avgTrade: closed.length ? mean(closed.map((x) => x.ret)) : NaN,
-      profitFactor: gl > 0 ? gp / gl : gp > 0 ? Infinity : NaN, avgDays: closed.length ? mean(closed.map((x) => x.days)) : NaN, periods: periodReturns(r, dates), periodsBh: periodReturns(rb, dates) };
+      profitFactor: gl > 0 ? gp / gl : gp > 0 ? Infinity : NaN, avgDays: closed.length ? mean(closed.map((x) => x.days)) : NaN, periods: periodReturns(r, dates), periodsBh: periodReturns(rb, dates),
+      beBps: turn > 0 ? (gsum / turn) * 1e4 : Infinity, // biaya per transaksi (bps) yang membuat untung bersih = 0
+      dsr: dsr(r, 0), consist: consistency(r, rb, 5), posArr: pos };
   }
+  // ---------- uji keandalan: DSR, konsistensi, seleksi walk-forward ----------
+  function moments(r) { const n = r.length, m = mean(r); let v = 0, s3 = 0, s4 = 0; for (const x of r) { const d = x - m; v += d * d; s3 += d ** 3; s4 += d ** 4; } v /= n; const sd = Math.sqrt(v);
+    return { n, m, sd, sr: sd > 0 ? m / sd : 0, skew: sd > 0 ? s3 / n / sd ** 3 : 0, kurt: sd > 0 ? s4 / n / v ** 2 : 3 }; }
+  // Probabilistic / Deflated Sharpe Ratio (Bailey & López de Prado 2014): peluang Sharpe sebenarnya > srStar (per periode)
+  function dsr(r, srStar) { const M = moments(r); if (M.n < 30 || !(M.sd > 0)) return NaN;
+    const den = Math.sqrt(Math.max(1e-9, 1 - M.skew * M.sr + ((M.kurt - 1) / 4) * M.sr ** 2)); return ncdf(((M.sr - srStar) * Math.sqrt(M.n - 1)) / den); }
+  function srOf(r) { const M = moments(r); return M.sr; }
+  // berapa dari k potongan waktu (berurutan) di mana strategi ≥ beli-dan-tahan (Sharpe)
+  function consistency(r, rb, k) { const n = r.length, L = Math.floor(n / k); let c = 0; if (L < 20) return { k: 0, of: 0 };
+    for (let i = 0; i < k; i++) { const a = i * L, b = i === k - 1 ? n : a + L; if (srOf(r.slice(a, b)) >= srOf(rb.slice(a, b)) - 1e-12) c++; } return { k: c, of: k }; }
   function runAllStrategies(D, o = {}) {
-    const out = STRATS.map((S) => { try { const R = runStrategy(S[0], D, o); return { id: R.id, name: R.name, cat: R.cat, total: R.all.total, cagr: R.all.cagr, sharpe: R.all.sharpe, maxDD: R.all.maxDD, oosSharpe: R.oos.sharpe, isSharpe: R.is.sharpe, nTrades: R.nTrades, winRate: R.winRate, exposure: R.exposure, pos: R.pos, posPrev: R.posPrev }; } catch (e) { return { id: S[0], name: S[2], cat: S[1], error: e.message }; } });
-    const bh = runStrategy(STRATS[0][0], D, o); const yrsOos = bh.oos.yrs;
+    const R = {}, PA = {}, out = STRATS.map((S) => { try { const X = runStrategy(S[0], D, o); R[S[0]] = X.r; PA[S[0]] = X.posArr;
+      return { id: X.id, name: X.name, cat: X.cat, total: X.all.total, cagr: X.all.cagr, sharpe: X.all.sharpe, maxDD: X.all.maxDD, oosSharpe: X.oos.sharpe, isSharpe: X.is.sharpe, nTrades: X.nTrades, winRate: X.winRate,
+        exposure: X.exposure, pos: X.pos, posPrev: X.posPrev, avgDays: X.avgDays, beBps: X.beBps, consist: X.consist, srp: srOf(X.r) }; } catch (e) { return { id: S[0], name: S[2], cat: S[1], error: e.message }; } });
+    const bh = runStrategy(STRATS[0][0], D, o); const yrsOos = bh.oos.yrs, rb = bh.rb, dates = bh.dates, ppy = o.ppy || 252;
     // Sharpe tertinggi yang diharapkan muncul HANYA karena kebetulan dari N strategi (Bailey & López de Prado)
-    const N = out.length, g = 0.5772, z = qnorm;
-    const sdSR = 1 / Math.sqrt(Math.max(yrsOos, 0.25)), luck = sdSR * ((1 - g) * z(1 - 1 / N) + g * z(1 - 1 / (N * Math.E)));
-    return { list: out, bh: { total: bh.bh.total, cagr: bh.bh.cagr, sharpe: bh.bh.sharpe, maxDD: bh.bh.maxDD, oosSharpe: bh.oosBh.sharpe }, luckSharpe: luck, yrsOos, splitDate: bh.splitDate };
+    const ok = out.filter((x) => !x.error), N = ok.length, g = 0.5772, z = qnorm, E = (1 - g) * z(1 - 1 / N) + g * z(1 - 1 / (N * Math.E));
+    const sdSR = 1 / Math.sqrt(Math.max(yrsOos, 0.25)), luck = sdSR * E;
+    // DSR: ambang per periode dari sebaran Sharpe antar-strategi (minimal varians sampling 1/T)
+    const srs = ok.map((x) => x.srp), T = rb.length, vCross = srs.length > 1 ? std(srs) ** 2 : 0, srStar = Math.sqrt(Math.max(vCross, 1 / T)) * E;
+    const bhOos = bh.oosBh.sharpe, bhSr = bh.bh.sharpe;
+    for (const x of ok) { x.dsr = dsr(R[x.id], srStar);
+      x.pass = x.dsr >= 0.9 && x.consist.k >= Math.ceil(0.6 * x.consist.of) && x.oosSharpe > bhOos && x.sharpe > bhSr && x.nTrades >= 5; }
+    // seleksi walk-forward: tiap jendela pakai strategi dengan Sharpe terbaik SEBELUM jendela itu → hasil jujur "memilih dari peringkat"
+    const n = rb.length, s0 = Math.floor(n * 0.4), K = 6, Lw = Math.floor((n - s0) / K), wr = [], wb = [], wd = [], picks = [];
+    if (Lw >= 20) for (let w = 0; w < K; w++) { const a = s0 + w * Lw, b = w === K - 1 ? n : a + Lw;
+      let best = null, bs = -Infinity; for (const x of ok) { const v = srOf(R[x.id].slice(0, a)); if (v > bs) { bs = v; best = x; } }
+      picks.push({ from: dates[a], to: dates[b - 1], name: best.name, id: best.id }); for (let t = a; t < b; t++) { wr.push(R[best.id][t]); wb.push(rb[t]); wd.push(dates[t]); } }
+    // suara konsensus per hari (untuk menguji akurasi historis Rencana aksi)
+    const vote = (L, wfn) => { const v = new Array(D.n).fill(0); let W = 0; for (const x of L) { const w = wfn(x); W += w; const pa = PA[x.id]; for (let t = 0; t < D.n; t++) v[t] += w * Math.max(0, Math.min(1, pa[t])); } return W > 0 ? v.map((x) => x / W) : null; };
+    const passL = ok.filter((x) => x.pass), votes = { pass: passL.length ? vote(passL, (x) => Math.max(0.05, x.dsr - 0.5)) : null, all: vote(ok, () => 1) };
+    const wf = wr.length ? { s: perf(wr, wd, ppy, o.rf || 0), b: perf(wb, wd, ppy, o.rf || 0), picks, from: wd[0] } : null;
+    if (wf) { wf.s.curve = undefined; wf.b.curve = undefined; }
+    return { list: out, bh: { total: bh.bh.total, cagr: bh.bh.cagr, sharpe: bh.bh.sharpe, maxDD: bh.bh.maxDD, oosSharpe: bhOos }, luckSharpe: luck, yrsOos, splitDate: bh.splitDate,
+      srStarAnn: srStar * Math.sqrt(ppy), nPass: passL.length, wf, votes };
   }
 
   // ---------- Noise band (Zarattini, Aziz & Barbon 2024) ----------
@@ -1267,9 +1297,10 @@
       dayRet.push({ d: D.d, r: r - 1, bh: D.bars[D.bars.length - 1][4] / prevC - 1 }); eq *= r;
     }
     const rs = dayRet.map((x) => x.r), dd = dayRet.map((x) => x.d), ppy = o.ppy || 252;
+    let beBps = NaN; if (!o._gross && trades.length) { const G = noiseBand(bars, { ...o, costBps: 0, _gross: true }); const gm = G.days.reduce((a, x) => a + x.r, 0); beBps = (gm / (2 * trades.length)) * 1e4; }
     const L = days[days.length - 1], lastBar = L.bars[L.bars.length - 1], n = lastDay.up.length;
     const now = n ? { up: lastDay.up[n - 1], lo: lastDay.lo[n - 1], vwap: lastDay.vwap[n - 1], px: lastBar[4], state: lastBar[4] > lastDay.up[n - 1] ? "di atas batas atas (momentum naik)" : lastBar[4] < lastDay.lo[n - 1] ? "di bawah batas bawah (momentum turun)" : "di dalam area noise (tidak ada sinyal)" } : null;
-    return { days: dayRet, trades, all: perf(rs, dd, ppy), bh: perf(dayRet.map((x) => x.bh), dd, ppy), periods: periodReturns(rs, dd), lastDay, now, nDays: dayRet.length,
+    return { days: dayRet, trades, all: perf(rs, dd, ppy), bh: perf(dayRet.map((x) => x.bh), dd, ppy), periods: periodReturns(rs, dd), lastDay, now, nDays: dayRet.length, beBps, lastT: lastBar[0],
       winRate: trades.length ? trades.filter((t) => t.ret > 0).length / trades.length : NaN, nTrades: trades.length, avgTrade: trades.length ? mean(trades.map((t) => t.ret)) : NaN };
   }
 
@@ -1279,9 +1310,11 @@
     let step = o.tick || (hi - lo) / 30 || 1; if (o.idx) { step = idxTick((lo + hi) / 2); lo = Math.floor(lo / step) * step; }
     const nb = Math.max(1, Math.min(120, Math.round((hi - lo) / step) + 1)); if (!o.idx) step = (hi - lo) / Math.max(1, nb - 1) || 1;
     const lv = Array.from({ length: nb }, (_, k) => ({ p: lo + k * step, buy: 0, sell: 0 }));
-    let tb = 0, ts = 0;
+    let tb = 0, ts = 0, nReal = 0;
     for (const b of bars) { const v = b[5] || 0; if (!v) continue;
-      const clv = b[2] > b[3] ? (b[4] - b[3]) / (b[2] - b[3]) : b[4] >= b[1] ? 1 : 0, dir = b[4] > b[1] ? 1 : b[4] < b[1] ? 0 : 0.5, fb = 0.5 * clv + 0.5 * dir;
+      // b[6] = volume beli agresif (taker buy) dari bursa bila tersedia (Binance) → data asli; selain itu perkiraan CLV + arah bar
+      const real = b.length > 6 && b[6] != null && isFinite(b[6]); if (real) nReal++;
+      const clv = b[2] > b[3] ? (b[4] - b[3]) / (b[2] - b[3]) : b[4] >= b[1] ? 1 : 0, dir = b[4] > b[1] ? 1 : b[4] < b[1] ? 0 : 0.5, fb = real ? Math.min(1, Math.max(0, b[6] / v)) : 0.5 * clv + 0.5 * dir;
       const a = Math.max(0, Math.round((b[3] - lo) / step)), z = Math.min(nb - 1, Math.round((b[2] - lo) / step)), w = v / (z - a + 1);
       for (let k = a; k <= z; k++) { lv[k].buy += w * fb; lv[k].sell += w * (1 - fb); } tb += v * fb; ts += v * (1 - fb); }
     const tot = lv.map((x) => x.buy + x.sell), all = tb + ts, pocI = tot.indexOf(Math.max(...tot));
@@ -1291,10 +1324,80 @@
     const vwap = bars.reduce((s, x) => s + ((x[2] + x[3] + x[4]) / 3) * (x[5] || 0), 0) / (all || 1);
     const pAbove = lv.filter((x) => x.p > lv[pocI].p).reduce((s, x) => s + x.buy + x.sell, 0) / (all || 1);
     return { levels: lv.reverse(), step, lo, hi, buy: tb, sell: ts, total: all, buyPct: all ? tb / all : NaN, delta: tb - ts, poc: lv[nb - 1 - pocI].p, vaLo: lo + a * step, vaHi: lo + b * step,
-      topBuy: lo + bI * step, topSell: lo + sI * step, imbalances: imb, vwap, nBars: bars.length, open: bars[0][1], close: bars[bars.length - 1][4], pAbovePoc: pAbove };
+      topBuy: lo + bI * step, topSell: lo + sI * step, imbalances: imb, vwap, nBars: bars.length, open: bars[0][1], close: bars[bars.length - 1][4], pAbovePoc: pAbove, realShare: nReal / bars.length };
+  }
+
+  // ---------- Rencana aksi: beli / jual / tahan, harga, waktu ----------
+  function addBiz(dateStr, k, crypto) { const d = new Date(dateStr + "T00:00:00Z"); let left = k;
+    while (left > 0) { d.setUTCDate(d.getUTCDate() + 1); const w = d.getUTCDay(); if (crypto || (w !== 0 && w !== 6)) left--; } return d.toISOString().slice(0, 10); }
+  /* D: OHLCV mentah {d,o,h,l,c,v,n}. o: { isIdx, crypto, strats: daftar hasil runAllStrategies, score: skor teknikal (−5..5), capital, riskPct, unit, start (tanggal mulai berlaku), seed } */
+  function actionPlan(D, o = {}) {
+    const n = D.n, c = D.c, px = c[n - 1], isIdx = !!o.isIdx, rt = (v, dir) => roundTick(v, isIdx, dir);
+    const atr = T.atr(D.h, D.l, c, 14)[n - 1], ma20 = T.sma(c, 20)[n - 1], ma50 = T.sma(c, 50)[n - 1];
+    const sl = (a, k) => a.slice(Math.max(0, n - k)), hi20 = Math.max(...sl(D.h, 20)), lo20 = Math.min(...sl(D.l, 20)), lo10 = Math.min(...sl(D.l, 10)), hi52 = Math.max(...sl(D.h, 252));
+    const S = (o.strats || []).filter((x) => !x.error), robust = S.filter((x) => x.pass);
+    const voteOf = (L, wf) => { let w = 0, v = 0; for (const x of L) { const ww = wf(x); w += ww; v += ww * Math.max(0, Math.min(1, x.pos)); } return w > 0 ? v / w : NaN; };
+    const vRob = voteOf(robust, (x) => Math.max(0.05, x.dsr - 0.5)), vAll = voteOf(S, () => 1), score = o.score ?? 0;
+    let action, basis, conf;
+    if (robust.length) { action = vRob >= 0.5 ? "BELI" : vRob < 0.25 ? "JUAL" : "TAHAN"; conf = robust.length >= 3 && Math.abs(vRob - 0.5) >= 0.3 ? "sedang" : "rendah–sedang";
+      basis = `${robust.length} strategi yang lolos uji keandalan; ${Math.round(vRob * 100)}% bobotnya sedang di posisi beli`; }
+    else { const v = isFinite(vAll) ? vAll : 0.5; action = v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN"; conf = "rendah";
+      basis = `tidak ada strategi yang lolos uji keandalan untuk aset ini — dipakai suara ${S.length} strategi (${isFinite(vAll) ? Math.round(vAll * 100) : "–"}% sedang beli; BELI bila ≥ 55%, JUAL bila ≤ 40%)`; }
+    const hd = robust.map((x) => x.avgDays).filter((x) => isFinite(x)).sort((a, b) => a - b);
+    const H = Math.round(Math.max(5, Math.min(40, hd.length ? hd[hd.length >> 1] : 20)));
+    // level harga
+    const sup = [ma20, lo10, ma50].filter((x) => isFinite(x) && x < px && x > px - 1.5 * atr);
+    const entry = rt(sup.length ? Math.max(Math.max(...sup), px - 1 * atr) : px - 0.3 * atr, -1);
+    const stop = rt(Math.max(entry - 3 * atr, Math.min(entry - 2 * atr, lo10 - 0.25 * atr)), -1), R = entry - stop;
+    const t1 = rt(entry + 1.5 * R, 1), t2 = rt(entry + 3 * R, 1), chase = rt(px + 1 * atr, 1);
+    const trail = rt(Math.max(px - 2.5 * atr, Math.min(lo20, px - 1 * atr)), -1);
+    const trigUp = rt(Math.max(hi20, isFinite(ma50) ? ma50 : hi20), 1), pull = isFinite(ma20) && ma20 < px ? rt(ma20, -1) : null;
+    // peluang: bootstrap blok dari return harian historis, mulai di harga masuk, aturan keluar berdasar harga tutup
+    const lr = []; for (let i = Math.max(1, n - 756); i < n; i++) lr.push(Math.log(c[i] / c[i - 1]));
+    // aturan: jual ½ di T1 lalu stop naik ke harga masuk; sisa di T2, atau keluar bila tutup ≤ stop, atau saat batas waktu H
+    const rng = makeRng(o.seed || 7), NS = 3000, B = 5, out = { t1: 0, t2: 0, stop: 0, time: 0, rSum: 0, dT1: [], rs: [], dur: 0 }, fee = (o.costBps ?? 20) / 1e4 * 2 * entry / (R || 1);
+    if (lr.length > 60 && R > 0) for (let s = 0; s < NS; s++) { let x = Math.log(entry), t = 0, done = false, hitT1 = false, rr = 0;
+      while (t < H && !done) { const st = rng.int(lr.length - B); for (let b = 0; b < B && t < H; b++, t++) { x += lr[st + b]; const p = Math.exp(x);
+        if (!hitT1 && p <= stop) { out.stop++; rr = (p - entry) / R; done = true; t++; break; }
+        if (hitT1 && p <= entry) { rr = 0.5 * 1.5; done = true; t++; break; }
+        if (!hitT1 && p >= t1) { hitT1 = true; out.t1++; out.dT1.push(t + 1); }
+        if (p >= t2) { out.t2++; done = true; rr = 0.5 * 1.5 + 0.5 * 3; t++; break; } } }
+      if (!done) { const p = Math.exp(x); if (hitT1) rr = 0.5 * 1.5 + 0.5 * Math.max(0, (p - entry) / R); else { out.time++; rr = (p - entry) / R; } }
+      rr -= fee; out.rSum += rr; out.rs.push(rr); out.dur += Math.min(t, H); }
+    const pr = lr.length > 60 && R > 0 ? { t1: out.t1 / NS, t2: out.t2 / NS, stop: out.stop / NS, time: out.time / NS, expR: out.rSum / NS, medT1: out.dT1.length ? out.dT1.sort((a, b) => a - b)[out.dT1.length >> 1] : null,
+      win: out.rs.filter((x) => x > 0).length / NS, avgDur: out.dur / NS, rDist: out.rs.filter((_, i) => i % 5 === 0) } : null;
+    const voteAction = action;
+    if (action === "BELI" && pr && pr.expR <= 0) { action = "TAHAN"; basis += `; sinyal BELI diturunkan jadi TAHAN karena ekspektasi rencana harga ini ${pr.expR.toFixed(2)} R (≤ 0) setelah biaya`; }
+    // akurasi historis: seberapa sering keputusan yang sama (dari suara strategi) benar dalam H hari ke depan
+    let acc = null; const V = robust.length && o.votes && o.votes.pass ? o.votes.pass : o.votes && o.votes.all;
+    if (V && V.length === n) { const thrB = robust.length ? 0.5 : 0.55, cls = robust.length ? (v) => (v >= 0.5 ? "BELI" : v < 0.25 ? "JUAL" : "TAHAN") : (v) => (v >= 0.55 ? "BELI" : v <= 0.4 ? "JUAL" : "TAHAN");
+      const sdH = Math.sqrt(H) * std(lr), ok = (f) => (voteAction === "BELI" ? f > (o.costBps ?? 20) * 2e-4 : voteAction === "JUAL" ? f < 0 : f > -sdH);
+      let k = 0, m = 0, kb = 0, mb = 0; for (let t = 210; t < n - H; t++) { const f = c[t + H] / c[t] - 1; mb++; if (ok(f)) kb++; if (cls(V[t]) === voteAction) { m++; if (ok(f)) k++; } }
+      acc = m >= 10 ? { p: k / m, n: m, nInd: Math.max(1, Math.round(m / H)), base: mb ? kb / mb : NaN, voteAction, rule: voteAction === "BELI" ? `sinyal BELI → harga ${H} hari kemudian lebih tinggi (setelah biaya)` : voteAction === "JUAL" ? `harga ${H} hari kemudian lebih rendah` : `harga ${H} hari kemudian tidak turun lebih dari 1 simpangan baku`, inSample: robust.length > 0 } : { p: NaN, n: m }; }
+    // ukuran posisi: risiko maks riskPct dari modal bila stop kena
+    const unit = o.unit || 1, cap = o.capital || 0, risk = cap * (o.riskPct ?? 0.01);
+    let qty = R > 0 ? risk / R / unit : 0; qty = Math.min(qty, cap / (entry * unit)); qty = isIdx ? Math.floor(qty) : +qty.toFixed(6);
+    const start = o.start || addBiz(D.d[n - 1], 1, o.crypto);
+    return { action, conf, basis, acc, rr1: (t1 - entry) / (R || 1), rr2: (t2 - entry) / (R || 1), riskPctPx: R / entry, rewPct1: t1 / entry - 1, rewPct2: t2 / entry - 1, px, atr, ma20, ma50, hi20, lo20, hi52, entry, entryHi: rt(px, 1), stop, t1, t2, chase, trail, trigUp, pull, R, H, pr, qty, riskAmt: qty * unit * R,
+      cost: qty * unit * entry, start, expire: addBiz(start, 2, o.crypto), review: addBiz(start, H, o.crypto), nRobust: robust.length, robust: robust.map((x) => ({ name: x.name, pos: x.pos, posPrev: x.posPrev, dsr: x.dsr })),
+      vRob, vAll, nAll: S.length };
+  }
+
+  // ---------- target uang: berapa transaksi/waktu untuk mencapai target dengan rencana ini ----------
+  function goalSim(o) {
+    const rd = o.rDist || [], cap = o.capital, tgt = o.target, rp = o.riskPct ?? 0.01, tpy = Math.max(1, o.tradesPerYear || 12), yrs = o.years || 5;
+    if (!rd.length || !(cap > 0) || !(tgt > cap)) return null;
+    const rng = makeRng(11), NP = 2000, maxT = Math.round(tpy * yrs), hitAt = [], ends = []; let ruin = 0;
+    for (let p = 0; p < NP; p++) { let eq = cap, pk = cap, hit = -1, dd = false;
+      for (let k = 1; k <= maxT; k++) { eq *= Math.max(0, 1 + rp * rd[rng.int(rd.length)]); pk = Math.max(pk, eq); if (!dd && eq <= 0.5 * pk) dd = true; if (eq >= tgt) { hit = k; break; } if (eq <= 0) break; }
+      if (dd) ruin++; hitAt.push(hit); if (hit < 0) ends.push(eq); }
+    const P = (yr) => hitAt.filter((h) => h > 0 && h <= tpy * yr).length / NP, hs = hitAt.filter((h) => h > 0).sort((a, b) => a - b);
+    const g = mean(rd.map((r) => Math.log(Math.max(1e-9, 1 + rp * r))));
+    return { p1: P(1), p3: P(3), p5: P(yrs), medTrades: hs.length >= NP / 2 ? hs[NP >> 1] ?? hs[hs.length - 1] : null, pRuin: ruin / NP, growthPerTrade: Math.exp(g) - 1,
+      tradesNeeded: g > 0 ? Math.ceil(Math.log(tgt / cap) / g) : Infinity, capFor1y: g > 0 ? tgt / Math.exp(g * tpy) : Infinity, tpy };
   }
 
   const STRAT_LIST = STRATS.map(([id, cat, name, desc]) => ({ id, cat, name, desc }));
-  const api = { STRAT_LIST, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  const api = { STRAT_LIST, actionPlan, goalSim, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

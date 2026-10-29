@@ -512,3 +512,33 @@ table.heat.ror td { text-align: right; font-size: 12px; }
 .chat-form { display: flex; gap: 6px; padding: 8px 12px 12px; } .chat-form input { flex: 1; padding: 8px 10px; }
 @media (max-width: 640px) { .chat-btn { bottom: 84px; right: 12px; } .chat-box { bottom: 134px; right: 12px; height: min(480px, calc(100vh - 220px)); } }
 @media print { .chat-btn, .chat-box { display: none !important; } }
+
+/* ---------- Rencana aksi + mode Quick ---------- */
+#out > #actCard { grid-column: 1 / -1; }
+.act-top { display: grid; grid-template-columns: minmax(170px, 230px) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.act-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.act-tiles .kpi .v { font-size: 17px; }
+.act-tiles .kpi.hl { border-color: var(--accent); }
+.act-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-top: 14px; }
+.act-ladder td:first-child { color: var(--muted); } .act-ladder td:last-child { text-align: right; font-family: var(--mono); font-weight: 600; }
+.act-ladder tr.cur td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.act-col { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.act-col h4 { margin: 0 0 6px; font-size: 13px; }
+.act-col ol { margin: 0; padding-left: 18px; } .act-col li { margin: 4px 0; line-height: 1.45; }
+.act-prob { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 6px 0 4px; background: var(--line); }
+.act-prob i { display: block; height: 100%; }
+.act-prob-l { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+.act-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 14px; }
+.act-goal { margin-top: 10px; }
+.act-goal table td, .act-goal table th { text-align: right; } .act-goal table td:first-child, .act-goal table th:first-child { text-align: left; }
+.act-ai { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.act-ai-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; } .act-ai-h .btn { margin-left: auto; }
+.act-ai ul { margin: 6px 0; padding-left: 18px; } .act-ai li { margin: 3px 0; }
+.ai-stance { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-family: var(--mono); border: 1px solid currentColor; }
+.act-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 760px) { .act-top, .act-grid { grid-template-columns: 1fr; } }
+/* mode Quick: satu lembar — rencana aksi, grafik, tiket order */
+body.mode-quick #focusBar { display: none !important; }
+body.mode-quick #out > :not(#headCard):not(#actCard):not(#candleCard) { display: none !important; }
+body.mode-quick #out > #headCard { order: -2; }
+body.mode-quick #out > #actCard { order: -1; border-color: var(--accent); }
