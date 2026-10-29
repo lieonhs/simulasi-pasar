@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="style.css?v=20261029084507">
+<link rel="stylesheet" href="style.css?v=20261029085251">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -214,7 +214,7 @@
     <div class="tp tp-mont" data-tp="mont"><div class="tp-h"><b>2</b> MONT <span>Montase kuotasi</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMont"></div></div>
     <div class="tp tp-map" data-tp="map"><div class="tp-h"><b>3</b> IMAP <span>Peta pasar watchlist (luas = nilai transaksi, warna = % hari ini)</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMap"></div></div>
     <div class="tp tp-mon" data-tp="mon"><div class="tp-h"><b>4</b> MON <span>Monitor watchlist · klik = hubungkan, klik ganda = analisis</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMon"></div></div>
-    <div class="tp tp-gr" data-tp="gr"><div class="tp-h"><b>5</b> GRID <span>Grafik 6 bulan</span><i class="tp-max">□</i></div><div class="tp-b" id="tmGr"></div></div>
+    <div class="tp tp-gr" data-tp="gr"><div class="tp-h"><b>5</b> <span class="tm-tg" id="tmGrMode"><a data-gm="tv" class="on">LIVE TV</a> <a data-gm="grid">GRID</a></span> <span id="tmGrT">TradingView · aset terhubung</span><i class="tp-max">□</i></div><div class="tp-b" id="tmGr"></div></div>
     <div class="tp tp-foc" data-tp="foc"><div class="tp-h"><b>6</b> FOCUS <span id="tmFocT">Aset terhubung</span><i class="tp-max">□</i></div><div class="tp-b" id="tmFoc"></div></div>
     <div class="tp tp-sc" data-tp="sc"><div class="tp-h"><b>7</b> SCAT <span>Risiko vs return 3 bulan</span><i class="tp-max">□</i></div><div class="tp-b" id="tmSc"></div></div>
     <div class="tp tp-mov" data-tp="mov"><div class="tp-h"><b>8</b> MOST <span>Penggerak &amp; sinyal</span><i class="tp-max">□</i></div><div class="tp-b" id="tmMov"></div></div>
@@ -594,6 +594,8 @@
       <div class="act-ai">
         <div class="act-ai-h"><b>Ringkasan AI</b> <span class="note" id="actAiNote">AI membaca semua hasil analisis di halaman ini lalu memberi sikap & keyakinannya sendiri.</span><button class="btn" id="actAiRun">Minta AI merangkum</button></div>
         <div id="actAi"></div>
+        <form id="actAskF" class="act-ask"><input id="actAsk" maxlength="400" placeholder="Tanya AI tentang analisis & machine learning aset ini… mis. kenapa ML ragu? fitur apa yang paling berpengaruh?"><button class="btn" id="actAskB">Tanya</button></form>
+        <div id="actQa" class="act-qa"></div>
       </div>
       <details class="formula"><summary>Cara rencana ini dihitung</summary><div class="fx">
         <p><b>Keputusan.</b> 50 strategi diuji di aset ini. Strategi <i>lolos</i> bila DSR ≥ 90%, konsisten di ≥ 3 dari 5 potongan waktu, mengalahkan beli-dan-tahan di seluruh data dan out-of-sample, dan ≥ 5 transaksi. BELI bila ≥ 50% bobot strategi lolos sedang beli, JUAL bila &lt; 25%, selain itu TAHAN. Bila tidak ada yang lolos: suara 50 strategi (BELI ≥ 55%, JUAL ≤ 40%).</p>
@@ -655,6 +657,7 @@
         <div class="tabs" id="tfTabs"><button class="tab" data-tf="1m">1m</button><button class="tab" data-tf="5m">5m</button><button class="tab" data-tf="15m">15m</button><button class="tab" data-tf="30m">30m</button><button class="tab" data-tf="60m">1j</button><button class="tab active" data-tf="D">1H</button><button class="tab" data-tf="W">1Mg</button><button class="tab" data-tf="M">1B</button></div>
       </div>
       <div class="toolbar">
+        <div class="tabs" id="srcTabs" title="Sumber grafik"><button class="tab active" data-src="ram">Grafik RAM</button><button class="tab" data-src="tv">TradingView live</button></div>
         <div class="tabs" id="rgTabs"><button class="tab" data-rg="90">3B</button><button class="tab active" data-rg="182">6B</button><button class="tab" data-rg="365">1T</button><button class="tab" data-rg="1095">3T</button><button class="tab" data-rg="0">Semua</button></div>
         <div class="checks small" id="indChecks">
           <label><input type="checkbox" value="ma20" checked> MA20</label>
@@ -670,6 +673,8 @@
       <div class="candle-grid">
         <div class="candle-main">
           <div id="candle" class="candle-box"></div>
+          <div id="tvBox" class="tv-box" hidden></div>
+          <p id="tvNote" class="note" hidden></p>
           <div id="rsiWrap"><div class="osc-head"><div class="tabs small-tabs" id="oscTabs"><button class="tab active" data-o="rsi">RSI</button><button class="tab" data-o="macd">MACD</button><button class="tab" data-o="stoch">Stochastic</button></div><span class="rsi-lbl" id="oscLbl">RSI 14</span></div><div id="rsi" class="rsi-box"></div></div>
         </div>
         <aside class="book-side">
@@ -1012,8 +1017,8 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script>try{var t=localStorage.getItem("sp_theme2");if(t==="pro"||t==="light"||t==="terminal")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<script>window.APP_V = "20261029084507";</script>
-<script src="engine.js?v=20261029084507"></script>
-<script src="app.js?v=20261029084507"></script>
+<script>window.APP_V = "20261029085251";</script>
+<script src="engine.js?v=20261029085251"></script>
+<script src="app.js?v=20261029085251"></script>
 </body>
 </html>

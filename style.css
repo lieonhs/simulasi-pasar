@@ -609,3 +609,10 @@ body.mode-quick #out > #actCard { order: -1; border-color: var(--accent); }
   grid-template-areas: "clk mont" "map map" "mon mon" "foc sc" "gr gr" "mov mov"; } .tp-mon { min-height: 360px; } }
 @media (max-width: 700px) { #tmClk { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .ck .t { font-size: 17px; } .tm-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mont" "clk" "mon" "foc" "map" "gr" "sc" "mov"; } .mt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 body.mode-simple .pro-only-v, body.mode-quick .pro-only-v { display: none !important; }
+
+/* TradingView + tanya AI */
+.tv-box { height: 560px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; } .tv-box .tradingview-widget-container, .tv-box .tradingview-widget-container__widget { height: 100%; width: 100%; }
+#tmGr .tv-box { height: 100%; min-height: 240px; border: 0; border-radius: 0; }
+.tm-tg a { color: var(--dim); cursor: pointer; padding: 0 4px; font-weight: 700; } .tm-tg a.on { background: var(--amb); color: #000; }
+.act-ask { display: flex; gap: 8px; margin-top: 10px; } .act-ask input { flex: 1; }
+.act-qa .q { margin: 10px 0 2px; font-weight: 600; } .act-qa .a { white-space: pre-wrap; line-height: 1.5; }

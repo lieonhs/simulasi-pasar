@@ -2729,6 +2729,7 @@
   function renderSignal() {
     if (!state.res || state.res.mode !== "price" || !state.data) return;
     setTimeout(renderIntro, 0); setTimeout(syncTradeCard, 0); setTimeout(renderAction, 0);
+    setTimeout(() => { let src = state.chartSrc; if (!src) try { src = localStorage.getItem("sp_chart_src") || "ram"; } catch { src = "ram"; } if (src === "tv") setChartSrc("tv", false); }, 0);
     const d = state.data, rf = (parseFloat($("rf") && $("rf").value) || DAMO.biRate * 100) / 100;
     const B = MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: state.res.ppy || 252 });
     state.sig = B; const c = B.now;
@@ -2927,8 +2928,9 @@
       volatilitas_tahunan: r && r.stats ? rnd(r.stats.volAnn, 3) : null, rezim_bergejolak: state.math && state.math.hmm ? rnd(state.math.hmm.probHighNow, 3) : null,
       valuasi_upside: state.valUpside != null && isFinite(state.valUpside) ? rnd(state.valUpside, 3) : null,
       ai_berita: state.ai && state.ai.overall ? { arah: state.ai.overall.arah, peluang_naik: state.ai.overall.peluang_naik, ringkasan: String(state.ai.overall.ringkasan || "").slice(0, 300) } : null,
-      machine_learning: P.ml ? { horizon_hari: P.ml.H, peluang_naik_terkalibrasi: rnd(P.ml.p, 3), auc_oos: rnd(P.ml.auc, 3), p_value: rnd(P.ml.aucP, 3), teruji: P.ml.valid, brier_skill: rnd(P.ml.bss, 3),
-        fitur_teratas: P.ml.imp.slice(0, 5).map((f) => f.name) } : null,
+      machine_learning: mlForAi(),
+      rekam_jejak_historis: act.hist && act.hist.n ? { rencana_dinilai: act.hist.n, benar: rnd(act.hist.ok, 3), keyakinan_dijanjikan: rnd(act.hist.cpPred, 3), keyakinan_terjadi: rnd(act.hist.cpAct, 3),
+        per_aksi: Object.fromEntries(Object.entries(act.hist.by).map(([k, v]) => [k, { n: v.n, benar: rnd(v.ok, 3) }])), sejak: act.hist.from } : null,
       prediksi_harga: act.ml && act.ml.fc ? { horizon_hari: act.ml.H, titik_tengah: rnd(act.ml.fc.px, 6), rentang: act.ml.fc.bands.map((b) => ({ keyakinan: b.q, bawah: rnd(b.lo, 6), atas: rnd(b.hi, 6), terbukti: rnd(b.cover, 3) })), arah_benar_oos: rnd(act.ml.fc.dirHit, 3), r2_oos: rnd(act.ml.fc.r2, 3) } : null,
       keyakinan_keputusan: isFinite(P.confPct) ? { nilai: rnd(P.confPct, 3), sumber: P.confSrc } : null,
       valuasi_gabungan: act.val && act.val.methods && act.val.methods.length ? { median: rnd(act.val.med, 6), rentang: [rnd(act.val.lo, 6), rnd(act.val.hi, 6)], upside: rnd(act.val.upside, 3), kesepakatan: rnd(act.val.agree, 2), metode: act.val.methods.map(([nm, v]) => [nm, rnd(v, 6)]) } : null,
@@ -2936,6 +2938,24 @@
       volume: (() => { const v = state.data.ohlc.slice(-60).map((b) => b[5] || 0), a5 = MCEngine.mean(v.slice(-5)), a60 = MCEngine.mean(v); return a60 > 0 ? { rasio_5h_vs_60h: rnd(a5 / a60, 3), hari_ini_vs_60h: rnd(v[v.length - 1] / a60, 3) } : null; })(),
       target_uang: act.goal ? { modal_rp: parseFloat($("actCap").value) || 0, target_rp: parseFloat($("actGoal").value) || 0, risiko_per_transaksi: parseFloat($("actRisk").value), peluang_1th: rnd(act.goal.p1, 3), peluang_3th: rnd(act.goal.p3, 3), transaksi_dibutuhkan: isFinite(act.goal.tradesNeeded) ? act.goal.tradesNeeded : "tidak tercapai" } : null };
   }
+  // ringkasan lengkap machine learning yang dibaca AI (angka saja; AI diminta tidak mengarang di luar ini)
+  function mlForAi() { const M = act.ml; if (!M || M.error) return null; const r = (x, k = 3) => (isFinite(x) ? +(+x).toPrecision(k) : null), fv = Object.fromEntries((M.feats || []).map((f) => [f.name, f.v]));
+    return { horizon_hari: M.H, target: `harga ${M.H} hari bursa lagi > harga sekarang + biaya pulang-pergi`, peluang_naik_terkalibrasi: r(M.p), peluang_dasar_historis: r(M.base),
+      teruji: M.valid, syarat_teruji: "AUC ≥ 0,53, nilai-p < 0,05, Brier skill > 0", auc_gabungan: r(M.auc), p_value: r(M.aucP), brier_skill: r(M.bss), akurasi: r(M.acc), sampel_uji_independen: M.nEff,
+      model: (M.models || []).map(([nm, a, w]) => ({ nama: nm, auc: r(a), bobot: r(w, 2) })), peluang_per_model_hari_ini: { logistik: r(M.pLog), boosting: r(M.pGb), pola_mirip: r(M.pKnn) },
+      fitur_terpenting: M.imp.slice(0, 8).map((f) => ({ nama: f.name, turun_auc_bila_diacak: r(f.v), arah: f.dir > 0 ? "nilai tinggi → peluang naik" : f.dir < 0 ? "nilai tinggi → peluang turun" : "netral", nilai_hari_ini: r(fv[f.name], 4) })),
+      kalibrasi: (M.calib || []).map((c) => ({ dijanjikan: r(c.pred), terjadi: r(c.act), n: c.n })), data_lintas_pasar: M.ext, berita_sebagai_fitur: M.newsUsed ? `${M.newsDays} hari` : "tidak (riwayat belum cukup)",
+      uji_trading_oos: M.bt ? { sharpe_ml: r(M.bt.s.sharpe), sharpe_beli_tahan: r(M.bt.b.sharpe), return_ml: r(M.bt.s.total), return_beli_tahan: r(M.bt.b.total) } : null,
+      prediksi_harga: M.fc ? { titik_tengah: r(M.fc.px, 6), penyusutan_ke_tidak_berubah: r(M.fc.shrink, 2), r2_oos: r(M.fc.r2), arah_benar_oos: r(M.fc.dirHit),
+        rentang: M.fc.bands.map((b) => ({ keyakinan: b.q, bawah: r(b.lo, 6), atas: r(b.hi, 6), terbukti: r(b.cover) })) } : null }; }
+  async function askAi(q) {
+    if (!act.plan || !q) return; const log = $("actQa"), id = "qa" + Date.now();
+    log.insertAdjacentHTML("afterbegin", `<div id="${id}"><div class="q">❯ ${esc(q)}</div><div class="a note">AI sedang membaca hasil analisis & machine learning…</div></div>`); $("actAskB").disabled = true;
+    try { const res = await apiFetch(`${API}?action=brief`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbol: state.data.symbol, data: briefData(), q }) });
+      const j = await res.json(); if (!res.ok || j.error) throw new Error(j.error || `AI gagal (${res.status})`);
+      $(id).querySelector(".a").className = "a"; $(id).querySelector(".a").innerHTML = esc(j.jawaban || "") + (j.dasar ? `<div class="note">Dasar angka: ${esc(j.dasar)}</div>` : "") + `<div class="note">${esc(j.model || "")}${j.cached ? " · tersimpan" : ""}</div>`; }
+    catch (e) { $(id).querySelector(".a").innerHTML = `<span class="neg">AI gagal: ${esc(e.message)}</span>`; }
+    finally { $("actAskB").disabled = false; } }
   async function runBrief(auto = false) {
     if (!act.plan || act.busy) return; const k = aiKeyOf(); if (auto && act.aiTried === k) return; act.aiTried = k;
     act.busy = true; act.aiErr = null; $("actAiRun").disabled = true; $("actAiRun").textContent = "AI sedang membaca…"; $("actAi").innerHTML = '<p class="status">AI sedang membaca semua hasil analisis… (bisa sampai ±40 detik)</p>';
@@ -2960,12 +2980,15 @@
       ${a.prediksi ? `<p><b>Prediksi AI ${esc(String(act.ml && act.ml.H || ""))} hari:</b> ${esc(a.prediksi)}</p>` : ""}
       <p class="note">${esc(a.model || "")}${a.cached ? " · tersimpan" : ""}. Keyakinan AI adalah penilaian model bahasa, jadi dijangkarkan ke bukti yang teruji (maks ±15 poin dari keyakinan keputusan) dan dicatat di rekam jejak untuk dicek ketepatannya.</p>`;
   }
+  function bindChartSrc() { $("srcTabs").addEventListener("click", (e) => { const b = e.target.closest(".tab[data-src]"); if (b) setChartSrc(b.dataset.src); });
+    $("tfTabs").addEventListener("click", () => { if (state.chartSrc === "tv") setTimeout(() => setChartSrc("tv", false), 50); }); }
   async function ensureHolidays() { // tahun di luar kalender bawaan (2027): ambil libur nasional otomatis (cuti bersama bursa belum termasuk)
     const yNeed = new Date(Date.now() + 90 * 864e5).getUTCFullYear(); for (let y = 2028; y <= yNeed; y++) {
       try { const j = await (await apiFetch(`${API}?action=holidays&year=${y}&country=ID`)).json(); if (j && j.days) { MCEngine.addHolidays("IDX", j.days.map((x) => x.date)); act.holNote = `Libur ${y} diambil otomatis dari ${j.source}.`; } } catch { /* */ } } }
-  function bindAction() { ensureHolidays();
+  function bindAction() { ensureHolidays(); bindChartSrc();
     ["actCap", "actRisk", "actGoal"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(act.t); act.t = setTimeout(() => { if (act.all) renderAction(); }, 300); }));
     $("actAiRun").onclick = () => runBrief(false);
+    $("actAskF").addEventListener("submit", (e) => { e.preventDefault(); const q = $("actAsk").value.trim(); if (q) { askAi(q); $("actAsk").value = ""; } });
     $("mlRun").onclick = () => { act.mlKey = null; renderAction(); }; $("mlH").addEventListener("change", () => { act.mlKey = null; renderAction(); });
     try { const c = localStorage.getItem("sp_act_cap"), g = localStorage.getItem("sp_act_goal"); if (c) $("actCap").value = c; if (g) $("actGoal").value = g; } catch { /* */ }
     ["actCap", "actGoal"].forEach((id) => $(id).addEventListener("change", () => { try { localStorage.setItem(id === "actCap" ? "sp_act_cap" : "sp_act_goal", $(id).value); } catch { /* */ } }));
@@ -3135,6 +3158,26 @@
       if (okk) { $("cmdUser").textContent = (me.name || (session.user.email || "").split("@")[0]).toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""); if (me.role === "admin") refreshAdminBadge(); toast("Persetujuan admin aktif."); } };
   }
 
+  // ---------- TradingView: grafik resmi (embed) dengan data dari TradingView ----------
+  const TV_MAP = { "^JKSE": "IDX:COMPOSITE", "^JKLQ45": "IDX:LQ45", "^GSPC": "SP:SPX", "^IXIC": "NASDAQ:IXIC", "^DJI": "DJ:DJI", "IDR=X": "FX_IDC:USDIDR", "GC=F": "COMEX:GC1!", "CL=F": "NYMEX:CL1!", "^VIX": "CBOE:VIX", "^N225": "TVC:NI225", "^HSI": "TVC:HSI" };
+  function tvSymbol(s) { s = String(s || "").toUpperCase(); if (TV_MAP[s]) return TV_MAP[s];
+    let m = s.match(/^(.+)\.JK$/); if (m) return `IDX:${m[1]}`; m = s.match(/^([A-Z0-9]+)-USDT?$/); if (m) return `BINANCE:${m[1]}USDT`;
+    m = s.match(/^([A-Z]{3})([A-Z]{3})=X$/); if (m) return `FX_IDC:${m[1]}${m[2]}`; return s.replace(/^\^/, ""); }
+  const TV_IV = { "1m": "1", "5m": "5", "15m": "15", "30m": "30", "60m": "60", D: "D", W: "W", M: "M" };
+  function tvMount(el, sym, interval = "D", opt = {}) {
+    const dark = (document.documentElement.getAttribute("data-theme") || "pro") !== "light", key = `${sym}|${interval}|${dark}`; if (el.dataset.tv === key) return; el.dataset.tv = key; el.innerHTML = "";
+    const box = document.createElement("div"); box.className = "tradingview-widget-container"; const w = document.createElement("div"); w.className = "tradingview-widget-container__widget"; box.appendChild(w);
+    const sc = document.createElement("script"); sc.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js"; sc.async = true; sc.type = "text/javascript";
+    sc.text = JSON.stringify({ autosize: true, symbol: tvSymbol(sym), interval, timezone: "Asia/Jakarta", theme: dark ? "dark" : "light", style: "1", locale: "id", backgroundColor: dark ? "#000000" : "#ffffff",
+      allow_symbol_change: true, hide_side_toolbar: !!opt.compact, hide_top_toolbar: false, withdateranges: !opt.compact, details: false, calendar: false, save_image: true, studies: opt.studies || ["Volume@tv-basicstudies"], support_host: "https://www.tradingview.com" });
+    box.appendChild(sc); el.appendChild(box); }
+  function tvNoteFor(sym) { return /\.JK$|^\^JK/i.test(sym) ? "Grafik & data dari TradingView. Saham IDX di widget gratis <b>tertunda ±15 menit</b> (data real-time IDX hanya untuk pelanggan berbayar di situs TradingView). Kripto (Binance) real-time."
+      : /-USDT?$/i.test(sym) ? "Grafik & data dari TradingView (Binance) — real-time, candle bergerak tiap transaksi." : "Grafik & data dari TradingView. Tingkat jeda tergantung bursa (lihat label di pojok grafik)."; }
+  function setChartSrc(src, save = true) { const tv = src === "tv"; document.querySelectorAll("#srcTabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.src === src));
+    $("candle").hidden = tv; $("rsiWrap").hidden = tv; $("tvBox").hidden = !tv; $("tvNote").hidden = !tv; ["rgTabs", "indChecks", "ohlcLegend"].forEach((id) => { const e = $(id); if (e) e.style.display = tv ? "none" : ""; });
+    if (tv && state.data) { tvMount($("tvBox"), state.data.symbol, TV_IV[state.tf] || "D"); $("tvNote").innerHTML = tvNoteFor(state.data.symbol); }
+    if (!tv && state.lw) setTimeout(() => renderCandle(true), 30); if (save) try { localStorage.setItem("sp_chart_src", src); } catch { /* */ } state.chartSrc = src; }
+
   // =====================================================================
   // TERMINAL (mode Pro): banyak panel terhubung, data diperbarui tiap 15 detik
   // =====================================================================
@@ -3196,7 +3239,8 @@
     if (!R.length) { el.innerHTML = '<p class="tm-dim">Menunggu kuotasi…</p>'; return; } const sumV = R.reduce((a, b) => a + b.v, 0); R.forEach((r) => (r.v = Math.max(r.v, sumV * 0.01)));
     const col = (p) => { const k = Math.min(1, Math.abs(p) / 0.03); return p >= 0 ? `rgb(${Math.round(20 - 10 * k)},${Math.round(70 + 110 * k)},${Math.round(45 + 40 * k)})` : `rgb(${Math.round(80 + 150 * k)},${Math.round(30 - 10 * k)},${Math.round(35 - 10 * k)})`; };
     el.innerHTML = `<div class="tm-map" style="height:${H}px">${squarify(R, 0, 0, W - 8, H).map((b) => `<div data-tl="${b.s}" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;background:${col(b.pc)}">${b.w > 40 && b.h > 22 ? `<b>${esc(tmName(b.s))}</b>${spct(b.pc, 2)}` : ""}</div>`).join("")}</div>`; }
-  function tmGrid() { const L = [tm.sel, "^JKSE", "^GSPC", "IDR=X", "GC=F", "BTC-USD"].filter((s, i, a) => s && a.indexOf(s) === i).slice(0, 6);
+  function tmGrid() { if (tm.gm !== "grid") { const el = $("tmGr"); if (!el.querySelector(".tv-box")) el.innerHTML = '<div class="tv-box"></div>'; tvMount(el.querySelector(".tv-box"), tm.sel || "^JKSE", "5", { compact: true }); $("tmGrT").textContent = `TradingView · ${tvSymbol(tm.sel)} · 5 menit`; return; }
+    $("tmGrT").textContent = "Grafik 6 bulan"; const L = [tm.sel, "^JKSE", "^GSPC", "IDR=X", "GC=F", "BTC-USD"].filter((s, i, a) => s && a.indexOf(s) === i).slice(0, 6);
     $("tmGr").innerHTML = `<div class="gr-grid">${L.map((s) => { const st = tmStats(s), q = tm.q[s], ch = st ? st.six[st.six.length - 1] / st.six[0] - 1 : NaN;
       return `<div class="gr" data-tl="${s}"><div class="h"><span>${esc(tmName(s))} ${q ? fx2(q.price) : ""}</span><span class="${ch >= 0 ? "tm-u" : "tm-d"}">6B ${spct(ch, 1)}</span></div>${st ? tmLine(st.six, 300, 70) : '<p class="tm-dim">memuat…</p>'}</div>`; }).join("")}</div>`; }
   function tmFocus() { const s = tm.sel; if (!s) return; const q = tm.q[s], st = tmStats(s), ch = qChg(q), P = act.plan && state.data && state.data.symbol === s ? act.plan : null, M = P && P.ml;
@@ -3241,6 +3285,10 @@
     $("tmRefresh").onclick = () => { for (const k in tm.h) if (tm.h[k]) delete tm.h[k]._st; tmRefresh(true); };
     $("tmDense").onclick = () => { const on = $("termView").classList.toggle("dense"); try { localStorage.setItem("sp_tm_dense", on ? "1" : "0"); } catch { /* */ } setTimeout(tmMap, 30); };
     $("tmPanels").onclick = () => { $("tmMenu").hidden = !$("tmMenu").hidden; };
+    try { tm.gm = localStorage.getItem("sp_tm_gm") || "tv"; } catch { tm.gm = "tv"; }
+    document.querySelectorAll("#tmGrMode a").forEach((a) => a.classList.toggle("on", a.dataset.gm === tm.gm));
+    $("tmGrMode").addEventListener("click", (e) => { const a = e.target.closest("a[data-gm]"); if (!a) return; e.stopPropagation(); tm.gm = a.dataset.gm; try { localStorage.setItem("sp_tm_gm", tm.gm); } catch { /* */ }
+      document.querySelectorAll("#tmGrMode a").forEach((x) => x.classList.toggle("on", x === a)); $("tmGr").innerHTML = ""; tmGrid(); });
     $("tmMenu").addEventListener("change", () => { const off = [...document.querySelectorAll("#tmMenu input")].filter((i) => !i.checked).map((i) => i.dataset.pk); try { localStorage.setItem("sp_tm_off", JSON.stringify(off)); } catch { /* */ } tmPanelsMenu(); setTimeout(tmMap, 30); });
     window.addEventListener("resize", () => { if (!$("termView").hidden) { clearTimeout(tm.rz); tm.rz = setTimeout(tmMap, 150); } });
   }
