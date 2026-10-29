@@ -19,11 +19,18 @@
   const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: KEEP ? window.localStorage : window.sessionStorage } }) : null;
   const IDLE_MIN = 30; let lastAct = Date.now();
   let session = null;
+  let refreshing = null; const refreshOnce = () => (refreshing || (refreshing = sb.auth.refreshSession().finally(() => setTimeout(() => (refreshing = null), 3000)))); // satu pembaruan untuk semua permintaan paralel
   async function apiFetch(url, opt = {}) {
     if (sb) { const { data } = await sb.auth.getSession(); session = data.session; }
-    const headers = { ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) };
-    const r = await fetch(url, { ...opt, headers });
-    if (r.status === 401) { const t = await r.clone().json().catch(() => ({})); showAuth("Sesi berakhir, silakan masuk lagi."); }
+    // token hampir kedaluwarsa (< 2 menit) → perbarui dulu, supaya server tidak menolak karena selisih jam
+    if (sb && session && session.expires_at && session.expires_at * 1000 - Date.now() < 120e3) { try { const { data } = await refreshOnce(); if (data && data.session) session = data.session; } catch { /* */ } }
+    const hdr = () => ({ ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) });
+    let r = await fetch(url, { ...opt, headers: hdr() });
+    if (r.status === 401 && sb) { // 401 sering hanya sementara (token baru diganti, server sibuk): perbarui sesi lalu coba sekali lagi
+      try { const { data } = await refreshOnce(); if (data && data.session) { session = data.session; r = await fetch(url, { ...opt, headers: hdr() }); } } catch { /* */ }
+      if (r.status === 401) { let still = null; try { still = (await sb.auth.getUser()).data.user; } catch { /* */ }
+        if (!still) showAuth("Sesi berakhir, silakan masuk lagi."); // hanya bila sesi benar-benar tidak berlaku lagi
+      } }
     return r;
   }
   const PRESETS = {
