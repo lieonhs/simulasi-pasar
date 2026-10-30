@@ -157,12 +157,37 @@
   const CORES = navigator.hardwareConcurrency || 4, AP_AUTO = Math.max(1, Math.min(5, CORES - 1)); let apPool = null, AP_PAR = AP_AUTO;
   function apSetBrains(n) { const want = Math.max(1, Math.min(5, n || AP_AUTO)); if (apPool && apPool.length !== want) { apPool.forEach((w) => w && w.terminate()); apPool = null; } AP_PAR = want; }
   const apWorker = (slot) => { if (!apPool) apPool = Array.from({ length: AP_PAR }, () => mkWorker()); return apPool[slot % AP_PAR] || null; };
+  // ---- aset yang tidak bisa dianalisis swing: riwayat < 300 hari (dicatat 30 hari, lalu dicek ulang), stablecoin & token emas
+  const AP_JUNK = new Set(["XAUT", "PAXG", "RWUSD", "U", "USD1", "USDE", "USDS", "FDUSD", "USDC", "TUSD", "DAI", "PYUSD", "RLUSD", "BFUSD", "EURI", "AEUR", "XUSD", "USDP", "USDD", "BUSD", "IDRT", "BIDR"]);
+  const apBase = (s) => String(s).toUpperCase().replace(/-(USDT?|IDR)$/, "");
+  function apShortMap() { try { return JSON.parse(localStorage.getItem("sp_apshort") || "{}"); } catch { return {}; } }
+  function apShortMark(s, on) { try { const m = apShortMap(); if (on) m[s] = Date.now(); else delete m[s]; localStorage.setItem("sp_apshort", JSON.stringify(m)); } catch { /* */ } }
+  const apShortSkip = (s) => { const t = apShortMap()[s]; return !!t && Date.now() - t < 30 * 864e5; };
+  const apJunk = (s) => /-USDT?$|-IDR$/.test(s) && AP_JUNK.has(apBase(s));
+  // ---- saham AS versi token (Binance, akhiran B): riwayat pendek → disambung dengan riwayat saham aslinya (Yahoo), diskalakan ke harga token.
+  // Sambungan hanya dipakai bila pergerakan harian token & saham aslinya memang searah (korelasi ≥ 0,6 pada ≥ 20 hari yang sama).
+  const TOK_STOCK = { NVDAB: "NVDA", GOOGLB: "GOOGL", INTCB: "INTC", SOXLB: "SOXL", CRCLB: "CRCL", MSTRB: "MSTR", SNDKB: "SNDK", MUB: "MU", KORUB: "KORU",
+    AAPLB: "AAPL", TSLAB: "TSLA", AMZNB: "AMZN", METAB: "META", MSFTB: "MSFT", COINB: "COIN", HOODB: "HOOD", AMDB: "AMD", PLTRB: "PLTR", AVGOB: "AVGO", NFLXB: "NFLX", ORCLB: "ORCL", SPYB: "SPY", QQQB: "QQQ", TSMB: "TSM", ARMB: "ARM", SMCIB: "SMCI" };
+  function apSplice(dT, dP) {
+    const T = dT.ohlc || [], P = dP.ohlc || []; if (T.length < 20 || P.length < 300) return null;
+    const pm = new Map(P.map((b) => [b[0], b])), ov = T.filter((b) => pm.has(b[0])); if (ov.length < 20) return null;
+    const ratios = ov.map((b) => b[4] / pm.get(b[0])[4]).sort((a, b) => a - b), k = ratios[ratios.length >> 1];
+    const rt = [], rp = []; for (let i = 1; i < ov.length; i++) { rt.push(Math.log(ov[i][4] / ov[i - 1][4])); const a = pm.get(ov[i][0]), b = pm.get(ov[i - 1][0]); rp.push(Math.log(a[4] / b[4])); }
+    const m1 = rt.reduce((a, x) => a + x, 0) / rt.length, m2 = rp.reduce((a, x) => a + x, 0) / rp.length; let sxy = 0, sx = 0, sy = 0;
+    for (let i = 0; i < rt.length; i++) { sxy += (rt[i] - m1) * (rp[i] - m2); sx += (rt[i] - m1) ** 2; sy += (rp[i] - m2) ** 2; } const corr = sxy / Math.sqrt(sx * sy || 1);
+    if (!(corr >= 0.6)) return null;
+    const t0 = T[0][0], wk = (d) => { const g = new Date(d + "T00:00:00Z").getUTCDay(); return g !== 0 && g !== 6; }; // bagian token: buang Sabtu/Minggu supaya seri seragam (hari bursa)
+    const ohlc = [...P.filter((b) => b[0] < t0).map((b) => [b[0], b[1] * k, b[2] * k, b[3] * k, b[4] * k, b[5]]), ...T.filter((b) => wk(b[0]))];
+    return { ...dT, ohlc, dates: ohlc.map((b) => b[0]), values: ohlc.map((b) => b[4]), spliced: { proxy: dP.symbol, ratio: k, corr, from: t0 } };
+  }
   async function apDecide(sym, slot = 0) { const t0 = performance.now(), W = apWorker(slot), tm = {}; let tk = t0; const lap = (k) => { const n = performance.now(); tm[k] = (tm[k] || 0) + n - tk; tk = n; };
     // ambil semua data sekaligus (paralel), bukan satu per satu: harga 5 & 10 tahun, riwayat berita, berita 24 jam, fundamental
     const eq0 = !/-USDT?$/.test(sym) && !/^\^/.test(sym) && !/=/.test(sym), vk0 = `${sym}|${new Date().toISOString().slice(0, 10)}`;
-    const [d, dl10, news, , F0] = await Promise.all([fetchSymbol(sym, "5y"), fetchSymbol(sym, "10y").catch(() => null), newsHist(sym).catch(() => ({ map: null })), apNews(sym, null).catch(() => null),
+    const [d0, dl100, news, , F0] = await Promise.all([fetchSymbol(sym, "5y"), fetchSymbol(sym, "10y").catch(() => null), newsHist(sym).catch(() => ({ map: null })), apNews(sym, null).catch(() => null),
       eq0 && !(ap.valc && ap.valc.has(vk0)) ? apiFetch(`${API}?action=fundamentals&symbol=${encodeURIComponent(sym)}`).then((r) => r.json()).catch(() => null) : Promise.resolve(null)]);
-    if (!d.ohlc || d.ohlc.length < 300) throw new Error("data < 300 hari"); lap("data");
+    let d = d0, dl10 = dl100;
+    if ((!d.ohlc || d.ohlc.length < 300) && TOK_STOCK[apBase(sym)]) { try { const sp = apSplice(d, await fetchSymbol(TOK_STOCK[apBase(sym)], "5y")); if (sp) { d = sp; dl10 = null; if (!(ap.spLog || (ap.spLog = new Set())).has(sym)) { ap.spLog.add(sym); apLogAdd(sym, `riwayat disambung dengan ${sp.spliced.proxy} (korelasi harian ${sp.spliced.corr.toFixed(2)}, ${d.ohlc.length} hari)`); } } } catch { /* */ } }
+    if (!d.ohlc || d.ohlc.length < 300) { apShortMark(sym, true); throw new Error(`data < 300 hari (baru ${d.ohlc ? d.ohlc.length : 0} hari)`); } apShortMark(sym, false); lap("data");
     const D = buildD(d), R = rawD(d), crypto = /CRYPTO/i.test(d.type || "") || /-USDT?$/.test(sym), idx = /\.JK$/.test(sym), so = stratOpts();
     const sk = `${sym}|${D.d[D.n - 1]}|${so.costBps}`, sc0 = (ap.stc || (ap.stc = new Map())).get(sk); // 50 strategi juga cukup dihitung sekali per aset per hari bar
     const all = sc0 || (await compute("stratAll", { D, o: { ...so, short: false } }, undefined, W)); if (!sc0) { ap.stc.set(sk, all); if (ap.stc.size > 80) ap.stc.delete(ap.stc.keys().next().value); } lap("strategi");
@@ -174,9 +199,9 @@
     lap("berita");
     if (mc) M = mc; else { try { M = await compute("ml", { D: DM, o: { horizon: 5, costBps: so.costBps, ext: ap.ext[ek], news: news && news.map, dlBag: ap.cfg.mlFast !== false ? 1 : 2 } }, undefined, W); if (M && !M.error) { ap.mlc.set(mk, M); if (ap.mlc.size > 60) ap.mlc.delete(ap.mlc.keys().next().value); } } catch (e) { M = { error: e.message }; } }
 lap("ml");
-    const C = MCEngine.confluence(D, { H: 10, costBps: so.costBps, ppy: crypto ? 365 : 252 }), fx = (d.currency || "") === "IDR" ? 1 : pp.fx || 16000;
+    const C = MCEngine.confluence(D, { H: 10, costBps: so.costBps, ppy: (crypto && !d.spliced) ? 365 : 252 }), fx = (d.currency || "") === "IDR" ? 1 : pp.fx || 16000;
     const cap = ap.cfg.target === "demo" ? apRun().free : Math.max(0, parseFloat($("actCap").value) || 1e7), risk = ap.cfg.tgOn && ap.cfg.target === "demo" ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
-    const SG = MCEngine.signalBacktest(d.dates, d.values, { ppy: crypto ? 365 : 252 }), sgScore = SG && SG.now ? SG.now.score : 0;
+    const SG = MCEngine.signalBacktest(d.dates, d.values, { ppy: (crypto && !d.spliced) ? 365 : 252 }), sgScore = SG && SG.now ? SG.now.score : 0;
     const P = MCEngine.actionPlan(R, { isIdx: idx, crypto, strats: all.list, votes: all.votes, score: sgScore, capital: cap / fx, riskPct: risk, unit: idx ? 100 : 1, costBps: so.costBps, market: idx ? "IDX" : crypto ? null : "US", ml: M && !M.error ? M : null, sel: C && C.sel }); if (M && M.error) M = null;
 lap("rencana");
     // Valuasi (saham saja, sekali per hari): penyaring "jauh terlalu mahal"
@@ -189,7 +214,7 @@ lap("valuasi");
       if (lr.length > 100) { const m0 = lr.reduce((s, x) => s + x, 0) / lr.length, L2 = lr.map((x) => x - m0 * 0.5); let hit = 0, stp = 0, seed = 11; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
         for (let k = 0; k < 2000; k++) { let v = px0; for (let t = 0; t < 20; t++) { v *= Math.exp(L2[Math.floor(rnd() * L2.length)]); if (v >= P.t1) { hit++; break; } if (v <= P.stop) { stp++; break; } } }
         const p = hit / 2000, q = stp / 2000, cst = (so.costBps * 2) / 1e4 * px0; mcP = { p, q, ev: (p * (P.t1 - px0) - q * (px0 - P.stop) - cst) / px0 };
-        const ppy = crypto ? 365 : 252, sig = Math.sqrt(lr.reduce((s, x) => s + (x - m0) ** 2, 0) / lr.length) * Math.sqrt(ppy), mu = Math.max(-0.3, Math.min(0.3, 0.5 * m0 * ppy));
+        const ppy = (crypto && !d.spliced) ? 365 : 252, sig = Math.sqrt(lr.reduce((s, x) => s + (x - m0) ** 2, 0) / lr.length) * Math.sqrt(ppy), mu = Math.max(-0.3, Math.min(0.3, 0.5 * m0 * ppy));
         const B = MCEngine.binomialBarrier(px0, P.t1, P.stop, sig, mu, 20, ppy); bnP = { p: B.pUp, q: B.pDn, ev: (B.pUp * (P.t1 - px0) - B.pDn * (px0 - P.stop) - cst) / px0 }; } }
 lap("MC+binomial");
     // RAM AI (aturan ringkas, sama dengan kotak 3 kecerdasan tanpa berita/valuasi)
@@ -659,7 +684,7 @@ lap("berita");
 
   // ---- teks status dipendekkan (teks lengkap di tooltip) dan sel posisi per strategi
   function apShort1(t) { if (!t) return ""; const m = [[/^uji intraday tidak lolos/, "✗ intraday rugi"], [/^menunggu tembus batas/, "tunggu tembus"], [/^di luar jam masuk/, "luar jam"], [/^sesi selesai/, "sesi tutup"], [/^harian tidak dipakai/, "harian off"], [/^swing tidak dipakai/, "swing off"],
-      [/^menganalisis/, "analisis…"], [/^simulasi \(autopilot mati\)/, "mati"], [/^maks posisi/, "maks posisi"], [/^maks order harian/, "maks order"], [/^jeda 24 jam/, "jeda 24j"], [/^rugi harian/, "rem harian"], [/berita kejutan/, "⚠ berita"], [/^bursa IDX tutup/, "IDX tutup"],
+      [/^menganalisis/, "analisis…"], [/^antre analisis/, "antre"], [/^antre keputusan/, "antre putus"], [/^memutuskan/, "memutuskan…"], [/^gagal: data < 300/, "riwayat pendek"], [/^simulasi \(autopilot mati\)/, "mati"], [/^maks posisi/, "maks posisi"], [/^maks order harian/, "maks order"], [/^jeda 24 jam/, "jeda 24j"], [/^rugi harian/, "rem harian"], [/berita kejutan/, "⚠ berita"], [/^bursa IDX tutup/, "IDX tutup"],
       [/^order beli dipasang/, "order dipasang"], [/^posisi day trade dijaga/, "dijaga"], [/^tembus.*berlawanan/, "model berlawanan"], [/terlalu mahal/, "kemahalan"], [/Monte Carlo .* binomial/, "MC/binomial ✗"], [/pengalaman demo hanya/, "pengalaman ✗"], [/^gagal|^intraday gagal/, "gagal data"]];
     for (const [r, s] of m) if (r.test(t)) return s;
     if (/belum teruji|< ambang|netral|rencana /.test(t)) { const k = []; if (/ML (turun|belum)/.test(t)) k.push("ML"); if (/DL (turun|belum)/.test(t)) k.push("DL"); if (/AI (turun|netral)/.test(t)) k.push("AI"); const r = t.match(/rencana (\w+)/); if (r) k.push(r[1]); const kf = t.match(/keyakinan (\d+%)/); if (kf) k.push(kf[1]); return "kurang: " + k.join(", "); }
@@ -707,8 +732,9 @@ lap("berita");
       const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
       const evMin = Math.max(c.every, DP.minEvery);
       { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; return c.style !== "day" && (force || !st.at || Date.now() - st.at >= evMin * 60e3) && !(/\.JK$/.test(s) && !idxOpen() && !force); });
+        for (const s of due) { const st = ap.st[s] || (ap.st[s] = {}); st.note = "antre analisis"; } drawAp();
         let k = 0; const t0 = Date.now(); await Promise.all(Array.from({ length: Math.min(DP.brains, due.length) }, async (_, slot) => { while (k < due.length) { const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
-          try { st.pre = await apDecide(s, slot); } catch (e) { st.preErr = e; } if (DP.rest) await new Promise((r) => setTimeout(r, DP.rest)); } }));
+          try { st.pre = await apDecide(s, slot); st.note = "antre keputusan"; } catch (e) { st.preErr = e; st.note = "gagal: " + e.message; } drawAp(); if (DP.rest) await new Promise((r) => setTimeout(r, DP.rest)); } }));
         if (due.length) ap.lastPar = { n: due.length, sec: (Date.now() - t0) / 1000 }; }
       for (const s of apSyms()) {
       const st = ap.st[s] || (ap.st[s] = {});
@@ -717,7 +743,7 @@ lap("berita");
       if (c.style === "day" && c.on) continue;
       if (!force && st.at && Date.now() - st.at < evMin * 60e3) continue;
       if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
-      st.note = "menganalisis…"; drawAp();
+      st.note = st.pre ? "memutuskan…" : st.preErr ? st.note : "menganalisis…"; drawAp();
       try { if (st.preErr) { const e = st.preErr; st.preErr = null; throw e; } const X = st.pre || await apDecide(s); st.pre = null; const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
         if (!c.on) { st.note = "simulasi (autopilot mati)"; }
         else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
@@ -785,7 +811,7 @@ lap("berita");
   const AP_GROUPS = [["Saham IDX", ["BBCA.JK", "BBRI.JK", "BMRI.JK", "BBNI.JK", "TLKM.JK", "ASII.JK", "ANTM.JK", "GOTO.JK"]], ["Kripto", ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "DOGE-USD", "ADA-USD"]], ["Saham AS", ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN"]], ["Lainnya", ["GC=F", "^JKSE"]]];
   // Cakupan "semua aset" (demo saja): watchlist + semua aset tombol cepat + kripto Radar + Hidden gems, maks 40
   function apAll() { const sc = ap.cfg.scope;
-    if (sc !== "all") return [...new Set([...apPositions(), ...((ap.wide && ap.wide[sc]) || [])])].slice(0, 120); // semua kripto: diisi apWideRefresh()
+    if (sc !== "all") { const P = apPositions(); return [...new Set([...P, ...((ap.wide && ap.wide[sc]) || []).filter((x) => !apJunk(x) && !apShortSkip(x))])].slice(0, 120); } // semua kripto: diisi apWideRefresh(); stablecoin/emas & riwayat pendek dilewati
     const G = (gm.rows || []).filter((r) => r.st === "Kandidat kuat").map((r) => r.s), RC = ap.rdc ? apRdPick(ap.rdc.rows) : [];
     return [...new Set([...apPositions(), ...apWatch(), ...AP_GROUPS.flatMap((g) => g[1]), ...RC, ...G])].slice(0, 40); }
   async function apWideRefresh(force) { const sc = ap.cfg.scope; if (!["cmid", "ctop", "cidx"].includes(sc)) return; const W = ap.wide || (ap.wide = {}), at = ap.wideAt || (ap.wideAt = {});
