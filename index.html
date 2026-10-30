@@ -400,9 +400,10 @@
       <div class="row ap-auto ap-pickonly"><label class="toggle"><input type="checkbox" id="apAutoPick"> <b>Pilih aset otomatis</b></label><select id="apPickSrc" class="mini-sel"><option value="all">dari watchlist + aset utama + Hidden gems</option><option value="rdc">hanya kripto Perhatikan / Uji dulu (Radar)</option></select></div><p class="note">Tiap 6 jam autopilot memindai sumber yang dipilih, lalu mengisi daftar dengan 8 aset terbaik. Posisi yang masih terbuka tetap di daftar.</p>
       <div class="row ap-pickonly"><button class="btn" id="apAddCur">+ Aset yang sedang dianalisis</button><button class="btn" id="apAddWl">+ Dari watchlist</button><button class="btn" id="apAddRd">+ Kripto “Uji dulu” dari Radar</button><button class="btn" id="apAddGems">+ Kandidat kuat Hidden gems</button></div>
       <div class="row"><button class="btn" id="apNow">Periksa sekarang</button><button class="btn" id="apQuick">Uji cepat 12 aset</button><button class="btn" id="apNewRun">Mulai run baru</button><button class="btn" id="apKill" style="color:var(--bad)">Matikan & tutup posisi autopilot</button></div>
-      <details class="ap-adv"><summary>📉 Futures demo (short)</summary>
+      <details class="ap-adv"><summary>📈📉 Futures demo (long & short)</summary>
       <div class="ap-tgt">
-        <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual</span></label>
+        <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual · eksplorasi short ½ bila rencana JUAL & ada model turun, tidak ada yang naik</span></label>
+        <label class="toggle"><input type="checkbox" id="apFutLong" checked> <b>Beli kripto lewat futures LONG</b> <span class="note">langsung di harga sekarang, tidak menunggu limit spot terisi · stop 1,5 ATR, target 2/3 ATR</span></label>
         <div class="grid"><div><label class="lbl" for="apLev">Leverage</label><select id="apLev"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x (maks)</option></select></div></div>
       </div>
       </details>
@@ -1179,7 +1180,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=e1cb06e02e"></script>
+<script src="js/80-autopilot.js?v=1011c1b807"></script>
 <script src="js/90-aset-terminal-boot.js?v=0d8a1e5845"></script>
 </body>
 </html>
