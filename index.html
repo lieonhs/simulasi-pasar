@@ -386,6 +386,7 @@
         <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="0">Terus-menerus</option><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
       <label class="toggle"><input type="checkbox" id="apExplore" checked> Eksplorasi demo <span class="note">(beli ½ ukuran bila rencana BELI, keyakinan asli ≥ 60% dan tidak ada model yang bilang turun; langsung di harga sekarang bila untung:rugi masih ≥ 1. Ditandai terpisah, tidak dihitung untuk membuka uang asli, tidak berlaku untuk Indodax)</span></label>
+      <label class="toggle"><input type="checkbox" id="apQuota" checked> Kuota harian demo: minimal 1 transaksi/hari <span class="note">(bila sampai 12.00 WIB belum ada yang terisi: buka ¼ ukuran di aset yang paling condong naik, atau turun lewat futures; ditandai eksplorasi)</span></label>
       <label class="toggle"><input type="checkbox" id="apDayBias"> Day trade: wajib bias harian ML/DL ≥ ambang <span class="note">(lebih ketat, jauh lebih jarang transaksi)</span></label>
       <label class="toggle"><input type="checkbox" id="apWake" checked> Jaga layar tetap menyala selama autopilot nyala</label>
       <label class="toggle"><input type="checkbox" id="apHealth" checked> <b>Mode sehat perangkat</b> <span class="note">kurangi beban saat pakai baterai, baterai lemah, RAM kecil, atau perangkat mulai berat</span></label>
@@ -1180,7 +1181,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=1011c1b807"></script>
+<script src="js/80-autopilot.js?v=1e4695f027"></script>
 <script src="js/90-aset-terminal-boot.js?v=0d8a1e5845"></script>
 </body>
 </html>
