@@ -27,3 +27,14 @@ test("noise band intraday: tidak untung konsisten di jalan acak setelah biaya", 
 test("ML: data acak tidak boleh lolos uji (teruji)", { timeout: 120000 }, () => {
   const M = E.mlModel(walk(1100, 11), { horizon: 5, dlBag: 1 }); assert.ok(!M.valid, "ML teruji di data acak (AUC " + M.auc + ")");
 });
+test("binomial belajar: tidak valid di data acak, valid bila ada pola tren yang ditanam", () => {
+  const n = 2000, rs = [3, 7, 11].map((s) => E.binoLearn(walk(n, s)));
+  for (const r of rs) assert.ok(r && r.now && r.now.up >= 0 && r.now.up + r.now.dn <= 1 + 1e-9);
+  assert.ok(rs.filter((r) => r.valid).length <= 1, "data acak tidak boleh terus-terusan 'valid'");
+  // pola: rezim tren naik/turun yang bertahan ±60 hari lalu berganti acak (momentum terbaca dari harga)
+  const r = rng(5), D = { d: [], o: [], h: [], l: [], c: [], v: [], n }; let p = 100, g = 1;
+  for (let i = 0; i < n; i++) { if (r() < 1 / 60) g = -g; const op = p; p *= Math.exp(g * 0.005 + (r() - 0.5) * 0.04);
+    D.d.push(`d${i}`); D.o.push(op); D.h.push(Math.max(op, p) * 1.004); D.l.push(Math.min(op, p) * 0.996); D.c.push(p); D.v.push(1); }
+  const t0 = Date.now(), B = E.binoLearn(D); console.log("bino ms", Date.now() - t0, JSON.stringify({ auc: B.auc, aucP: B.aucP, bss: B.bss, n: B.nEval, nEff: B.nEff, base: B.base }), JSON.stringify(rs.map((x) => [x.auc, x.valid])));
+  assert.ok(B.auc > 0.55 && B.valid, `pola tren harus ditemukan (AUC ${B.auc})`);
+});

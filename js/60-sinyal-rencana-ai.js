@@ -18,6 +18,7 @@
       ["RSI 14", c.rs, `RSI ${nf(0).format(c.rsi)}${c.rs > 0 ? " — jenuh jual" : c.rs < 0 ? " — jenuh beli" : " — netral"}`]];
     const vu = state.valUpside; if (vu != null && isFinite(vu)) parts.push(["Valuasi Damodaran", vu > 0.2 ? 1 : vu < -0.2 ? -1 : 0, `nilai intrinsik ${spct(vu)} vs harga`]);
     const ai = state.ai && state.ai.overall; if (ai) parts.push(["AI berita", ai.arah === "naik" ? 1 : ai.arah === "turun" ? -1 : 0, `${ai.arah}, keyakinan ${ai.keyakinan || "?"}`]);
+    const bn = binoSignal(d); if (bn) parts.push(["Otak ke-3 · binomial belajar", bn.v, bn.why]);
     const total = parts.reduce((a, p) => a + p[1], 0), maxAbs = parts.length;
     const verdict = total >= 2 ? ["BELI", "buy"] : total <= -2 ? ["JUAL", "sell"] : ["TAHAN", "hold"];
     // zona harga
@@ -55,6 +56,17 @@
         ${last.map((e) => `<tr><td>${e.date}</td><td class="${e.type === "buy" ? "pos" : "neg"}">${e.type === "buy" ? "BELI" : "JUAL"}</td><td>${fmtNum(e.price)}</td><td>${e.score > 0 ? "+" : ""}${e.score}</td><td class="${cls(e.ret)}">${e.ret != null ? spct(e.ret) : ""}</td></tr>`).join("") || '<tr><td colspan="5">Belum ada sinyal.</td></tr>'}</tbody></table></div>
       <p class="note">Bukan saran investasi. Aturan & parameter sengaja sederhana dan tetap (tidak dioptimasi) supaya backtest-nya jujur.</p>`;
     if (state.lw) applyMarkers();
+  }
+  // otak ke-3 (hanya untuk sinyal): pohon binomial yang peluang & langkahnya dipelajari dari hari-hari lampau yang mirip
+  function binoSignal(d) {
+    if (!d || !d.ohlc || d.ohlc.length < 400) return null;
+    const last = d.ohlc[d.ohlc.length - 1], key = `${d.symbol}|${last[0]}|${last[4]}|${d.ohlc.length}`;
+    if (!state.bino || state.bino.key !== key) { let B = null; try { const D = rawD(d), k = Math.max(0, D.n - 2600); if (k) for (const f of ["d", "o", "h", "l", "c", "v"]) D[f] = D[f].slice(k); D.n -= k; B = MCEngine.binoLearn(D, { cost: (stratOpts().costBps * 2) / 1e4 }); } catch { B = null; } state.bino = { key, B }; }
+    const B = state.bino.B; if (!B) return null;
+    const be = B.breakeven, tg = `target +${B.kU} ATR / stop −${B.kD} ATR, ${B.H} hari`;
+    if (!B.valid) return { v: 0, why: `belum terbukti di aset ini${B.auc != null ? ` (AUC uji ${nf(2).format(B.auc)})` : ""}, jadi netral` };
+    const v = B.pT >= be + 0.08 && B.ev > 0 ? 1 : B.pT <= be - 0.08 ? -1 : 0;
+    return { v, why: `peluang target dulu ${pct(B.pT, 0)} (impas ${pct(be, 0)}), ${tg} · AUC uji ${nf(2).format(B.auc)}` };
   }
   function applyMarkers() {
     if (!state.lw || !state.sig || state.tf !== "D") return;
