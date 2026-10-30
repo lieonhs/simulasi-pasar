@@ -38,3 +38,14 @@ test("binomial belajar: tidak valid di data acak, valid bila ada pola tren yang 
   const t0 = Date.now(), B = E.binoLearn(D); console.log("bino ms", Date.now() - t0, JSON.stringify({ auc: B.auc, aucP: B.aucP, bss: B.bss, n: B.nEval, nEff: B.nEff, base: B.base }), JSON.stringify(rs.map((x) => [x.auc, x.valid])));
   assert.ok(B.auc > 0.55 && B.valid, `pola tren harus ditemukan (AUC ${B.auc})`);
 });
+test("binomial belajar: suara harian bebas bocoran & masuk backtest sinyal", () => {
+  const n = 1800, r = rng(9), D = { d: [], o: [], h: [], l: [], c: [], v: [], n }; let p = 100, g = 1;
+  for (let i = 0; i < n; i++) { if (r() < 1 / 60) g = -g; const op = p; p *= Math.exp(g * 0.005 + (r() - 0.5) * 0.04);
+    D.d.push(`d${i}`); D.o.push(op); D.h.push(Math.max(op, p) * 1.004); D.l.push(Math.min(op, p) * 0.996); D.c.push(p); D.v.push(1); }
+  const full = E.binoLearn(D), m = 1400, cut = {}; for (const k of ["d", "o", "h", "l", "c", "v"]) cut[k] = D[k].slice(0, m); cut.n = m;
+  const part = E.binoLearn(cut);
+  for (let t = 0; t < m; t++) assert.equal(part.votes[t], full.votes[t], `suara hari ${t} berubah saat data masa depan dipotong (bocoran)`);
+  assert.ok(full.votes.some((v) => v === 1) && full.votes.some((v) => v === -1), "harus ada suara beli & jual");
+  const B0 = E.signalBacktest(D.d, D.c), B1 = E.signalBacktest(D.d, D.c, { extra: full.votes });
+  assert.ok(B1.trades.length > 0 && B0.trades.length > 0); assert.notDeepEqual(B1.events.map((e) => e.date), B0.events.map((e) => e.date));
+});

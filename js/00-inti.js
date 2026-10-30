@@ -190,7 +190,7 @@
     if (type === "noise") return MCEngine.noiseBand(cfg.bars, cfg.o); if (type === "compare") return inlineCompare(cfg, onProgress); if (type === "ml") return MCEngine.mlModel(cfg.D, { ...cfg.o, progress: onProgress });
     if (type === "radar") return MCEngine.radarAsset(cfg.D, cfg.o); if (type === "math") return MCEngine.mathLab(cfg.px, cfg.o); if (type === "qport") return MCEngine.quantPortfolio(cfg.series, cfg.opt);
     if (type === "qbt") return MCEngine.backtest(cfg.series, cfg.opt); if (type === "screen") return MCEngine.screenAsset(cfg.a, cfg.bench, cfg.o); if (type === "probEnd") return MCEngine.probEnd(cfg.model, cfg.K, cfg.r, cfg.T);
-    if (type === "ardl") return MCEngine.ardl(cfg.a, cfg.xs); return cfg.mode === "bond" ? MCEngine.runBond(cfg, onProgress) : MCEngine.runPrice(cfg, onProgress); }
+    if (type === "bino") return MCEngine.binoLearn(cfg.D, cfg.o); if (type === "ardl") return MCEngine.ardl(cfg.a, cfg.xs); return cfg.mode === "bond" ? MCEngine.runBond(cfg, onProgress) : MCEngine.runPrice(cfg, onProgress); }
   function compute(type, cfg, onProgress = () => {}, wOver) {
     const heavy = type === "ml" || type === "radar", w = wOver || (heavy ? mlWorker || worker : worker);
     if (!w) return new Promise((res, rej) => setTimeout(() => { try { res(inlineRun(type, cfg, onProgress)); } catch (e) { rej(e); } }, 20));

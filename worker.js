@@ -11,6 +11,7 @@ self.onmessage = (e) => {
     else if (type === "strat") res = MCEngine.runStrategy(cfg.id, cfg.D, cfg.o);
     else if (type === "stratAll") res = MCEngine.runAllStrategies(cfg.D, cfg.o);
     else if (type === "ml") res = MCEngine.mlModel(cfg.D, { ...cfg.o, progress });
+    else if (type === "bino") res = MCEngine.binoLearn(cfg.D, cfg.o);
     else if (type === "radar") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), plan: planLite(cfg) };
     else if (type === "gem") res = { ...MCEngine.radarAsset(cfg.D, cfg.o), gem: MCEngine.gemAsset(cfg.D, cfg.o), plan: planLite(cfg) };
     else if (type === "noise") res = MCEngine.noiseBand(cfg.bars, cfg.o);

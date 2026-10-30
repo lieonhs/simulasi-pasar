@@ -18,9 +18,10 @@
       ["RSI 14", c.rs, `RSI ${nf(0).format(c.rsi)}${c.rs > 0 ? " — jenuh jual" : c.rs < 0 ? " — jenuh beli" : " — netral"}`]];
     const vu = state.valUpside; if (vu != null && isFinite(vu)) parts.push(["Valuasi Damodaran", vu > 0.2 ? 1 : vu < -0.2 ? -1 : 0, `nilai intrinsik ${spct(vu)} vs harga`]);
     const ai = state.ai && state.ai.overall; if (ai) parts.push(["AI berita", ai.arah === "naik" ? 1 : ai.arah === "turun" ? -1 : 0, `${ai.arah}, keyakinan ${ai.keyakinan || "?"}`]);
-    const bn = binoSignal(d); if (bn) parts.push(["Otak ke-3 · binomial belajar", bn.v, bn.why]);
-    const total = parts.reduce((a, p) => a + p[1], 0), maxAbs = parts.length;
-    const verdict = total >= 2 ? ["BELI", "buy"] : total <= -2 ? ["JUAL", "sell"] : ["TAHAN", "hold"];
+    const bn = binoSignal(d); if (bn) parts.push(["Otak ke-3 · binomial belajar", bn.v, bn.why, !bn.count]);
+    const voters = parts.filter((p) => !p[3]), total = voters.reduce((a, p) => a + p[1], 0), maxAbs = voters.length;
+    const thr = Math.ceil(0.6 * maxAbs - 1e-9); // ambang proporsional: ≥ 60% suara searah (3 komponen → 2, 4–5 → 3, 6 → 4)
+    const verdict = total >= thr ? ["BELI", "buy"] : total <= -thr ? ["JUAL", "sell"] : ["TAHAN", "hold"];
     // zona harga
     const m = state.res.models[state.sel], px = d.values, n = px.length, s0 = state.res.s0;
     const w = px.slice(-20), ma20 = MCEngine.mean(w), sd20 = MCEngine.std(w, 0), bbLow = ma20 - 2 * sd20;
@@ -33,21 +34,23 @@
     const inZone = s0 >= zoneLo && s0 <= zoneHi;
     const last = B.events.slice(-8).reverse();
     const beat = B.oos.strat.sharpe > B.oos.bh.sharpe;
+    const B2 = bn && bn.extra && bn.extra.some((v) => v != null) ? MCEngine.signalBacktest(d.dates, d.values, { rf, ppy: state.res.ppy || 252, extra: bn.extra }) : null;
     $("sigOut").innerHTML = `
       <div class="sig-top">
-        <div class="sig-verdict ${verdict[1]}"><div class="note">Sinyal gabungan saat ini</div><div class="big">${verdict[0]}</div><div class="note">skor ${total > 0 ? "+" : ""}${total} dari ±${maxAbs}</div>
+        <div class="sig-verdict ${verdict[1]}"><div class="note">Sinyal gabungan saat ini</div><div class="big">${verdict[0]}</div><div class="note">skor ${total > 0 ? "+" : ""}${total} dari ±${maxAbs} · ambang ±${thr}</div>
           <div class="note" style="margin-top:6px">Sistem teknikal: ${B.position ? `<span class="pos">sedang BELI sejak ${B.entryDate} @ ${fmtNum(B.entryPx)} (${spct(s0 / B.entryPx - 1)})</span>` : "sedang di luar pasar"}</div></div>
         <div><div class="table-wrap"><table><thead><tr><th>Komponen</th><th>Nilai</th><th>Keterangan</th></tr></thead><tbody>
-          ${parts.map(([nm, v, why]) => `<tr><td>${nm}</td><td class="${cls(v)}">${v > 0 ? "+1 beli" : v < 0 ? "−1 jual" : "0"}</td><td>${esc(why)}</td></tr>`).join("")}</tbody></table></div>
+          ${parts.map(([nm, v, why, off]) => `<tr${off ? ' class="muted"' : ""}><td>${nm}</td><td class="${off ? "" : cls(v)}">${off ? "tidak dihitung" : v > 0 ? "+1 beli" : v < 0 ? "−1 jual" : "0"}</td><td>${esc(why)}</td></tr>`).join("")}</tbody></table></div>
           ${vu == null ? '<p class="note">Valuasi & AI ikut dihitung setelah bagian Valuasi termuat dan tombol "Analisis berita dengan AI" dijalankan.</p>' : ""}</div>
       </div>
       <div class="sig-zones">
         <div>Area beli${inZone ? ' <span class="pos">· harga di zona</span>' : s0 > zoneHi ? ' <span class="note">· harga di atas zona</span>' : ' <span class="neg">· di bawah zona</span>'}<b>${fmtNum(rt(zoneLo, -1))} – ${fmtNum(rt(zoneHi, 1))}</b></div>
         <div>Target jual (peluang)<b>${tgt}</b></div><div>Stop loss<b>${stop}</b></div>
         <div>Harga sekarang<b>${fmtNum(s0)}</b></div></div>
-      <div class="subh">Backtest aturan teknikal di ${esc(d.symbol)} (beli skor ≥ 2, jual skor ≤ −1, biaya 20 bps)</div>
+      <div class="subh">Backtest aturan teknikal di ${esc(d.symbol)} (beli skor ≥ 2, jual skor ≤ −1, biaya 20 bps)${B2 ? " · baris kedua menambah suara otak ke-3 hari itu (walk-forward, hanya saat sudah terbukti): beli ≥ 3 dari 4, jual ≤ −1" : ""}</div>
       <div class="table-wrap"><table><thead><tr><th></th><th>Sharpe IS</th><th>Sharpe OOS</th><th>CAGR</th><th>Max DD</th><th>Transaksi</th><th>Menang</th><th>Rata-rata/transaksi</th><th>Lama pegang</th></tr></thead><tbody>
         <tr><td>Aturan sinyal</td><td>${nf(2).format(B.is.strat.sharpe)}</td><td class="${beat ? "pos" : "neg"}">${nf(2).format(B.oos.strat.sharpe)}</td><td>${spct(B.all.strat.cagr)}</td><td>${pct(B.all.strat.maxDD)}</td><td>${B.trades.length}</td><td>${pct(B.winRate, 0)}</td><td class="${cls(B.avgTrade)}">${spct(B.avgTrade)}</td><td>${nf(0).format(B.avgDays)} hari</td></tr>
+        ${B2 ? `<tr><td>Aturan + otak ke-3</td><td>${nf(2).format(B2.is.strat.sharpe)}</td><td class="${B2.oos.strat.sharpe > B.oos.strat.sharpe ? "pos" : "neg"}">${nf(2).format(B2.oos.strat.sharpe)}</td><td>${spct(B2.all.strat.cagr)}</td><td>${pct(B2.all.strat.maxDD)}</td><td>${B2.trades.length}</td><td>${pct(B2.winRate, 0)}</td><td class="${cls(B2.avgTrade)}">${spct(B2.avgTrade)}</td><td>${nf(0).format(B2.avgDays)} hari</td></tr>` : ""}
         <tr><td>Beli & tahan</td><td>${nf(2).format(B.is.bh.sharpe)}</td><td>${nf(2).format(B.oos.bh.sharpe)}</td><td>${spct(B.all.bh.cagr)}</td><td>${pct(B.all.bh.maxDD)}</td><td>1</td><td>–</td><td>–</td><td>–</td></tr></tbody></table></div>
       <div class="verdict">${beat ? "Di periode out-of-sample, aturan ini <b>lebih baik</b> dari beli-dan-tahan untuk aset ini. Tetap perlakukan sebagai petunjuk: jumlah transaksinya sedikit, sehingga hasilnya bisa kebetulan." :
         "Di periode out-of-sample, aturan ini <b>tidak lebih baik</b> dari beli-dan-tahan untuk aset ini. Jadikan sinyal sebagai informasi pendukung, bukan perintah beli/jual."}</div>
@@ -57,16 +60,26 @@
       <p class="note">Bukan saran investasi. Aturan & parameter sengaja sederhana dan tetap (tidak dioptimasi) supaya backtest-nya jujur.</p>`;
     if (state.lw) applyMarkers();
   }
-  // otak ke-3 (hanya untuk sinyal): pohon binomial yang peluang & langkahnya dipelajari dari hari-hari lampau yang mirip
+  // otak ke-3 (hanya untuk sinyal): pohon binomial yang peluang & langkahnya dipelajari dari hari-hari lampau yang mirip.
+  // Dihitung di worker (±0,1–0,3 detik), hasil di-cache per aset & bar terakhir, lalu Sinyal digambar ulang.
   function binoSignal(d) {
     if (!d || !d.ohlc || d.ohlc.length < 400) return null;
     const last = d.ohlc[d.ohlc.length - 1], key = `${d.symbol}|${last[0]}|${last[4]}|${d.ohlc.length}`;
-    if (!state.bino || state.bino.key !== key) { let B = null; try { const D = rawD(d), k = Math.max(0, D.n - 2600); if (k) for (const f of ["d", "o", "h", "l", "c", "v"]) D[f] = D[f].slice(k); D.n -= k; B = MCEngine.binoLearn(D, { cost: (stratOpts().costBps * 2) / 1e4 }); } catch { B = null; } state.bino = { key, B }; }
+    if (!state.bino || state.bino.key !== key) {
+      state.bino = { key, B: null, wait: true };
+      const D = rawD(d), k = Math.max(0, D.n - 2600); if (k) { for (const f of ["d", "o", "h", "l", "c", "v"]) D[f] = D[f].slice(k); D.n -= k; }
+      compute("bino", { D, o: { cost: (stratOpts().costBps * 2) / 1e4 } }).then((B) => { if (state.bino && state.bino.key === key) { state.bino = { key, B, wait: false }; renderSignal(); } })
+        .catch(() => { if (state.bino && state.bino.key === key) state.bino = { key, B: null, wait: false }; });
+    }
+    if (state.bino.wait) return { v: 0, count: false, why: "sedang menghitung…" };
     const B = state.bino.B; if (!B) return null;
+    // suara harian walk-forward (bebas bocoran) diselaraskan ke tanggal seri Sinyal untuk backtest
+    let extra = null; if (B.votes) { const m = new Map(), k0 = d.ohlc.length - B.votes.length; B.votes.forEach((v, i) => { if (v != null) m.set(d.ohlc[k0 + i][0], v); }); extra = d.dates.map((x) => (m.has(x) ? m.get(x) : null)); }
     const be = B.breakeven, tg = `target +${B.kU} ATR / stop −${B.kD} ATR, ${B.H} hari`;
-    if (!B.valid) return { v: 0, why: `belum terbukti di aset ini${B.auc != null ? ` (AUC uji ${nf(2).format(B.auc)})` : ""}, jadi netral` };
-    const v = B.pT >= be + 0.08 && B.ev > 0 ? 1 : B.pT <= be - 0.08 ? -1 : 0;
-    return { v, why: `peluang target dulu ${pct(B.pT, 0)} (impas ${pct(be, 0)}), ${tg} · AUC uji ${nf(2).format(B.auc)}` };
+    if (!B.valid) { const why = B.auc == null ? "data uji belum cukup" : !(B.auc >= 0.53 && B.aucP < 0.05 && B.bss > 0) ? `belum terbukti di aset ini (AUC uji ${nf(2).format(B.auc)})` : `hanya mengulang tren/momentum (AUC di dalam skor teknikal yang sama ${nf(2).format(B.sAuc)})`;
+      return { v: 0, count: false, extra, why: `${why}, jadi tidak ikut bersuara` }; }
+    const v = B.pT >= be + B.margin && B.ev > 0 ? 1 : B.pT <= be - B.margin ? -1 : 0;
+    return { v, count: true, extra, why: `peluang target dulu ${pct(B.pT, 0)} (impas ${pct(be, 0)}), ${tg} · AUC uji ${nf(2).format(B.auc)}, nilai tambah di luar teknikal ${nf(2).format(B.sAuc)}` };
   }
   function applyMarkers() {
     if (!state.lw || !state.sig || state.tf !== "D") return;

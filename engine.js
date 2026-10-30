@@ -957,20 +957,22 @@
   // ---------- sinyal beli/jual teknikal + backtest pada aset yang sama ----------
   // skor_t = tren (±1) + momentum (±1) + RSI (+1 jenuh jual / −1 jenuh beli); beli bila skor ≥ entry, jual bila skor ≤ exit
   function signalBacktest(dates, px, opt = {}) {
-    const o = { fast: 20, slow: 50, mom: 63, lo: 30, hi: 70, entry: 2, exit: -1, costBps: 20, split: 0.7, ppy: 252, rf: 0, ...opt };
+    const o = { fast: 20, slow: 50, mom: 63, lo: 30, hi: 70, entry: 2, exit: -1, costBps: 20, split: 0.7, ppy: 252, rf: 0, extra: null, ...opt };
+    const X = Array.isArray(o.extra) && o.extra.length === px.length ? o.extra : null; // suara tambahan (−1/0/+1) per hari, bebas bocoran
     const n = px.length, rsi = rsiSeries(px), cost = o.costBps / 1e4;
     const sma = (k, t) => { let s = 0; for (let i = t - k + 1; i <= t; i++) s += px[i]; return s / k; };
     const comp = (t) => { if (t < Math.max(o.slow, o.mom)) return null;
       const f = sma(o.fast, t), sl = sma(o.slow, t), tr = px[t] > sl && f > sl ? 1 : px[t] < sl && f < sl ? -1 : 0;
       const mo = px[t] / px[t - o.mom] - 1 > 0 ? 1 : -1, r = rsi[t], rs = r == null ? 0 : r < o.lo ? 1 : r > o.hi ? -1 : 0;
-      return { tr, mo, rs, score: tr + mo + rs, rsi: r, maF: f, maS: sl, momRet: px[t] / px[t - o.mom] - 1 }; };
+      const on = !!(X && X[t] != null), ex = on ? X[t] : 0, nC = on ? 4 : 3; // ambang proporsional: beli ≥ 60% suara, jual ≤ −1/3 suara
+      return { tr, mo, rs, ex, score: tr + mo + rs + ex, nC, ent: on ? Math.ceil(0.6 * nC - 1e-9) : o.entry, exi: on ? -Math.round(nC / 3) : o.exit, rsi: r, maF: f, maS: sl, momRet: px[t] / px[t - o.mom] - 1 }; };
     let pos = 0, entryPx = 0, entryI = 0; const events = [], trades = [], strat = [], bh = [];
     for (let t = 1; t < n; t++) {
       const r = px[t] / px[t - 1] - 1; bh.push(r);
       strat.push(pos * r);
       const c = comp(t); if (!c) continue;
-      if (pos === 0 && c.score >= o.entry) { pos = 1; strat[strat.length - 1] -= cost; entryPx = px[t]; entryI = t; events.push({ date: dates[t], type: "buy", price: px[t], score: c.score }); }
-      else if (pos === 1 && c.score <= o.exit) { pos = 0; strat[strat.length - 1] -= cost; const ret = (px[t] / entryPx) * (1 - cost) / (1 + cost) - 1;
+      if (pos === 0 && c.score >= c.ent) { pos = 1; strat[strat.length - 1] -= cost; entryPx = px[t]; entryI = t; events.push({ date: dates[t], type: "buy", price: px[t], score: c.score }); }
+      else if (pos === 1 && c.score <= c.exi) { pos = 0; strat[strat.length - 1] -= cost; const ret = (px[t] / entryPx) * (1 - cost) / (1 + cost) - 1;
         trades.push({ in: dates[entryI], out: dates[t], ret, days: t - entryI }); events.push({ date: dates[t], type: "sell", price: px[t], score: c.score, ret }); }
     }
     const k = Math.floor(strat.length * o.split);
@@ -1932,49 +1934,70 @@
   // ---------- OTAK KE-3: binomial yang belajar ----------
   // Pohon binomial harian dengan dua batas (target +3 ATR, stop −2 ATR, 20 hari). Peluang naik p dan besar langkah naik/turun (u, d)
   // TIDAK diasumsikan dari rata-rata sejarah, tapi dipelajari dari K hari lampau yang kondisinya paling mirip (momentum, rezim volatilitas,
-  // tren, RSI). Return tetangga dinormalkan volatilitasnya lalu diskalakan ke volatilitas sekarang. Diuji walk-forward: tiap titik uji
-  // hanya memakai hari sebelum titik itu; label = harga kena target dulu (1) atau stop dulu (0) memakai high/low harian.
+  // tren, RSI). Return tetangga dinormalkan volatilitasnya lalu diskalakan ke volatilitas sekarang.
+  // Walk-forward harian: prediksi hari t hanya memakai hari < t; kalibrasi Platt & syarat "terbukti" juga hanya dari titik uji yang
+  // labelnya sudah selesai sebelum t → seri suara harian (votes) bebas bocoran, dipakai backtest Sinyal.
+  // Nilai tambah: AUC dihitung juga DI DALAM tiap kelompok skor teknikal yang sama (stratified AUC). Kalau binomial cuma mengulang
+  // tren/momentum, AUC di dalam kelompok ≈ 0,5 → dianggap tidak menambah informasi → tidak ikut bersuara.
   function binoLearn(D, o = {}) {
-    const n = D.n, c = D.c, hi = D.h, lo = D.l, H = o.H || 20, kU = o.kU || 3, kD = o.kD || 2, cost = o.cost ?? 0.002;
+    const n = D.n, c = D.c, hi = D.h, lo = D.l, H = o.H || 20, kU = o.kU || 3, kD = o.kD || 2, cost = o.cost ?? 0.002, MARGIN = 0.08;
     if (n < 400) return null;
-    const lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0)), s20 = T.std(lr, 20), s120 = T.std(lr, 120), m50 = T.sma(c, 50), rsi = rsiSeries(c, 14);
+    const lr = c.map((x, i) => (i ? Math.log(x / c[i - 1]) : 0)), s20 = T.std(lr, 20), s120 = T.std(lr, 120), m20 = T.sma(c, 20), m50 = T.sma(c, 50), rsi = rsiSeries(c, 14);
     const atr = new Array(n).fill(null); { let a = 0; for (let i = 1; i < n; i++) { const tr = Math.max(hi[i] - lo[i], Math.abs(hi[i] - c[i - 1]), Math.abs(lo[i] - c[i - 1])); a = i < 15 ? a + tr / 14 : a + (tr - a) / 14; if (i >= 14) atr[i] = a; } }
-    const F = new Array(n).fill(null);
+    // skor teknikal yang sama dengan Sinyal (tren MA20/MA50 + momentum 63 hari + RSI 30/70) untuk uji nilai tambah
+    const tech = new Array(n).fill(null); for (let t = 63; t < n; t++) { if (m50[t] == null) continue; const tr = c[t] > m50[t] && m20[t] > m50[t] ? 1 : c[t] < m50[t] && m20[t] < m50[t] ? -1 : 0, r = rsi[t];
+      tech[t] = tr + (c[t] / c[t - 63] - 1 > 0 ? 1 : -1) + (r == null ? 0 : r < 30 ? 1 : r > 70 ? -1 : 0); }
+    const F = new Array(n).fill(null), cl = (x) => Math.max(-4, Math.min(4, x));
     for (let t = 130; t < n; t++) { const v = s20[t], v2 = s120[t]; if (!(v > 0) || !(v2 > 0) || m50[t] == null || rsi[t] == null || !(atr[t] > 0)) continue;
-      const cl = (x) => Math.max(-4, Math.min(4, x));
       F[t] = [cl(Math.log(c[t] / c[t - 20]) / (v * Math.sqrt(20))), cl(Math.log(v / v2) * 2), cl((c[t] / m50[t] - 1) / (v * Math.sqrt(50))), cl(Math.log(c[t] / c[t - 5]) / (v * Math.sqrt(5))), cl((rsi[t] - 50) / 15)]; }
     const z1 = new Array(n).fill(null); for (let s = 130; s < n - 1; s++) if (F[s] && s20[s] > 0) z1[s] = lr[s + 1] / s20[s]; // return besok, dinormalkan
     function lattice(pu, u, d, lU, lD) { // u > 0 > d (log); peluang kena lU dulu / lD dulu / tidak keduanya dalam H langkah
       let P = new Float64Array(H + 2); P[0] = 1; let up = 0, dn = 0;
       for (let m = 0; m < H; m++) { const Q = new Float64Array(H + 2);
         for (let k = 0; k <= m; k++) { const w = P[k]; if (!w) continue;
-          for (const [k2, q] of [[k + 1, pu], [k, 1 - pu]]) { const x = k2 * u + (m + 1 - k2) * d, mm = w * q; if (x >= lU) up += mm; else if (x <= lD) dn += mm; else Q[k2] += mm; } }
+          let x = (k + 1) * u + (m - k) * d, mm = w * pu; if (x >= lU) up += mm; else if (x <= lD) dn += mm; else Q[k + 1] += mm;
+          x = k * u + (m + 1 - k) * d; mm = w * (1 - pu); if (x >= lU) up += mm; else if (x <= lD) dn += mm; else Q[k] += mm; }
         P = Q; }
       return { up, dn, none: Math.max(0, 1 - up - dn) };
     }
-    function predict(t) { const f = F[t]; if (!f) return null; const pool = [];
-      for (let s = 130; s < t; s++) if (z1[s] != null && s + 1 <= t) { const g = F[s]; let d2 = 0; for (let j = 0; j < 5; j++) { const e = g[j] - f[j]; d2 += e * e; } pool.push([d2, z1[s]]); }
-      if (pool.length < 200) return null; const K = Math.min(250, Math.max(60, Math.round(3 * Math.sqrt(pool.length))));
-      pool.sort((a, b) => a[0] - b[0]); let nu = 0, su = 0, nd = 0, sd = 0;
-      for (let i = 0; i < K; i++) { const z = pool[i][1]; if (z > 0) { nu++; su += z; } else if (z < 0) { nd++; sd += z; } }
+    const dist = new Float64Array(n), idx = new Int32Array(n);
+    function kSmallest(m, K) { // quickselect: K jarak terkecil di idx[0..K)
+      let a = 0, b = m - 1; while (a < b) { const pv = dist[idx[(a + b) >> 1]]; let i = a, j = b;
+        while (i <= j) { while (dist[idx[i]] < pv) i++; while (dist[idx[j]] > pv) j--; if (i <= j) { const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp; i++; j--; } }
+        if (K - 1 <= j) b = j; else if (K - 1 >= i) a = i; else break; } }
+    function predict(t) { const f = F[t]; if (!f) return null; let m = 0;
+      for (let s = 130; s < t; s++) if (z1[s] != null) { const g = F[s]; let d2 = 0; for (let j = 0; j < 5; j++) { const e = g[j] - f[j]; d2 += e * e; } dist[s] = d2; idx[m++] = s; }
+      if (m < 200) return null; const K = Math.min(250, Math.max(60, Math.round(3 * Math.sqrt(m)))); kSmallest(m, K);
+      let nu = 0, su = 0, nd = 0, sd = 0; for (let i = 0; i < K; i++) { const z = z1[idx[i]]; if (z > 0) { nu++; su += z; } else if (z < 0) { nd++; sd += z; } }
       const a = 20, pu = (nu + a / 2) / (nu + nd + a), v = s20[t], u = ((su + 0.8 * 10) / (nu + 10)) * v, d = ((sd - 0.8 * 10) / (nd + 10)) * v; // prior Beta(10,10) & |z|≈0,8
       const lU = Math.log((c[t] + kU * atr[t]) / c[t]), lD = Math.log(Math.max(1e-9, c[t] - kD * atr[t]) / c[t]); if (!isFinite(lD)) return null;
       const L = lattice(pu, u, d, lU, lD); return { ...L, pu, u, d, K, raw: L.up + L.dn > 0 ? L.up / (L.up + L.dn) : 0.5 };
     }
     function label(t) { const U = c[t] + kU * atr[t], Dn = c[t] - kD * atr[t];
-      for (let k = t + 1; k <= t + H && k < n; k++) { if (lo[k] <= Dn) return 0; if (hi[k] >= U) return 1; } return t + H < n ? null : undefined; }
-    const step = n > 1500 ? 5 : 3, s0 = Math.max(400, Math.floor(n * 0.35)), ev = [];
-    for (let t = s0; t < n - 1; t += step) { const y = label(t); if (y == null) continue; const r = predict(t); if (r) ev.push({ p: r.raw, y }); }
+      for (let k = t + 1; k <= t + H && k < n; k++) { if (lo[k] <= Dn) return { y: 0, end: k }; if (hi[k] >= U) return { y: 1, end: k }; } return t + H < n ? { y: null, end: t + H } : null; }
+    const beOf = (t) => (kD + cost / (atr[t] / c[t])) / (kU + kD); // titik impas peluang target-dulu (termasuk biaya)
+    function stats(E) { // E: [{p, y, g}] → AUC, AUC dalam kelompok skor teknikal, p-value, Platt, Brier skill
+      const P = E.map((r) => r.p), Y = E.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), pl = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(pl, p));
+      const bss = 1 - mean(cal.map((p, i) => (p - Y[i]) ** 2)) / Math.max(1e-9, base * (1 - base));
+      let num = 0, den = 0; const G = new Map(); for (const r of E) { if (!G.has(r.g)) G.set(r.g, []); G.get(r.g).push(r); }
+      for (const g of G.values()) { const y1 = g.filter((r) => r.y).length, y0 = g.length - y1; if (!y1 || !y0) continue; const a = aucOf(g.map((r) => r.p), g.map((r) => r.y)); if (isFinite(a)) { num += a * y1 * y0; den += y1 * y0; } }
+      const sAuc = den ? num / den : NaN, nEff = Math.max(2, E.length / H), n1 = Math.max(1, base * nEff), n0 = Math.max(1, (1 - base) * nEff), A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
+      const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / (n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
+      return { auc, sAuc, aucP, base, bss, pl, nEff: Math.round(nEff), valid: E.length >= 150 && A >= 0.53 && aucP < 0.05 && bss > 0 && sAuc >= 0.52 };
+    }
+    // walk-forward harian
+    const s0 = 400, ev = [] /* titik mulai & jadwal kalibrasi tetap (tidak bergantung panjang data) supaya suara masa lalu tidak berubah saat data baru datang */, votes = new Array(n).fill(null), probs = new Array(n).fill(null); let S = null, lastFit = -1e9, k0 = 0; const done = [];
+    for (let t = s0; t < n; t++) { const r = predict(t); if (!r) continue; const L = label(t);
+      if (L && L.y != null) done.push({ t, end: L.end, p: r.raw, y: L.y, g: tech[t] });
+      if ((t - s0) % 20 === 0) { lastFit = t; const E = done.filter((e) => e.end < t); S = E.length >= 150 ? stats(E) : null; k0 = E.length; } // hanya label yang sudah selesai sebelum t
+      if (S && S.valid) { const pT = applyPlatt(S.pl, r.raw), be = beOf(t); probs[t] = pT; votes[t] = pT >= be + MARGIN ? 1 : pT <= be - MARGIN ? -1 : 0; } // belum terbukti → null (bukan pemilih)
+      if (L && L.y != null) ev.push(done[done.length - 1]); }
     const now = predict(n - 1); if (!now) return null;
-    const out = { now, H, kU, kD, atr: atr[n - 1], px: c[n - 1], nEval: ev.length, breakeven: (kD + cost * 1 / (atr[n - 1] / c[n - 1])) / (kU + kD) };
-    if (ev.length < 80) return { ...out, valid: false, why: "titik uji kurang" };
-    const P = ev.map((r) => r.p), Y = ev.map((r) => r.y), auc = aucOf(P, Y), base = mean(Y), pl = fitPlatt(P, Y), cal = P.map((p) => applyPlatt(pl, p));
-    const bss = 1 - mean(cal.map((p, i) => (p - Y[i]) ** 2)) / Math.max(1e-9, base * (1 - base));
-    const nEff = Math.max(2, (ev.length * step) / H), n1 = Math.max(1, base * nEff), n0 = Math.max(1, (1 - base) * nEff), A = isFinite(auc) ? auc : 0.5, q1 = A / (2 - A), q2 = (2 * A * A) / (1 + A);
-    const se = Math.sqrt(Math.max(1e-9, (A * (1 - A) + (n1 - 1) * (q1 - A * A) + (n0 - 1) * (q2 - A * A)) / (n1 * n0))), aucP = 1 - ncdf((A - 0.5) / se);
-    const pT = applyPlatt(pl, now.raw), res = now.up + now.dn, U = kU * atr[n - 1], Dd = kD * atr[n - 1];
-    const evPx = res * (pT * U - (1 - pT) * Dd) / c[n - 1] - cost; // perkiraan hasil per transaksi (bagian yang tidak kena batas dianggap ±0)
-    return { ...out, auc, aucP, base, bss, pT, res, ev: evPx, nEff: Math.round(nEff), valid: A >= 0.53 && aucP < 0.05 && bss > 0 };
+    const out = { now, H, kU, kD, atr: atr[n - 1], px: c[n - 1], nEval: ev.length, breakeven: beOf(n - 1), votes, probs, margin: MARGIN };
+    if (ev.length < 150) return { ...out, valid: false, why: "titik uji kurang" };
+    const St = stats(ev), pT = applyPlatt(St.pl, now.raw), res = now.up + now.dn, U = kU * atr[n - 1], Dd = kD * atr[n - 1];
+    const evPx = (res * (pT * U - (1 - pT) * Dd)) / c[n - 1] - cost; // perkiraan hasil per transaksi (bagian yang tidak kena batas dianggap ±0)
+    const { pl, ...st } = St; return { ...out, ...st, pT, res, ev: evPx };
   }
   const api = { binoLearn, gemAsset, binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;

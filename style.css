@@ -783,3 +783,4 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 #newsList.news-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; align-items: stretch; }
 #newsList.news-list > * { min-width: 0; margin: 0; }
 @media (min-width: 900px) { #newsCard #newsSummary .kpis, #newsCard #newsSummary > div:first-child { max-width: none; } }
+tr.muted td { opacity: .55; }
