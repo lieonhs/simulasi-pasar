@@ -293,7 +293,7 @@ lap("berita");
     if (allDn || P.action === "JUAL") return { act: "JUAL", why: allDn ? `${use.map((u) => u[0]).join("+")} sepakat turun` : "rencana berubah JUAL" };
     const miss = use.filter((u) => u[2] <= 0).map((u) => `${u[0]} ${u[2] < 0 ? "turun" : u[0] === "AI" ? "netral" : "belum teruji/< ambang"}`); if (P.action !== "BELI") miss.push(`rencana ${P.action}`); if (!(P.confPct >= c.thr)) miss.push(`keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}`);
     return { act: "TUNGGU", why: miss.join(", ") }; }
-  const apPositions = () => { const demo = [...Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), ...((pp.a && pp.a.fut) || []).filter((f) => f.ap).map((f) => f.s)], live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi" || x.st === "harian")).map((x) => x.sym); return [...new Set([...demo, ...live])]; };
+  const apPositions = () => { const demo = [...Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), ...((pp.a && pp.a.fut) || []).filter((f) => f.ap).map((f) => f.s)], live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi" || x.st === "harian")).map((x) => x.sym); const bx = ap.cfg && ap.cfg.target === "idx" && ap.cfg.bnf && bnf.acct ? bnf.acct.positions.map((p) => bnf.map[p.symbol] || p.symbol.replace(/USDT$/, "-USDT")) : []; return [...new Set([...demo, ...live, ...bx])]; };
   async function apBuy(X, valIdr) { if (X.V && X.V.explore && X.P.qty > 0) X.P.qty = X.idx ? Math.floor(X.P.qty / 2) : +(X.P.qty / 2).toFixed(6);
     const c = ap.cfg, P = X.P; if (!valIdr && !(P.qty > 0)) throw new Error("modal terlalu kecil untuk 1 lot/unit");
     if (c.target === "idx") { if (!demoGate().pass) throw new Error("Indodax terkunci (syarat demo belum terpenuhi)"); await idxPairsLoad(); const p = idxPairFor(X.sym); if (!p) throw new Error("tidak listing di Indodax");
@@ -601,10 +601,21 @@ lap("berita");
     try { const st = await bnfStatus(force); if (!st.configured) { el.innerHTML = '<p class="status err">Belum dikonfigurasi: tambahkan secret <code>BINANCE_FUT_KEY</code> & <code>BINANCE_FUT_SECRET</code> di Supabase (Edge Functions → Secrets).</p>'; return; }
       if (st.live && !reOk()) await reauth("Membuka akses Binance UANG ASLI");
       const A = await bnfCall({ action: "account" }), mode = A.live ? '<b class="neg">UANG ASLI</b>' : '<b class="pos">DEMO TRADING (uang palsu)</b>';
-      el.innerHTML = `<p class="note keep">${mode} · server ${esc(st.region || "?")} · maks ${st.maxUsdt} USDT/order · leverage maks ${st.maxLev}x · saldo <b>${nf(2).format(A.usdt.balance)} USDT</b> (tersedia ${nf(2).format(A.usdt.available)})</p>` +
+      const F = bnfFutProven(), g = demoGate(); el.innerHTML = `<p class="note keep">Syarat uang asli Binance: syarat demo ${g.pass ? '<b class="pos">✓</b>' : '<span class="neg">✗</span>'} · futures demo terbukti ${F.ok ? '<b class="pos">✓</b>' : '<span class="neg">✗</span>'} (${F.n}/10 transaksi ketat, rata-rata ${F.avg >= 0 ? "+" : "−"}${big(Math.abs(F.avg), "IDR")}) · verifikasi password ${reOk() ? '<b class="pos">✓</b>' : '<span class="note">perlu</span>'}</p><p class="note keep">${mode} · server ${esc(st.region || "?")} · maks ${st.maxUsdt} USDT/order · leverage maks ${st.maxLev}x · saldo <b>${nf(2).format(A.usdt.balance)} USDT</b> (tersedia ${nf(2).format(A.usdt.available)})</p>` +
         (A.positions.length ? `<div class="table-wrap"><table><thead><tr><th>Simbol</th><th>Arah</th><th>Jumlah</th><th>Masuk</th><th>Mark</th><th>Untung/rugi</th><th>Likuidasi</th><th></th></tr></thead><tbody>${A.positions.map((p) => `<tr><td><b>${esc(p.symbol)}</b></td><td class="${p.amt > 0 ? "pos" : "neg"}">${p.amt > 0 ? "LONG" : "SHORT"}${p.lev ? ` ${p.lev}x` : ""}</td><td>${Math.abs(p.amt)}</td><td>${p.entry}</td><td>${p.mark}</td><td class="${cls(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${nf(2).format(p.upnl)} USDT</td><td>${p.liq || "–"}</td><td><button class="x-btn" data-bnfclose="${esc(p.symbol)}">Tutup</button></td></tr>`).join("")}</tbody></table></div>` : '<p class="note">Tidak ada posisi terbuka di Binance.</p>') +
         (A.algo.length ? `<p class="note">Stop/target aktif: ${A.algo.map((a) => `${esc(a.symbol)} ${esc(a.type)} @ ${a.trigger}`).join(" · ")}</p>` : ""); }
     catch (e) { el.innerHTML = `<p class="status err">${esc(e.message)}</p>`; } }
+  // ---- Binance LANGSUNG (autopilot mode uang asli): futures kripto → Binance, spot → Indodax. Posisi dibaca dari akun Binance.
+  bnf.map = bnf.map || {};
+  async function bnfAcct(force) { if (!force && bnf.acct && Date.now() - bnf.acctAt < 60e3) return bnf.acct; bnf.acct = await bnfCall({ action: "account" }); bnf.acctAt = Date.now(); return bnf.acct; }
+  const bnfPos = (s) => (bnf.acct ? bnf.acct.positions.find((p) => p.symbol === bnfSym(s)) : null);
+  function bnfFutProven() { let n = 0, pl = 0; for (const o of pp.a.hist) if (o.ap && o.fut && o.side2 === "close" && o.eng !== "day" && o.pl != null && !o.xp) { n++; pl += o.pl; } return { n, avg: n ? pl / n : 0, ok: n >= 10 && pl > 0 }; }
+  async function bnfGateLive() { const st = await bnfStatus(); if (!st.configured) throw new Error("Binance belum dikonfigurasi");
+    if (st.live) { if (!demoGate().pass) throw new Error("UANG ASLI terkunci: syarat demo belum terpenuhi"); const F = bnfFutProven(); if (!F.ok) throw new Error(`UANG ASLI terkunci: futures demo belum terbukti (${F.n}/10 transaksi ketat, rata-rata ${big(F.avg, "IDR")})`);
+      if (!reOk()) throw new Error("UANG ASLI: verifikasi password dulu (Cek koneksi Binance)"); } return st; }
+  async function bnfDirect(X, dir) { const c = ap.cfg, st = await bnfGateLive(); await ppQuotes([X.sym]); const px = (pp.q[X.sym] && pp.q[X.sym].price) || X.px, atr = X.atr > 0 ? X.atr : px * 0.03, sym = bnfSym(X.sym);
+    const j = await bnfCall({ action: "open", symbol: sym, dir, usdt: c.bnfUsdt || 150, lev: c.lev, stop: px - dir * 1.5 * atr, tp: px + dir * 3 * atr, confirm: `open ${sym}` }); bnf.map[sym] = X.sym; await bnfAcct(true);
+    return `Binance ${st.live ? "UANG ASLI" : "demo"}: ${dir > 0 ? "LONG" : "SHORT"} ${j.lev}x ${j.qty} ${sym} @ ${j.avgPrice} · stop ${j.stop} · target ${j.tp}`; }
   async function apFutures(X, dir, xp, valIdr, frac = 1) { await ppQuotes([X.sym]); const c = ap.cfg, px = (pp.q[X.sym] && pp.q[X.sym].price) || X.px, atr = isFinite(X.atr) && X.atr > 0 ? X.atr : px * 0.03, fx = fxOf(X.sym);
     const brk = { stop: px - dir * 1.5 * atr, t1: px + dir * 2 * atr, t2: px + dir * 3 * atr }, eq = apRun().eq, risk = c.tgOn ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
     let units = valIdr ? valIdr / fx / px : (eq * risk) / (Math.abs(brk.stop - px) * fx); if (xp) units /= 2; units *= frac; units = Math.min(units, (apRun().free * c.lev * 0.95) / (px * fx)); units = +units.toFixed(6);
@@ -674,7 +685,9 @@ lap("berita");
   function apInstStats(s) { const r = { spot: { n: 0, w: 0, pl: 0 }, fut: { n: 0, w: 0, pl: 0 } };
     for (const o of pp.a.hist) if (apInstClose(o) && (!s || o.s === s)) { const k = apInstOf(o); if (!k) continue; r[k].n++; r[k].pl += o.pl; if (o.pl > 0) r[k].w++; }
     for (const k of ["spot", "fut"]) r[k].avg = r[k].n ? r[k].pl / r[k].n : NaN; return r; }
-  function apLongInst(s) { const c = ap.cfg, m = c.longVia || (c.futLong === false ? "spot" : "fut"); if (!c.fut || !isCx(s) || c.target !== "demo") return "spot";
+  function apLongInst(s) { const c = ap.cfg, m = c.longVia || (c.futLong === false ? "spot" : "fut"); if (!isCx(s)) return "spot";
+    if (c.target === "idx") { if (!c.bnf) return "spot"; if (m === "fut") return "fut"; if (m === "adapt") { const S = apInstStats(s); return S.spot.n >= AP_ENG_MIN && S.fut.n >= AP_ENG_MIN && S.fut.avg > S.spot.avg ? "fut" : "spot"; } return "spot"; } // uang asli: tidak bergantian
+    if (!c.fut || c.target !== "demo") return "spot";
     if (m === "spot" || m === "fut") return m;
     const opens = { spot: 0, fut: 0 }; for (const o of pp.a.hist) if (o.ap && o.s === s && o.eng !== "day" && o.side === "buy" && !o.side2 && (o.fut ? /LONG/.test(o.type || "") : o.status === "terisi")) opens[o.fut ? "fut" : "spot"]++;
     const alt = opens.fut <= opens.spot ? "fut" : "spot"; if (m === "alt") return alt;
@@ -811,17 +824,21 @@ lap("berita");
   let apActQ = Promise.resolve();
   const apActLocked = (fn) => (apActQ = apActQ.then(fn, fn));
   async function apAct(s, st, X) { const c = ap.cfg; st.note = "memutuskan…";
-    try { const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
+    try { const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const bp = c.target === "idx" && c.bnf ? bnfPos(s) : null, held = swingHeld(s) || !!bp;
         if (!c.on) { st.note = "simulasi (autopilot mati)"; }
+        else if (bp && (bp.amt > 0 ? (V.act === "JUAL" || V.act === "SHORT") : (V.act === "BELI" || X.ml > 0 || X.dl > 0 || X.ai > 0))) { const j = await bnfCall({ action: "close", symbol: bp.symbol }); await bnfAcct(true); c.cool[s] = Date.now(); st.note = "Binance ditutup"; apLogAdd(s, `Binance TUTUP ${bp.amt > 0 ? "LONG" : "SHORT"} · sinyal berbalik · ${j.closed ? j.qty : "sudah tertutup"}`, bp.amt > 0 ? "sell" : "buy"); }
+        else if (bp) { st.note = `Binance ${bp.amt > 0 ? "LONG" : "SHORT"} dijaga`; }
         else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
         else if ((V.act === "BELI" || V.act === "SHORT") && !held && !apEngAllow(s, "swing")) { st.note = `swing tidak dipakai untuk aset ini (${c.target === "idx" ? "belum terbukti untung di demo" : "harian lebih efektif / swing rugi"})`; }
         else if (V.act === "BELI" && !held) {
           if (pp.a.orders.some((o) => o.ap && o.s === s && o.side === "buy" && o.status === "terbuka")) st.note = "order beli menunggu terisi";
           else if (c.dayHalt) st.note = "rugi harian ≥ 5%: beli baru diblok sampai besok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
+          else if (c.target === "idx" && c.bnf && X.crypto && apLongInst(s) === "fut") { const m = await bnfDirect(X, 1); c.nDay++; st.note = "Binance long dibuka"; apLogAdd(s, `LONG · ${V.why} · ${m}`, "buy"); toast(`Autopilot: ${m}`); }
           else if (c.target === "demo" && X.crypto && apLongInst(s) === "fut") { X.V = V; const m = await apFutures(X, 1, !!V.explore); c.nDay++; st.note = V.explore ? "futures long eksplorasi (½)" : "futures long dibuka"; apLogAdd(s, `LONG · ${V.why} · ${m}`, "buy"); toast(`Autopilot: ${m}`); }
           else { X.V = V; const m = await apBuy(X); c.nDay++; st.note = V.explore ? "order eksplorasi (½)" : "order beli dipasang"; apLogAdd(s, `BELI · ${V.why} · ${m}`, "buy"); toast(`Autopilot: ${m}`); } }
         else if (V.act === "SHORT" && !held) {
-          if (c.target !== "demo") st.note = "short hanya di demo"; else if (c.dayHalt) st.note = "rugi harian ≥ 5%: posisi baru diblok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
+          if (c.target !== "demo" && !(c.bnf && X.crypto)) st.note = "short uang asli butuh Binance futures"; else if (c.dayHalt) st.note = "rugi harian ≥ 5%: posisi baru diblok"; else if (apPositions().length >= c.maxPos) st.note = "maks posisi tercapai"; else if (c.nDay >= c.maxDay) st.note = "maks order harian tercapai"; else if (c.cool[s] && Date.now() - c.cool[s] < 864e5) st.note = "jeda 24 jam setelah keluar";
+          else if (c.target === "idx") { if (V.explore) st.note = "eksplorasi hanya di demo"; else { const m = await bnfDirect(X, -1); c.nDay++; st.note = "Binance short dibuka"; apLogAdd(s, `SHORT · ${V.why} · ${m}`, "sell"); toast(`Autopilot: ${m}`); } }
           else { const m = await apFutures(X, -1, !!V.explore); c.nDay++; st.note = V.explore ? "short eksplorasi (½)" : "short dibuka"; apLogAdd(s, `SHORT · ${V.why} · ${m}`, "sell"); toast(`Autopilot: ${m}`); } }
         else if (held && futList().some((f) => f.ap && !f.day && f.s === s && f.dir < 0) && (V.act === "BELI" || X.ml > 0 || X.dl > 0 || X.ai > 0)) { const m = await apSell(X, 1, "swing"); c.cool[s] = Date.now(); st.note = "short ditutup"; apLogAdd(s, `TUTUP SHORT · sinyal tidak lagi turun · ${m}`, "buy"); }
         else if ((V.act === "JUAL" || V.act === "SHORT") && held && !futList().some((f) => f.ap && !f.day && f.s === s && f.dir < 0)) { const m = await apSell(X, 1, "swing"); c.cool[s] = Date.now(); st.note = "posisi dijual"; apLogAdd(s, `JUAL · ${V.why} · ${m || "tidak ada yang dijual"}`, "sell"); if (m) toast(`Autopilot: ${m}`); }
@@ -840,6 +857,7 @@ lap("berita");
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits();
         { const ttl = 2 * 864e5, old = pp.a.orders.filter((o) => o.ap && o.status === "terbuka" && o.side === "buy" && Date.now() - Date.parse(o.t) > ttl); // order beli autopilot yang 2 hari tidak terisi dibatalkan
           if (old.length) { pp.a.orders = pp.a.orders.filter((o) => !old.includes(o)); for (const o of old) apLogAdd(o.s, `order beli limit ${fmtNum(o.limit)} kedaluwarsa (2 hari tidak terisi), dibatalkan`); } } ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
+      if (c.target === "idx" && c.bnf) { try { await bnfAcct(true); } catch (e) { apLogAdd("—", "Binance: " + e.message, "err"); } }
       if (c.on) await apNewsGuard(); apLabelSweep(); await apWideRefresh(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
       if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
       const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
