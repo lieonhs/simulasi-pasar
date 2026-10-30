@@ -155,8 +155,8 @@
   // keputusan tanpa membuka halaman analisis: 50 strategi + ML/DL + konfluensi/A+ + rencana harga + aturan RAM AI
   // otak kedua & ketiga: worker terpisah khusus autopilot, supaya beberapa aset dianalisis bersamaan (paralel di inti CPU lain)
   const CORES = navigator.hardwareConcurrency || 4, AP_AUTO = Math.max(1, Math.min(5, CORES - 1)); let apPool = null, AP_PAR = AP_AUTO;
-  function apSetBrains(n) { const want = Math.max(1, Math.min(5, n || AP_AUTO)); if (apPool && apPool.length !== want) { apPool.forEach((w) => w && w.terminate()); apPool = null; } AP_PAR = want; }
-  const apWorker = (slot) => { if (!apPool) apPool = Array.from({ length: AP_PAR }, () => mkWorker()); return apPool[slot % AP_PAR] || null; };
+  function apSetBrains(n) { const want = Math.max(1, Math.min(5, n || AP_AUTO)); if (apPool && apPool.length !== want) { apPool.forEach((w) => w && workerKill(w, "jumlah otak diubah")); apPool = null; } AP_PAR = want; }
+  const apWorker = (slot) => { if (!apPool) apPool = Array.from({ length: AP_PAR }, () => mkWorker()); const k = slot % AP_PAR; if (apPool[k] && apPool[k].dead) apPool[k] = mkWorker(); return apPool[k] || null; };
   // ---- aset yang tidak bisa dianalisis swing: riwayat < 300 hari (dicatat 30 hari, lalu dicek ulang), stablecoin & token emas
   const AP_JUNK = new Set(["XAUT", "PAXG", "RWUSD", "U", "USD1", "USDE", "USDS", "FDUSD", "USDC", "TUSD", "DAI", "PYUSD", "RLUSD", "BFUSD", "EURI", "AEUR", "XUSD", "USDP", "USDD", "BUSD", "IDRT", "BIDR"]);
   const apBase = (s) => String(s).toUpperCase().replace(/-(USDT?|IDR)$/, "");
@@ -757,8 +757,11 @@ lap("berita");
       X.V = { act: "BELI", explore: true }; m = await apBuy(X); }
     c.quotaDay = today; c.nDay++; const st = ap.st[k.s]; if (st) st.note = `kuota harian ${k.dir > 0 ? "long" : "short"} ¼`;
     apLogAdd(k.s, `KUOTA HARIAN ${k.dir > 0 ? "LONG" : "SHORT"} · paling condong ${k.dir > 0 ? "naik" : "turun"} (skor ${nf(2).format(k.sc)}) dari ${C.length} kandidat · ${m}`, k.dir > 0 ? "buy" : "sell"); toast(`Autopilot (kuota harian): ${m}`); }
+  // satu aset tidak boleh menahan antrean: analisis > 3 menit dihentikan, aset ditandai gagal, antrean lanjut
+  const apDecideT = (s, slot) => Promise.race([apDecide(s, slot), new Promise((_, rej) => setTimeout(() => rej(new Error("waktu habis (> 3 menit), dilewati")), 180e3))]);
   async function apCycle(force = false) {
-    if (ap.busy) return; apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
+    if (ap.busy) { if (Date.now() - (ap.busyAt || 0) < 15 * 60e3) return; ap.gen = (ap.gen || 0) + 1; apLogAdd("—", "Antrean macet > 15 menit: putaran lama dihentikan, dimulai ulang", "err"); } // penjaga
+    const gen = ap.gen = (ap.gen || 0) + 1; ap.busyAt = Date.now(); apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
     try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits();
         { const ttl = 2 * 864e5, old = pp.a.orders.filter((o) => o.ap && o.status === "terbuka" && o.side === "buy" && Date.now() - Date.parse(o.t) > ttl); // order beli autopilot yang 2 hari tidak terisi dibatalkan
           if (old.length) { pp.a.orders = pp.a.orders.filter((o) => !old.includes(o)); for (const o of old) apLogAdd(o.s, `order beli limit ${fmtNum(o.limit)} kedaluwarsa (2 hari tidak terisi), dibatalkan`); } } ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
@@ -769,9 +772,9 @@ lap("berita");
       { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; return c.style !== "day" && (force || !st.at || Date.now() - st.at >= evMin * 60e3) && !(/\.JK$/.test(s) && !idxOpen() && !force); });
         for (const s of due) { const st = ap.st[s] || (ap.st[s] = {}); st.note = "antre analisis"; } drawAp();
         let k = 0; const t0 = Date.now(); await Promise.all(Array.from({ length: Math.min(DP.brains, due.length) }, async (_, slot) => { while (k < due.length) { const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
-          try { st.pre = await apDecide(s, slot); st.note = "antre keputusan"; } catch (e) { st.preErr = e; st.note = "gagal: " + e.message; } drawAp(); if (DP.rest) await new Promise((r) => setTimeout(r, DP.rest)); } }));
+          if (gen !== ap.gen) return; ap.busyAt = Date.now(); try { st.pre = await apDecideT(s, slot); st.note = "antre keputusan"; } catch (e) { st.preErr = e; st.note = "gagal: " + e.message; } drawAp(); if (DP.rest && !document.hidden) await new Promise((r) => setTimeout(r, DP.rest)); } })); // tab tersembunyi: timer diperlambat browser (s/d 1 menit), jeda dilewati
         if (due.length) ap.lastPar = { n: due.length, sec: (Date.now() - t0) / 1000 }; }
-      for (const s of apSyms()) {
+      for (const s of apSyms()) { if (gen !== ap.gen) return; ap.busyAt = Date.now();
       const st = ap.st[s] || (ap.st[s] = {});
       if (c.style !== "swing" && c.on && (force || !st.dAt || Date.now() - st.dAt >= 5 * 60e3)) { if (c.style === "day" && (!st.X || Date.now() - (st.at || 0) > 3600e3)) { try { const X = await apDecide(s); Object.assign(st, { at: Date.now(), X, V: apVerdict(X) }); apRemember(X, st.V); } catch (e) { st.at = Date.now(); } }
         st.dAt = Date.now(); try { await dayStep(s, st); } catch (e) { st.dnote = "intraday gagal: " + e.message; } drawAp(); }
@@ -779,7 +782,7 @@ lap("berita");
       if (!force && st.at && Date.now() - st.at < evMin * 60e3) continue;
       if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
       st.note = st.pre ? "memutuskan…" : st.preErr ? st.note : "menganalisis…"; drawAp();
-      try { if (st.preErr) { const e = st.preErr; st.preErr = null; throw e; } const X = st.pre || await apDecide(s); st.pre = null; const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
+      try { if (st.preErr) { const e = st.preErr; st.preErr = null; throw e; } const X = st.pre || await apDecideT(s); st.pre = null; const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
         if (!c.on) { st.note = "simulasi (autopilot mati)"; }
         else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
         else if ((V.act === "BELI" || V.act === "SHORT") && !held && !apEngAllow(s, "swing")) { st.note = `swing tidak dipakai untuk aset ini (${c.target === "idx" ? "belum terbukti untung di demo" : "harian lebih efektif / swing rugi"})`; }
@@ -797,7 +800,7 @@ lap("berita");
       catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
       drawAp(); }
       if (c.on && c.mode === "porto") await apPorto(); if (c.target === "demo") { try { await apQuota(); } catch (e) { apLogAdd("—", "kuota harian gagal: " + e.message, "err"); } await apFailCheck(); } }
-    finally { ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), devPolicy().minEvery ? 60e3 : 5000); } } }
+    finally { if (gen !== ap.gen) return; ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), devPolicy().minEvery ? 60e3 : 5000); } } }
   // ---- Mode portofolio: bobot target dari keyakinan × ekspektasi, pindah hanya bila untung bersih > biaya
   const apCostRT = (s) => { const [fb, fs] = FEE[kindOf(s)]; return fb + fs + (/-USDT?$/.test(s) ? 0.002 : 0.001); }; // fee beli+jual + spread kira-kira
   const apEdge = (X) => { const P = X && X.P; if (!P || !P.pr || !(P.entry > 0)) return 0; return Math.max(0, P.pr.expR) * Math.abs(P.entry - P.stop) / P.entry; }; // ekspektasi % per trade

@@ -26,9 +26,13 @@
     // token hampir kedaluwarsa (< 2 menit) → perbarui dulu, supaya server tidak menolak karena selisih jam
     if (sb && session && session.expires_at && session.expires_at * 1000 - Date.now() < 120e3) { try { const { data } = await refreshOnce(); if (data && data.session) session = data.session; } catch { /* */ } }
     const hdr = () => ({ ...(opt.headers || {}), apikey: SB_KEY, ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}) });
-    let r = await fetch(url, { ...opt, headers: hdr() });
+    // batas waktu: permintaan yang menggantung (jaringan pindah, server lambat) dibatalkan, supaya antrean autopilot tidak macet selamanya
+    const { timeout, ...o2 } = opt; opt = o2; const ms = timeout || (/action=(ai|brief|guide)\b/.test(url) ? 75e3 : 30e3);
+    const sig = () => (opt.signal || (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined));
+    const go = async () => { try { return await fetch(url, { ...opt, headers: hdr(), signal: sig() }); } catch (e) { if (e && (e.name === "TimeoutError" || e.name === "AbortError")) throw new Error(`waktu habis (${Math.round(ms / 1000)} dtk) mengambil data`); throw e; } };
+    let r = await go();
     if (r.status === 401 && sb) { // 401 sering hanya sementara (token baru diganti, server sibuk): perbarui sesi lalu coba sekali lagi
-      try { const { data } = await refreshOnce(); if (data && data.session) { session = data.session; r = await fetch(url, { ...opt, headers: hdr() }); } } catch { /* */ }
+      try { const { data } = await refreshOnce(); if (data && data.session) { session = data.session; r = await go(); } } catch { /* */ }
       if (r.status === 401) { let still = null; try { still = (await sb.auth.getUser()).data.user; } catch { /* */ }
         if (!still) showAuth("Sesi berakhir, silakan masuk lagi."); // hanya bila sesi benar-benar tidak berlaku lagi
       } }
@@ -194,9 +198,13 @@
   function compute(type, cfg, onProgress = () => {}, wOver) {
     const heavy = type === "ml" || type === "radar", w = wOver || (heavy ? mlWorker || worker : worker);
     if (!w) return new Promise((res, rej) => setTimeout(() => { try { res(inlineRun(type, cfg, onProgress)); } catch (e) { rej(e); } }, 20));
-    const id = ++state.runId;
-    return new Promise((resolve, reject) => { pending.set(id, { resolve, reject, onProgress, w }); w.postMessage({ id, type, cfg }); });
+    const id = ++state.runId, IDLE = 120e3; // worker yang diam > 2 menit tanpa kabar (progres/hasil) dianggap macet → dihentikan & diganti
+    return new Promise((resolve, reject) => { let tmr = null; const arm = () => { clearTimeout(tmr); tmr = setTimeout(() => { if (!pending.has(id)) return; workerKill(w, `perhitungan ${type} macet > 2 menit, worker dimulai ulang`); }, IDLE); };
+      pending.set(id, { resolve: (v) => { clearTimeout(tmr); resolve(v); }, reject: (e) => { clearTimeout(tmr); reject(e); }, onProgress: (m, f) => { arm(); onProgress(m, f); }, w }); arm(); w.postMessage({ id, type, cfg }); });
   }
+  function workerKill(w, why) { try { w.terminate(); } catch { /* */ } w.dead = true;
+    pending.forEach((p, id) => { if (p.w === w) { pending.delete(id); p.reject(new Error(why)); } });
+    if (worker === w) worker = mkWorker(); if (mlWorker === w) mlWorker = mkWorker(); }
   function inlineCompare(cfg, onProgress) {
     const stats = MCEngine.compareStats(cfg.series, cfg.benchIdx);
     const sims = cfg.series.map((s, i) => { onProgress(`Simulasi pembanding ${i + 1}…`, i / cfg.series.length);
