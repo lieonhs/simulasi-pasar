@@ -48,8 +48,8 @@
     const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
     if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
       a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee;
-      if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; if (o.ap) p.ap = true; }
-    else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; } if (p.ap) o.ap = true;
+      if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; if (o.ap) p.ap = true; if (o.xp) p.xp = true; }
+    else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; } if (p.ap) o.ap = true; if (p.xp) o.xp = true;
       const fee = gross * fs, costPart = p.cost * (o.units / p.units); o.pl = gross - fee - costPart; a.cash += gross - fee; p.units -= o.units; p.cost -= costPart; o.fee = fee;
       if (p.units < 1e-9) delete a.pos[o.s]; }
     o.status = "terisi"; o.fillPx = px; o.fillAt = new Date().toISOString(); a.hist.unshift(o); return true;
