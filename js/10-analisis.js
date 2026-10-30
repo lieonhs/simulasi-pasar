@@ -280,3 +280,35 @@
     } catch (e) { out.innerHTML = `<p class="status err">${esc(e.message)}</p>`; }
   }
 
+
+  // =====================================================================
+  // KOMPOSISI PEMEGANG (saham: BEI → Yahoo; kripto: dompet terbesar token Ethereum)
+  // =====================================================================
+  const hold = { sym: null, min: 2, data: null, busy: false };
+  async function loadHolders(force) {
+    const d = state.data; if (!d || !$("holdCard")) return; const sym = d.symbol, key = `${sym}|${hold.min}`;
+    if (!force && hold.sym === key && hold.data) return drawHolders(); hold.sym = key; hold.data = null;
+    $("holdOut").innerHTML = '<p class="status">Memuat data pemegang…</p>';
+    try { const j = await (await apiFetch(`${API.replace("market-data", "holders")}?symbol=${encodeURIComponent(sym)}&min=${hold.min}`)).json(); if (hold.sym !== key) return; hold.data = j; }
+    catch (e) { if (hold.sym === key) $("holdOut").innerHTML = `<p class="status err">Gagal memuat: ${esc(e.message || String(e))}</p>`; return; }
+    drawHolders();
+  }
+  function drawHolders() {
+    const H = hold.data; if (!H) return; $("holdMinLbl").textContent = `≥ ${hold.min}%`;
+    if (H.error || !Array.isArray(H.holders)) { $("holdOut").innerHTML = `<p class="status err">${esc(H.error || "Data pemegang belum tersedia (fungsi server belum terpasang?)")}</p>`; return; }
+    const arr = (x) => (Array.isArray(x) ? x : []); H.source = arr(H.source); H.note = arr(H.note);
+    const L = H.holders || [], crypto = H.kind === "crypto", isPub = (h) => /masyarakat|publik|public/i.test(`${h.name} ${h.type}`), sum = L.filter((h) => !isPub(h)).reduce((a, h) => a + (h.pct || 0), 0), mx = Math.max(1, ...L.map((h) => h.pct || 0));
+    const nm = (h) => (crypto ? `<a href="https://etherscan.io/token/${encodeURIComponent(H.contract)}?a=${encodeURIComponent(h.name)}" target="_blank" rel="noopener noreferrer"><code>${esc(h.name.slice(0, 8))}…${esc(h.name.slice(-6))}</code></a>` : esc(h.name));
+    const rows = L.map((h) => `<tr><td>${nm(h)}${h.controller ? ' <span class="pill">pengendali</span>' : ""}</td><td class="num">${nf(2).format(h.pct)}%</td><td><div class="hold-bar"><i style="width:${(100 * h.pct) / mx}%"></i></div></td><td>${esc(h.type || "")}</td><td class="num">${h.shares != null ? nf(0).format(h.shares) : ""}</td>${crypto ? "" : `<td>${esc(h.asOf || "")}</td>`}</tr>`).join("");
+    const sm = H.summary || {}, extra = [];
+    if (sm.insiders != null) extra.push(`orang dalam ${pct(sm.insiders, 1)}`); if (sm.institutions != null) extra.push(`institusi ${pct(sm.institutions, 1)}${sm.institutionsCount ? ` (${nf(0).format(sm.institutionsCount)} lembaga)` : ""}`);
+    if (crypto && H.supply && H.supply.circulating) extra.push(`pasokan beredar ${nf(0).format(H.supply.circulating)}${H.supply.max ? ` dari maks ${nf(0).format(H.supply.max)}` : ""}`);
+    $("holdOut").innerHTML = `${L.length ? `<div class="hold-kpi"><div><span class="note">Pemegang ≥ ${hold.min}%</span><b>${L.filter((h) => !isPub(h)).length}</b></div><div><span class="note">Total porsi pemegang besar</span><b>${nf(1).format(sum)}%</b></div><div><span class="note">Sisanya (publik & pemegang kecil)</span><b>${nf(1).format(Math.max(0, 100 - sum))}%</b></div></div>
+      <div class="table-wrap"><table><thead><tr><th>${crypto ? "Dompet" : "Pemegang"}</th><th>Porsi</th><th></th><th>Jenis</th><th>${crypto ? "Jumlah token" : "Lembar"}</th>${crypto ? "" : "<th>Per</th>"}</tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="note">Tidak ada pemegang ≥ ${hold.min}% yang tersedia dari sumber data.</p>`}
+      ${extra.length ? `<p class="note">${esc(extra.join(" · "))}</p>` : ""}
+      <p class="note">Sumber: ${esc((H.source || []).join(", ") || "–")}${(H.note || []).length ? ` · ${esc(H.note.join(" · "))}` : ""}</p>
+      ${!crypto && /\.JK$/i.test(H.symbol) ? '<p class="note">Data lengkap pemegang ≥ 1% versi KSEI terbit bulanan (PDF) di pengumuman BEI: idx.co.id → Berita → Pengumuman → “Pemegang Saham di atas 1% (KSEI)”.</p>' : ""}`;
+  }
+  document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#holdMin .tab"); if (!b) return;
+    document.querySelectorAll("#holdMin .tab").forEach((x) => x.classList.toggle("active", x === b)); hold.min = +b.dataset.m; loadHolders(); });

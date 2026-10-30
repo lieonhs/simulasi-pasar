@@ -784,3 +784,12 @@ tr.ap-pend td { background: rgba(224, 163, 58, 0.06); } #apOrd .subh { margin-to
 #newsList.news-list > * { min-width: 0; margin: 0; }
 @media (min-width: 900px) { #newsCard #newsSummary .kpis, #newsCard #newsSummary > div:first-child { max-width: none; } }
 tr.muted td { opacity: .55; }
+.hold-bar { height: 8px; min-width: 60px; background: color-mix(in srgb, var(--muted, #888) 20%, transparent); border-radius: 4px; overflow: hidden; }
+.hold-bar i { display: block; height: 100%; background: var(--accent, #f59e0b); }
+#holdCard td.num { text-align: right; white-space: nowrap; }
+.hold-kpi { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0; }
+.hold-kpi > div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hold-kpi b { font-size: 18px; }
+@media (max-width: 520px) { .hold-kpi { grid-template-columns: 1fr; } }
+@media (min-width: 900px) { #out > #holdCard { grid-column: 1 / -1; } }
+#holdCard a, #holdCard a code { color: var(--accent); background: none; }

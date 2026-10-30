@@ -27,7 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/katex/katex.min.css?v=d0d6077daa">
-<link rel="stylesheet" href="style.css?v=67ea925f6f">
+<link rel="stylesheet" href="style.css?v=16cb63a08e">
 <script src="vendor/chart.umd.min.js?v=283d65ad75"></script>
 <script src="vendor/supabase.js?v=43b205e2c6"></script>
 <script defer src="vendor/katex/katex.min.js?v=f4e1ebdc2d"></script>
@@ -1048,6 +1048,11 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
         <li>BTC, emas, dan indeks <b>tidak punya arus kas</b>, jadi tidak bisa divaluasi seperti ini. Kata Damodaran, yang bisa dilakukan hanya <i>pricing</i>, bukan <i>valuing</i>.</li></ul>
       </details>
     </div>
+    <div class="card price-only" id="holdCard">
+      <h2>Komposisi pemegang <span class="note" id="holdMinLbl">≥ 2%</span></h2>
+      <div class="row"><div class="tabs" id="holdMin"><button class="tab" data-m="1">≥ 1%</button><button class="tab active" data-m="2">≥ 2%</button><button class="tab" data-m="5">≥ 5%</button></div></div>
+      <div id="holdOut"><p class="status">Memuat…</p></div>
+    </div>
     <div class="card price-only" id="newsCard">
       <h2>Berita & dampaknya ke harga</h2>
       <div id="newsStatus" class="status"></div>
@@ -1166,9 +1171,9 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script src="engine.js?v=724bbe45d6"></script>
-<script src="js/00-inti.js?v=b00150ada1"></script>
-<script src="js/10-analisis.js?v=3ba1fc4963"></script>
-<script src="js/20-watchlist-pasar.js?v=7b77f178ad"></script>
+<script src="js/00-inti.js?v=28ae214e94"></script>
+<script src="js/10-analisis.js?v=c5d8003560"></script>
+<script src="js/20-watchlist-pasar.js?v=acfec88bd8"></script>
 <script src="js/30-portofolio.js?v=4219b116f7"></script>
 <script src="js/40-trading-strategi.js?v=41ce119e11"></script>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>

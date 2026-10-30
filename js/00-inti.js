@@ -302,7 +302,7 @@
     $("customWrap").hidden = bond || $("drift").value !== "custom";
     $("candleCard").hidden = !(d.ohlc && d.ohlc.length > 30);
     $("modelTabs").innerHTML = Object.entries(res.models).map(([key, m]) => `<button class="tab ${key === state.sel ? "active" : ""}" data-m="${key}">${esc(m.label)}</button>`).join("");
-    renderCandle(); renderSummary(); renderConfidence(); renderParams(); renderCaveats(); renderSelected(); renderSignal();
+    renderCandle(); renderSummary(); renderConfidence(); renderParams(); renderCaveats(); renderSelected(); renderSignal(); setTimeout(loadHolders, 0);
   }
 
   function renderSelected() {

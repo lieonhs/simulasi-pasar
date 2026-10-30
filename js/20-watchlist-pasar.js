@@ -168,7 +168,7 @@
 
   // ---------- bilah fokus ----------
   const FOCUS = { ml: ["headCard", "actCard", "mlCard"], signal: ["headCard", "actCard", "mlCard", "introCard", "signalCard", "candleCard", "planCard"], overview: ["headCard", "actCard", "introCard", "kpis", "signalCard", "fanCard", "predCard", "sumCard"], candle: ["headCard", "candleCard"], proj: ["headCard", "fanCard", "predCard", "sumCard", "histCard"],
-    plan: ["headCard", "actCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard"], news: ["headCard", "newsCard"],
+    plan: ["headCard", "actCard", "planCard"], cmp: ["headCard", "cmpCard"], quant: ["headCard", "quantCard"], val: ["headCard", "finCard", "valCard", "holdCard"], news: ["headCard", "newsCard"],
     trust: ["headCard", "confCard", "paramCard", "caveatCard"], math: ["headCard", "mathCard"] };
   function setFocus(f, save = true) {
     const out = $("out"), keep = FOCUS[f];
