@@ -759,30 +759,12 @@ lap("berita");
     apLogAdd(k.s, `KUOTA HARIAN ${k.dir > 0 ? "LONG" : "SHORT"} · paling condong ${k.dir > 0 ? "naik" : "turun"} (skor ${nf(2).format(k.sc)}) dari ${C.length} kandidat · ${m}`, k.dir > 0 ? "buy" : "sell"); toast(`Autopilot (kuota harian): ${m}`); }
   // satu aset tidak boleh menahan antrean: analisis > 3 menit dihentikan, aset ditandai gagal, antrean lanjut
   const apDecideT = (s, slot) => Promise.race([apDecide(s, slot), new Promise((_, rej) => setTimeout(() => rej(new Error("waktu habis (> 3 menit), dilewati")), 180e3))]);
-  async function apCycle(force = false) {
-    if (ap.busy) { if (Date.now() - (ap.busyAt || 0) < 15 * 60e3) return; ap.gen = (ap.gen || 0) + 1; apLogAdd("—", "Antrean macet > 15 menit: putaran lama dihentikan, dimulai ulang", "err"); } // penjaga
-    const gen = ap.gen = (ap.gen || 0) + 1; ap.busyAt = Date.now(); apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
-    try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits();
-        { const ttl = 2 * 864e5, old = pp.a.orders.filter((o) => o.ap && o.status === "terbuka" && o.side === "buy" && Date.now() - Date.parse(o.t) > ttl); // order beli autopilot yang 2 hari tidak terisi dibatalkan
-          if (old.length) { pp.a.orders = pp.a.orders.filter((o) => !old.includes(o)); for (const o of old) apLogAdd(o.s, `order beli limit ${fmtNum(o.limit)} kedaluwarsa (2 hari tidak terisi), dibatalkan`); } } ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
-      if (c.on) await apNewsGuard(); apLabelSweep(); await apWideRefresh(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
-      if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
-      const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
-      const evMin = Math.max(c.every, DP.minEvery);
-      { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; return c.style !== "day" && (force || !st.at || Date.now() - st.at >= evMin * 60e3) && !(/\.JK$/.test(s) && !idxOpen() && !force); });
-        for (const s of due) { const st = ap.st[s] || (ap.st[s] = {}); st.note = "antre analisis"; } drawAp();
-        let k = 0; const t0 = Date.now(); await Promise.all(Array.from({ length: Math.min(DP.brains, due.length) }, async (_, slot) => { while (k < due.length) { const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; drawAp();
-          if (gen !== ap.gen) return; ap.busyAt = Date.now(); try { st.pre = await apDecideT(s, slot); st.note = "antre keputusan"; } catch (e) { st.preErr = e; st.note = "gagal: " + e.message; } drawAp(); if (DP.rest && !document.hidden) await new Promise((r) => setTimeout(r, DP.rest)); } })); // tab tersembunyi: timer diperlambat browser (s/d 1 menit), jeda dilewati
-        if (due.length) ap.lastPar = { n: due.length, sec: (Date.now() - t0) / 1000 }; }
-      for (const s of apSyms()) { if (gen !== ap.gen) return; ap.busyAt = Date.now();
-      const st = ap.st[s] || (ap.st[s] = {});
-      if (c.style !== "swing" && c.on && (force || !st.dAt || Date.now() - st.dAt >= 5 * 60e3)) { if (c.style === "day" && (!st.X || Date.now() - (st.at || 0) > 3600e3)) { try { const X = await apDecide(s); Object.assign(st, { at: Date.now(), X, V: apVerdict(X) }); apRemember(X, st.V); } catch (e) { st.at = Date.now(); } }
-        st.dAt = Date.now(); try { await dayStep(s, st); } catch (e) { st.dnote = "intraday gagal: " + e.message; } drawAp(); }
-      if (c.style === "day" && c.on) continue;
-      if (!force && st.at && Date.now() - st.at < evMin * 60e3) continue;
-      if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; continue; }
-      st.note = st.pre ? "memutuskan…" : st.preErr ? st.note : "menganalisis…"; drawAp();
-      try { if (st.preErr) { const e = st.preErr; st.preErr = null; throw e; } const X = st.pre || await apDecideT(s); st.pre = null; const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
+  // keputusan & eksekusi swing untuk satu aset, dijalankan LANGSUNG setelah analisisnya selesai (tidak menunggu seluruh antrean).
+  // Dikunci berurutan (satu eksekusi pada satu waktu) supaya order, kas & batas posisi tidak tumpang tindih.
+  let apActQ = Promise.resolve();
+  const apActLocked = (fn) => (apActQ = apActQ.then(fn, fn));
+  async function apAct(s, st, X) { const c = ap.cfg; st.note = "memutuskan…";
+    try { const V = apVerdict(X); Object.assign(st, { at: Date.now(), X, V, note: "" }); apRemember(X, V); const held = swingHeld(s);
         if (!c.on) { st.note = "simulasi (autopilot mati)"; }
         else if (c.mode === "porto") { st.note = "menunggu penyeimbangan portofolio"; }
         else if ((V.act === "BELI" || V.act === "SHORT") && !held && !apEngAllow(s, "swing")) { st.note = `swing tidak dipakai untuk aset ini (${c.target === "idx" ? "belum terbukti untung di demo" : "harian lebih efektif / swing rugi"})`; }
@@ -798,7 +780,32 @@ lap("berita");
         else if ((V.act === "JUAL" || V.act === "SHORT") && held && !futList().some((f) => f.ap && !f.day && f.s === s && f.dir < 0)) { const m = await apSell(X, 1, "swing"); c.cool[s] = Date.now(); st.note = "posisi dijual"; apLogAdd(s, `JUAL · ${V.why} · ${m || "tidak ada yang dijual"}`, "sell"); if (m) toast(`Autopilot: ${m}`); }
         /* keputusan rutin (TUNGGU / JUAL tanpa posisi) tidak dicatat di log; lihat kolom Status */ }
       catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; apLogAdd(s, "gagal: " + e.message, "err"); }
-      drawAp(); }
+    drawAp(); }
+  // strategi harian (intraday): tiap aset dicek tiap 5 menit, berjalan terpisah dari antrean swing
+  async function apDayCycle(force) { if (ap.dBusy && Date.now() - (ap.dBusyAt || 0) < 10 * 60e3) return; ap.dBusy = true; ap.dBusyAt = Date.now(); const c = ap.cfg;
+    try { for (const s of apSyms()) { if (!c.on || c.style === "swing") break; const st = ap.st[s] || (ap.st[s] = {}); if (!force && st.dAt && Date.now() - st.dAt < 5 * 60e3) continue; ap.dBusyAt = Date.now();
+        if (c.style === "day" && (!st.X || Date.now() - (st.at || 0) > 3600e3)) { try { const X = await apDecideT(s); Object.assign(st, { at: Date.now(), X, V: apVerdict(X) }); apRemember(X, st.V); } catch (e) { st.at = Date.now(); } }
+        st.dAt = Date.now(); try { await Promise.race([dayStep(s, st), new Promise((_, rej) => setTimeout(() => rej(new Error("waktu habis")), 120e3))]); } catch (e) { st.dnote = "intraday gagal: " + e.message; } drawAp(); } }
+    finally { ap.dBusy = false; } }
+  async function apCycle(force = false) {
+    if (ap.busy) { if (Date.now() - (ap.busyAt || 0) < 15 * 60e3) return; ap.gen = (ap.gen || 0) + 1; apLogAdd("—", "Antrean macet > 15 menit: putaran lama dihentikan, dimulai ulang", "err"); } // penjaga
+    const gen = ap.gen = (ap.gen || 0) + 1; ap.busyAt = Date.now(); apRead(); const c = ap.cfg; if (!c.on && !force) return; ap.busy = true; const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); if (c.day !== today) { c.day = today; c.nDay = 0; }
+    try { if (c.target === "demo") { await ppQuotes([...apPositions(), ...pp.a.orders.filter((o) => o.ap).map((o) => o.s)]); checkLimits();
+        { const ttl = 2 * 864e5, old = pp.a.orders.filter((o) => o.ap && o.status === "terbuka" && o.side === "buy" && Date.now() - Date.parse(o.t) > ttl); // order beli autopilot yang 2 hari tidak terisi dibatalkan
+          if (old.length) { pp.a.orders = pp.a.orders.filter((o) => !old.includes(o)); for (const o of old) apLogAdd(o.s, `order beli limit ${fmtNum(o.limit)} kedaluwarsa (2 hari tidak terisi), dibatalkan`); } } ppSnap(); ppSave(); if (await apFailCheck()) return; if (c.run && c.run.failed && c.on) { c.on = false; $("apOn").checked = false; toast("Run ini sudah gagal. Klik Mulai run baru."); return; } }
+      if (c.on) await apNewsGuard(); apLabelSweep(); await apWideRefresh(); await futCheck(); if (c.autoPick) { ap.busy = false; await apAutoPick(); ap.busy = true; }
+      if (c.target === "demo") { const E = apRun().eq; if (c.eqDay !== today) { c.eqDay = today; c.eq0 = E; } c.dayHalt = E < (c.eq0 || E) * 0.95; }
+      const DP = devPolicy(); if (DP.pause && !force) { if (!dev.paused) { dev.paused = true; apLogAdd("—", "Mode sehat: " + DP.why[0]); } return; } if (dev.paused) { dev.paused = false; apLogAdd("—", "Mode sehat: analisis dilanjutkan"); }
+      const evMin = Math.max(c.every, DP.minEvery);
+      if (c.style !== "swing" && c.on) apDayCycle(force); // strategi harian: jalur sendiri, tidak menunggu antrean swing
+      if (c.style !== "day") { const due = apSyms().filter((s) => { const st = ap.st[s] || {}; if (/\.JK$/.test(s) && !idxOpen() && !force) { st.note = "bursa IDX tutup"; return false; } return force || !st.at || Date.now() - st.at >= evMin * 60e3; });
+        for (const s of due) { const st = ap.st[s] || (ap.st[s] = {}); st.note = "antre analisis"; } drawAp();
+        let k = 0; const t0 = Date.now(); ap.par = Math.min(DP.brains, due.length);
+        await Promise.all(Array.from({ length: ap.par }, async (_, slot) => { while (k < due.length) { if (gen !== ap.gen) return; const s = due[k++], st = ap.st[s] || (ap.st[s] = {}); st.note = "menganalisis…"; ap.busyAt = Date.now(); drawAp();
+          let X = null; try { X = await apDecideT(s, slot); } catch (e) { st.at = Date.now(); st.note = "gagal: " + e.message; if (!/data < 300/.test(e.message)) apLogAdd(s, "gagal: " + e.message, "err"); }
+          if (X && gen === ap.gen) await apActLocked(() => apAct(s, st, X)); drawAp();
+          if (DP.rest && !document.hidden) await new Promise((r) => setTimeout(r, DP.rest)); } })); // tab tersembunyi: timer diperlambat browser (s/d 1 menit), jeda dilewati
+        if (due.length) ap.lastPar = { n: due.length, sec: (Date.now() - t0) / 1000 }; }
       if (c.on && c.mode === "porto") await apPorto(); if (c.target === "demo") { try { await apQuota(); } catch (e) { apLogAdd("—", "kuota harian gagal: " + e.message, "err"); } await apFailCheck(); } }
     finally { if (gen !== ap.gen) return; ap.busy = false; apSave(); drawAp(); if (ap.cfg.on && ap.cfg.every === 0) { clearTimeout(ap.cont); ap.cont = setTimeout(() => apCycle(false), devPolicy().minEvery ? 60e3 : 5000); } } }
   // ---- Mode portofolio: bobot target dari keyakinan × ekspektasi, pindah hanya bila untung bersih > biaya
@@ -830,7 +837,7 @@ lap("berita");
         let k = apShort1(st.note || (V ? (V.act === "TUNGGU" ? V.why : V.act) : "")) || "–"; if (/^kurang:/.test(k)) k = /BELI/.test(k) || !/TAHAN|JUAL/.test(k) ? "model belum sepakat" : "rencana tidak BELI"; if (/^(JUAL|TAHAN)$/.test(k)) k = "rencana tidak BELI";
         cnt.set(k, (cnt.get(k) || 0) + 1); }
       const top = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${esc(k)} <b>${n}</b>`).join(" · ");
-      $("apWhy").innerHTML = top ? `Ringkasan: keputusan BELI <b>${buy}</b> · ${top}${c.on ? "" : ' · <span class="neg">autopilot MATI: tidak ada order yang dipasang</span>'}` : ""; }
+      $("apWhy").innerHTML = top ? `Ringkasan: keputusan BELI <b>${buy}</b> · ${top}${ap.busy && ap.par ? ` · otak aktif <b>${ap.par}</b>` : ""}${c.on ? "" : ' · <span class="neg">autopilot MATI: tidak ada order yang dipasang</span>'}` : ""; }
     $("apGate").innerHTML = (c.target === "idx" ? gateText(g) : `Eksekusi di <b>akun demo</b>. ${gateText(g)}`) + ` · Order baru hari ini ${c.nDay || 0}/${c.maxDay} · posisi autopilot ${apPositions().length}/${c.maxPos}`;
     const S0 = [...new Set([...apSyms(), ...(ap.scan || [])])], rk = (s) => { const st = ap.st[s] || {}, V = st.V; return apPositions().includes(s) ? 0 : V && (V.act === "BELI" || V.act === "SHORT") ? 1 : V && V.act === "JUAL" ? 2 : st.X ? 3 : 4; };
     const S = S0.slice().sort((x, y) => rk(x) - rk(y)).slice(0, ap.stAll ? 200 : 25); $("apStTog").hidden = S0.length <= 25; $("apStTog").textContent = ap.stAll ? "Ringkas" : `Tampilkan semua (${S0.length})`; const ar = (v, ok) => (ok === false ? '<span class="note" title="belum teruji">✗</span>' : v > 0 ? '<b class="pos">▲</b>' : v < 0 ? '<b class="neg">▼</b>' : '<span class="note">•</span>');
@@ -917,5 +924,5 @@ lap("berita");
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
     if (location.hostname === "localhost") window.__ap = { cal, calModel, apEyeRead, devPolicy, brainTrain, aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
-    clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+    clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (ap.cfg.on && ap.cfg.style !== "swing") apDayCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 
