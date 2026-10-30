@@ -78,7 +78,8 @@
     for (const [s, p] of Object.entries({ ...pp.a.pos })) { const b = p.brk, q = pp.q[s]; if (!b || !q || !(q.price > 0)) continue; const x = q.price, idx = kindOf(s) === "idx";
       const sell = (units, why) => { const o = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t: new Date().toISOString(), s, name: p.name || s, side: "sell", type: why, units, limit: null, status: "terbuka" };
         if (ppFill(o, x)) { ch = true; toast(`Demo: ${why} ${s} — jual ${idx ? nf(0).format(units / 100) + " lot" : nf(6).format(units)} di ${fmtNum(x)}`); return true; } return false; };
-      if (b.stop && x <= b.stop) { sell(p.units, b.hit1 ? "stop impas" : "stop loss"); continue; }
+      if (b.atr > 0 && b.entry > 0) { b.best = Math.max(b.best || b.entry, x); const ns = MCEngine.trailStop(1, b.entry, b.best, b.atr, b.stop); if (ns > (b.stop || 0) + 1e-12) { b.stop = ns; b.trail = true; ch = true; } } // kunci untung (autopilot)
+      if (b.stop && x <= b.stop) { sell(p.units, b.trail && b.stop > b.entry ? "kunci untung" : b.hit1 ? "stop impas" : "stop loss"); continue; }
       if (b.t2 && x >= b.t2) { sell(p.units, "target 2"); continue; }
       if (b.t1 && !b.hit1 && x >= b.t1) { const half = idx ? Math.floor(p.units / 200) * 100 : p.units / 2;
         if (!b.t2 || !(half > 0)) { sell(p.units, "target 1"); continue; }

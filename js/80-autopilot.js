@@ -118,6 +118,7 @@
             if (isDone(o)) { s.done = true; s.at = Date.now(); soldQ += s.q; auLog(x, `${s.nm} terisi @ ${fmtNum(s.px)}`); ch = true; if (s.nm === "T1" && !x.be) { x.be = true; x.stop = x.entry; auLog(x, "stop naik ke harga masuk (impas)"); } }
             else { allDone = false; if (isDead(o)) s.dead = true; } }
           if (allDone) { x.st = "selesai"; auLog(x, "semua target terisi"); ch = true; }
+          if (x.atr > 0 && isFinite(last)) { x.best = Math.max(x.best || x.entry, last); const ns = MCEngine.trailStop(1, x.entry, x.best, x.atr, x.stop); if (ns > x.stop) { if (!x.trail && ns > x.entry) auLog(x, `kunci untung: stop naik ke ${fmtNum(ns)}`); x.trail = true; x.stop = ns; ch = true; } }
           else if (isFinite(last) && last <= x.stop) { for (const s of x.sells) if (!s.done && !s.dead) { try { await idxCall("cancelOrder", { symbol: x.symbol, orderId: s.id }); } catch { /* */ } }
             const rem = floorTo((x.filled || x.qty) - soldQ, x.vp); if (rem > 0) { try { await idxCall("createOrder", { symbol: x.symbol, side: "SELL", type: "MARKET", quantity: String(rem) }, `sell ${x.pair}`); auLog(x, `STOP: harga ${fmtNum(last)} ≤ ${fmtNum(x.stop)} → jual market ${rem}`); } catch (e) { auLog(x, `STOP gagal jual market: ${e.message}`); continue; } }
             x.st = "stop"; ch = true; toast(`Order otomatis ${x.base.toUpperCase()}: stop dijalankan.`); } } }
@@ -294,20 +295,25 @@ lap("berita");
     const miss = use.filter((u) => u[2] <= 0).map((u) => `${u[0]} ${u[2] < 0 ? "turun" : u[0] === "AI" ? "netral" : "belum teruji/< ambang"}`); if (P.action !== "BELI") miss.push(`rencana ${P.action}`); if (!(P.confPct >= c.thr)) miss.push(`keyakinan ${isFinite(P.confPct) ? pct(P.confPct, 0) : "–"}`);
     return { act: "TUNGGU", why: miss.join(", ") }; }
   const apPositions = () => { const demo = [...Object.entries((pp.a && pp.a.pos) || {}).filter(([, p]) => p.ap).map(([s]) => s), ...((pp.a && pp.a.fut) || []).filter((f) => f.ap).map((f) => f.s)], live = au.list.filter((x) => x.ap && (x.st === "menunggu" || x.st === "terisi" || x.st === "harian")).map((x) => x.sym); const bx = ap.cfg && ap.cfg.target === "idx" && ap.cfg.bnf && bnf.acct ? bnf.acct.positions.map((p) => bnf.map[p.symbol] || p.symbol.replace(/USDT$/, "-USDT")) : []; return [...new Set([...demo, ...live, ...bx])]; };
+  // ---- target keluar dari data aset sendiri (peluang tersentuh SEBELUM stop): T1 ≥ 60%, T2 ≥ 40%; cadangan 2/3 ATR
+  const apTgc = new Map();
+  function apExitLv(X, dir, entry, stop) { const atr = X.atr > 0 ? X.atr : entry * 0.03, sK = Math.max(0.75, Math.abs(entry - stop) / atr), key = `${X.sym}|${X.d && X.d.dates ? X.d.dates[X.d.dates.length - 1] : ""}|${dir}|${sK.toFixed(2)}`;
+    let T = apTgc.get(key); if (T === undefined) { try { T = MCEngine.exitTargets(rawD(X.d), { stopK: sK, dir }); } catch { T = null; } apTgc.set(key, T); if (apTgc.size > 300) apTgc.delete(apTgc.keys().next().value); }
+    const k1 = T ? T.k1 : 2, k2 = T ? T.k2 : 3; return { t1: entry + dir * k1 * atr, t2: entry + dir * k2 * atr, k1, k2, p1: T ? T.p1 : null, p2: T ? T.p2 : null, atr }; }
   async function apBuy(X, valIdr) { if (X.V && X.V.explore && X.P.qty > 0) X.P.qty = X.idx ? Math.floor(X.P.qty / 2) : +(X.P.qty / 2).toFixed(6);
     const c = ap.cfg, P = X.P; if (!valIdr && !(P.qty > 0)) throw new Error("modal terlalu kecil untuk 1 lot/unit");
     if (c.target === "idx") { if (!demoGate().pass) throw new Error("Indodax terkunci (syarat demo belum terpenuhi)"); await idxPairsLoad(); const p = idxPairFor(X.sym); if (!p) throw new Error("tidak listing di Indodax");
       const usd = X.d.values[X.d.values.length - 1], k = p.last / usd, pd = Math.min(8, decOf(p.last)), vp = isFinite(p.volPrec) ? p.volPrec : 8, max = (ix.cfg && ix.cfg.maxIdr) || 2e6, v = Math.min(valIdr || c.val, max);
-      const L = { entry: floorTo(P.entry * k, pd), stop: roundTo(P.stop * k, pd), t1: roundTo(P.t1 * k, pd), t2: roundTo(P.t2 * k, pd) }, q = floorTo(v / L.entry, vp); if (!(q > 0)) throw new Error("jumlah terlalu kecil");
+      const LV = apExitLv(X, 1, P.entry, P.stop), L = { entry: floorTo(P.entry * k, pd), stop: roundTo(P.stop * k, pd), t1: roundTo(LV.t1 * k, pd), t2: roundTo(LV.t2 * k, pd) }, q = floorTo(v / L.entry, vp); if (!(q > 0)) throw new Error("jumlah terlalu kecil");
       const j = await idxCall("createOrder", { symbol: p.base + "idr", side: "BUY", type: "LIMIT", price: String(L.entry), quantity: String(q) }, `buy ${p.pair}`);
-      const x = { id: Date.now().toString(36), ap: true, sym: X.sym, base: p.base, symbol: p.base + "idr", pair: p.pair, ...L, qty: q, vp, pd, st: "menunggu", created: Date.now(), expire: Date.now() + 2 * 864e5, sells: [], log: [], buyId: String(j.orderId || "") };
+      const x = { id: Date.now().toString(36), ap: true, sym: X.sym, base: p.base, symbol: p.base + "idr", pair: p.pair, ...L, atr: LV.atr * k, qty: q, vp, pd, st: "menunggu", created: Date.now(), expire: Date.now() + 2 * 864e5, sells: [], log: [], buyId: String(j.orderId || "") };
       auLog(x, `AUTOPILOT beli limit ${q} @ ${fmtNum(L.entry)} (#${x.buyId})`); au.list.unshift(x); auSave(); return `Indodax: beli limit ${q} ${p.base.toUpperCase()} @ Rp ${fmtNum(L.entry)}`; }
     const s = X.sym, unit = X.idx ? 100 : 1, fxs = fxOf(s), xp = !!(X.V && X.V.explore);
     // eksplorasi: beli di harga LIVE sekarang (+0,1% supaya langsung terisi) bila rasio untung:rugi dari harga itu tetap ≥ 1; selain itu limit di harga tarik-mundur rencana
     if (xp) { try { await ppQuotes([s]); } catch { /* */ } } const lq = pp.q[s] && pp.q[s].price, px = lq > 0 ? lq : X.d.values[X.d.values.length - 1];
     const now = xp && px > P.stop && (P.t1 - px) / (px - P.stop) >= 1, ep = now ? px * 1.001 : P.entry;
     const units = valIdr ? (X.idx ? Math.floor(valIdr / fxs / ep / 100) * 100 : +(valIdr / fxs / ep).toFixed(6)) : X.idx ? Math.floor(P.qty) * 100 : P.qty, lim = X.idx ? MCEngine.roundTick(ep, true, now ? 1 : -1) : ep;
-    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "buy", type: "limit", units, limit: lim, status: "terbuka", brk: { stop: P.stop, t1: P.t1, t2: P.t2 }, ap: true, ...(xp ? { xp: true } : {}) };
+    const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "buy", type: "limit", units, limit: lim, status: "terbuka", brk: (() => { const LV = apExitLv(X, 1, ep, P.stop); return { stop: P.stop, t1: LV.t1, t2: LV.t2, atr: LV.atr, p1: LV.p1, p2: LV.p2 }; })(), ap: true, ...(xp ? { xp: true } : {}) };
     if (!(units > 0)) throw new Error("dana terlalu kecil untuk 1 lot/unit"); pp.a.orders.push(o); await ppQuotes([s]); checkLimits(); ppSnap(); ppSave(); renderPaper(); return `${o.status === "terisi" ? "Demo TEREKSEKUSI" : "Demo order MENUNGGU"}: beli limit ${X.idx ? units / unit + " lot" : nf(6).format(units)} ${s} @ ${fmtNum(lim)} (stop ${fmtNum(P.stop)}, target ${fmtNum(P.t1)}/${fmtNum(P.t2)})`; }
   async function apSell(X, frac = 1, only) { // only: "swing" | "day" | undefined (semua)
     const s = X.sym, out = []; if (only !== "swing") { const rx = realDay(s); if (rx) { try { out.push(await realDaySell(rx, "autopilot")); } catch { /* */ } } } for (const f of futList().filter((y) => y.ap && y.s === s && (!only || (only === "day") === !!y.day))) { await ppQuotes([s]); const q = pp.q[s]; if (q) { const pl = futClose(f, q.price, "autopilot"); out.push(`Futures demo: tutup ${f.dir > 0 ? "LONG" : "SHORT"} ${s} @ ${fmtNum(q.price)} · ${big(pl, "IDR")}`); ppSnap(); ppSave(); renderPaper(); } } const pos = only === "day" ? null : pp.a.pos[s]; if (pos && pos.ap) { await ppQuotes([s]); const q = pp.q[s]; const u = frac >= 0.999 ? pos.units : /\.JK$/.test(s) ? Math.floor(pos.units * frac / 100) * 100 : +(pos.units * frac).toFixed(6); if (q && u > 0) { const o = { id: Date.now().toString(36), t: new Date().toISOString(), s, name: s, side: "sell", type: "autopilot", units: u, limit: null, status: "terbuka" }; if (ppFill(o, q.price)) out.push(`Demo: jual ${s} @ ${fmtNum(q.price)}`); ppSnap(); ppSave(); renderPaper(); } }
@@ -575,9 +581,12 @@ lap("berita");
   async function futCheck() { const L = futList(); if (!L.length) return; await ppQuotes(L.map((f) => f.s)); let ch = false;
     for (const f of L.slice()) { const q = pp.q[f.s]; if (!q) continue; const px = q.price, b = f.brk || {};
       if (f.dir * (px - futLiq(f)) <= 0) { futClose(f, futLiq(f), "LIKUIDASI"); apLogAdd(f.s, `FUTURES ${f.dir > 0 ? "LONG" : "SHORT"} ${f.lev}x DILIKUIDASI @ ${fmtNum(futLiq(f))} · margin hilang`, "err"); ch = true; continue; }
-      if (b.stop && f.dir * (px - b.stop) <= 0) { const pl = futClose(f, px, "stop"); apLogAdd(f.s, `FUTURES stop @ ${fmtNum(px)} · ${big(pl, "IDR")}`, "sell"); ch = true; continue; }
+      if (b.stop && f.dir * (px - b.stop) <= 0) { const pl = futClose(f, px, b.trail && f.dir * (b.stop - f.entry) > 0 ? "kunci untung" : "stop"); apLogAdd(f.s, `FUTURES stop @ ${fmtNum(px)} · ${big(pl, "IDR")}`, "sell"); ch = true; continue; }
       if (b.t2 && f.dir * (px - b.t2) >= 0) { const pl = futClose(f, px, "target"); apLogAdd(f.s, `FUTURES target @ ${fmtNum(px)} · ${big(pl, "IDR")}`, "buy"); ch = true; continue; }
-      if (b.t1 && !f.hit1 && f.dir * (px - b.t1) >= 0) { f.hit1 = true; b.stop = f.entry; apLogAdd(f.s, `FUTURES T1 tersentuh @ ${fmtNum(px)} → stop dipindah ke harga masuk`); ch = true; } }
+      if (b.t1 && !f.hit1 && f.dir * (px - b.t1) >= 0) { f.hit1 = true; b.stop = f.dir > 0 ? Math.max(b.stop, f.entry) : Math.min(b.stop, f.entry); apLogAdd(f.s, `FUTURES T1 tersentuh @ ${fmtNum(px)} → stop dipindah ke harga masuk`); ch = true; }
+      if (b.atr > 0 && !f.day) { f.best = f.dir > 0 ? Math.max(f.best || f.entry, px) : Math.min(f.best || f.entry, px); const ns = MCEngine.trailStop(f.dir, f.entry, f.best, b.atr, b.stop);
+        if (f.dir * (ns - b.stop) > 1e-12) { if (!b.trail && f.dir * (ns - f.entry) > 0) apLogAdd(f.s, `FUTURES kunci untung: stop naik ke ${fmtNum(ns)} (harga terbaik ${fmtNum(f.best)})`); b.trail = true; b.stop = ns; ch = true; } }
+      if (f.bnf && !f.bnf.done && b.stop && Math.abs(b.stop - (f.bnf.stop ?? f.entry - f.dir * 1.5 * (b.atr || 0))) >= 0.25 * (b.atr || f.entry * 0.01)) { f.bnf.stop = b.stop; bnfCall({ action: "stop", symbol: f.bnf.sym, stop: b.stop }).then((j) => j.moved && apLogAdd(f.s, `Binance: stop digeser ke ${j.stop}`)).catch((e) => apLogAdd(f.s, "Binance geser stop gagal: " + e.message, "err")); } }
     if (ch) { ppSnap(); ppSave(); renderPaper(); } }
   // futures demo LONG (dir +1) / SHORT (dir −1) di harga live: stop 1,5 ATR, target 2 & 3 ATR (untung:rugi ≥ 1,3), ukuran dari risiko per transaksi; eksplorasi ½ ukuran & ditandai xp
   // ---- Binance USDⓈ-M futures (akun kedua, hanya pemilik): futures autopilot demo dicerminkan ke Binance.
@@ -593,7 +602,7 @@ lap("berita");
       if (st.live && !demoGate().pass) { apLogAdd(X.sym, "Binance UANG ASLI terkunci: syarat demo belum terpenuhi", "err"); return; }
       if (st.live && !reOk()) { apLogAdd(X.sym, "Binance UANG ASLI: verifikasi password dulu (buka Autopilot → Cek koneksi Binance)", "err"); return; }
       const sym = bnfSym(X.sym), j = await bnfCall({ action: "open", symbol: sym, dir: f.dir, usdt: c.bnfUsdt || 150, lev: f.lev, stop: f.brk.stop, tp: f.brk.t2, confirm: `open ${sym}` });
-      f.bnf = { sym, qty: j.qty, live: j.live }; apLogAdd(X.sym, `Binance ${j.live ? "UANG ASLI" : "demo"}: ${f.dir > 0 ? "LONG" : "SHORT"} ${j.lev}x ${j.qty} ${sym} @ ${j.avgPrice} · stop ${j.stop} · target ${j.tp}`, f.dir > 0 ? "buy" : "sell"); }
+      f.bnf = { sym, qty: j.qty, live: j.live, stop: f.brk.stop }; apLogAdd(X.sym, `Binance ${j.live ? "UANG ASLI" : "demo"}: ${f.dir > 0 ? "LONG" : "SHORT"} ${j.lev}x ${j.qty} ${sym} @ ${j.avgPrice} · stop ${j.stop} · target ${j.tp}`, f.dir > 0 ? "buy" : "sell"); }
     catch (e) { apLogAdd(X.sym, "Binance gagal: " + e.message, "err"); } }
   function bnfMirrorClose(f, why) { if (!f || !f.bnf || f.bnf.done) return; f.bnf.done = true;
     bnfCall({ action: "close", symbol: f.bnf.sym }).then((j) => apLogAdd(f.s, `Binance: ${j.closed ? `tutup ${j.qty} ${f.bnf.sym}` : "posisi sudah tertutup (stop/target Binance)"} · ${why}`, "sell")).catch((e) => apLogAdd(f.s, "Binance tutup gagal: " + e.message + " — cek manual di Binance!", "err")); }
@@ -614,10 +623,16 @@ lap("berita");
     if (st.live) { if (!demoGate().pass) throw new Error("UANG ASLI terkunci: syarat demo belum terpenuhi"); const F = bnfFutProven(); if (!F.ok) throw new Error(`UANG ASLI terkunci: futures demo belum terbukti (${F.n}/10 transaksi ketat, rata-rata ${big(F.avg, "IDR")})`);
       if (!reOk()) throw new Error("UANG ASLI: verifikasi password dulu (Cek koneksi Binance)"); } return st; }
   async function bnfDirect(X, dir) { const c = ap.cfg, st = await bnfGateLive(); await ppQuotes([X.sym]); const px = (pp.q[X.sym] && pp.q[X.sym].price) || X.px, atr = X.atr > 0 ? X.atr : px * 0.03, sym = bnfSym(X.sym);
-    const j = await bnfCall({ action: "open", symbol: sym, dir, usdt: c.bnfUsdt || 150, lev: c.lev, stop: px - dir * 1.5 * atr, tp: px + dir * 3 * atr, confirm: `open ${sym}` }); bnf.map[sym] = X.sym; await bnfAcct(true);
+    const LV = apExitLv(X, dir, px, px - dir * 1.5 * atr), j = await bnfCall({ action: "open", symbol: sym, dir, usdt: c.bnfUsdt || 150, lev: c.lev, stop: px - dir * 1.5 * atr, tp: LV.t2, confirm: `open ${sym}` }); bnf.map[sym] = X.sym; (bnf.trk || (bnf.trk = {}))[sym] = { dir, entry: Number(j.avgPrice) || px, atr, stop: px - dir * 1.5 * atr, best: Number(j.avgPrice) || px }; await bnfAcct(true);
     return `Binance ${st.live ? "UANG ASLI" : "demo"}: ${dir > 0 ? "LONG" : "SHORT"} ${j.lev}x ${j.qty} ${sym} @ ${j.avgPrice} · stop ${j.stop} · target ${j.tp}`; }
+  // trailing posisi Binance LANGSUNG (mode uang asli): harga terbaik dari mark Binance, stop digeser di Binance
+  async function bnfTrail() { const c = ap.cfg; if (!c || c.target !== "idx" || !c.bnf || !bnf.trk || !Object.keys(bnf.trk).length) return;
+    let A; try { A = await bnfAcct(true); } catch { return; }
+    for (const [sym, t] of Object.entries(bnf.trk)) { const p = A.positions.find((x) => x.symbol === sym); if (!p) { delete bnf.trk[sym]; continue; }
+      t.best = t.dir > 0 ? Math.max(t.best, p.mark) : Math.min(t.best, p.mark); const ns = MCEngine.trailStop(t.dir, t.entry, t.best, t.atr, t.stop);
+      if (t.dir * (ns - t.stop) >= 0.25 * t.atr) { try { const j = await bnfCall({ action: "stop", symbol: sym, stop: ns }); if (j.moved) { t.stop = ns; apLogAdd(bnf.map[sym] || sym, `Binance kunci untung: stop ke ${j.stop}`); } } catch (e) { apLogAdd(bnf.map[sym] || sym, "Binance geser stop gagal: " + e.message, "err"); } } } }
   async function apFutures(X, dir, xp, valIdr, frac = 1) { await ppQuotes([X.sym]); const c = ap.cfg, px = (pp.q[X.sym] && pp.q[X.sym].price) || X.px, atr = isFinite(X.atr) && X.atr > 0 ? X.atr : px * 0.03, fx = fxOf(X.sym);
-    const brk = { stop: px - dir * 1.5 * atr, t1: px + dir * 2 * atr, t2: px + dir * 3 * atr }, eq = apRun().eq, risk = c.tgOn ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
+    const LV = apExitLv(X, dir, px, px - dir * 1.5 * atr), brk = { stop: px - dir * 1.5 * atr, t1: LV.t1, t2: LV.t2, atr, p1: LV.p1, p2: LV.p2 }, eq = apRun().eq, risk = c.tgOn ? apPhase().risk : parseFloat($("actRisk").value) || 0.01;
     let units = valIdr ? valIdr / fx / px : (eq * risk) / (Math.abs(brk.stop - px) * fx); if (xp) units /= 2; units *= frac; units = Math.min(units, (apRun().free * c.lev * 0.95) / (px * fx)); units = +units.toFixed(6);
     if (!(units > 0)) throw new Error("dana terlalu kecil"); const f = futOpen(X.sym, dir, px, units, c.lev, brk, true, { xp }); await bnfMirrorOpen(X, f);
     return `Futures demo${xp ? " (eksplorasi ½)" : ""}: ${dir > 0 ? "LONG" : "SHORT"} ${c.lev}x ${nf(6).format(units)} ${X.sym} @ ${fmtNum(px)} (stop ${fmtNum(brk.stop)}, target ${fmtNum(brk.t1)}/${fmtNum(brk.t2)}, likuidasi ${fmtNum(futLiq(f))})`; }
@@ -813,7 +828,7 @@ lap("berita");
     if (!C.length) { if (c.quotaNote !== today) { c.quotaNote = today; apLogAdd("—", `kuota harian: belum ada kandidat (tidak ada aset yang condong naik${c.fut ? "/turun" : "; aktifkan Futures supaya bisa short"})`); } return; }
     C.sort((a, b) => b.sc - a.sc); const k = C[0], X = { ...k.X }, atr = X.atr > 0 ? X.atr : X.px * 0.03; let m;
     if (k.dir < 0 || (X.crypto && apLongInst(k.s) === "fut")) { const lev = c.lev; c.lev = Math.min(lev, 2); try { m = await apFutures(X, k.dir, true, undefined, 0.5); } finally { c.lev = lev; } }
-    else { await ppQuotes([k.s]); const px = (pp.q[k.s] && pp.q[k.s].price) || X.px; X.P = { ...X.P, stop: px - 1.5 * atr, t1: px + 2 * atr, t2: px + 3 * atr, qty: X.idx ? Math.max(1, Math.floor((X.P.qty || 0) / 2)) : +((X.P.qty || 0) / 2).toFixed(6) };
+    else { await ppQuotes([k.s]); const px = (pp.q[k.s] && pp.q[k.s].price) || X.px; X.P = { ...X.P, stop: px - 1.5 * atr, qty: X.idx ? Math.max(1, Math.floor((X.P.qty || 0) / 2)) : +((X.P.qty || 0) / 2).toFixed(6) };
       X.V = { act: "BELI", explore: true }; m = await apBuy(X); }
     c.quotaDay = today; c.nDay++; const st = ap.st[k.s]; if (st) st.note = `kuota harian ${k.dir > 0 ? "long" : "short"} ¼`;
     apLogAdd(k.s, `KUOTA HARIAN ${k.dir > 0 ? "LONG" : "SHORT"} · paling condong ${k.dir > 0 ? "naik" : "turun"} (skor ${nf(2).format(k.sc)}) dari ${C.length} kandidat · ${m}`, k.dir > 0 ? "buy" : "sell"); toast(`Autopilot (kuota harian): ${m}`); }
@@ -992,5 +1007,5 @@ lap("berita");
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { pullSettings(); apWakeSync(); if (ap.cfg.on) apCycle(false); } });
     setTimeout(() => { if (ap.cfg.on) { apLogAdd("—", "Web dibuka lagi: autopilot melanjutkan"); apCycle(false); } }, 8000);
     if (location.hostname === "localhost") window.__ap = { cal, calModel, apEyeRead, devPolicy, brainTrain, aiTrain, futOpen, apEngAllow, apEngStats, pp, dayStep, daySession, dayIntraday, apShort, futCheck, futList, au, drawAp, idxCall, ledgerRows, apBuy, apSell, apRun, apDecide, apPorto, apNews, apNewsGuard, apNewsCache, ap };
-    clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); apCycle(false); if (ap.cfg.on && ap.cfg.style !== "swing") apDayCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
+    clearInterval(ap.timer); ap.timer = setInterval(async () => { futCheck(); bnfTrail(); apCycle(false); if (ap.cfg.on && ap.cfg.style !== "swing") apDayCycle(false); if (!$("apPane").hidden && !ap.busy) { try { await ppQuotes([...Object.keys(pp.a.pos || {}), ...futList().map((f) => f.s)]); } catch { /* */ } drawAp(); } }, 60e3); } // tetap jalan di tab latar (browser membatasi ke ±1x/menit)
 

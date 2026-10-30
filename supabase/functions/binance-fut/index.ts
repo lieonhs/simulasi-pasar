@@ -2,7 +2,7 @@
 // Default DEMO TRADING (testnet, uang palsu): https://demo-fapi.binance.com. Uang asli hanya bila secret BINANCE_FUT_LIVE = "1".
 // Secrets: BINANCE_FUT_KEY, BINANCE_FUT_SECRET, [BINANCE_FUT_LIVE], [BINANCE_FUT_MAX_USDT=150], [BINANCE_FUT_MAX_LEV=3], [OWNER_EMAIL]
 // Dipanggil dengan ?forceFunctionRegion=ap-southeast-2 (Binance menolak server di AS); fungsi menolak jalan dari wilayah AS/Kanada.
-// POST {action:"status"} | {action:"account"} | {action:"open", symbol, dir, usdt, lev, stop, tp, confirm:"open SYMBOL"} | {action:"close", symbol}
+// POST {action:"status"} | {action:"account"} | {action:"open", symbol, dir, usdt, lev, stop, tp, confirm:"open SYMBOL"} | {action:"close", symbol} | {action:"stop", symbol, stop}
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } }); }
 const KEY = Deno.env.get("BINANCE_FUT_KEY") ?? "", SECRET = Deno.env.get("BINANCE_FUT_SECRET") ?? "", LIVE = Deno.env.get("BINANCE_FUT_LIVE") === "1";
@@ -103,6 +103,17 @@ async function openPos(b: any) {
   catch (e) { let back: any = null; try { back = await closeSym(sym); } catch (_) { /* */ } return { status: 502, data: { error: `Stop/target gagal dipasang (${(e as Error).message}); posisi ditutup lagi demi keamanan`, closed: back } }; }
   return { status: 200, data: { live: LIVE, symbol: sym, dir, qty, lev, usdt, mark, avgPrice: Number(o.avgPrice) || mark, orderId: o.orderId, stop: sl?.triggerPrice, tp: tk?.triggerPrice } };
 }
+async function moveStop(b: any) { // geser stop: pasang stop BARU dulu, lalu batalkan stop lama (tidak pernah ada jeda tanpa stop)
+  const sym = String(b?.symbol ?? "").toUpperCase(), stop = Number(b?.stop); if (!/^[A-Z0-9]{2,20}USDT$/.test(sym) || !(stop > 0)) return { status: 400, data: { error: "Simbol/stop tidak valid" } };
+  const amt = await position(sym); if (!amt) return { status: 200, data: { moved: false, note: "tidak ada posisi" } };
+  const I = await symInfo(sym); if (!I) return { status: 400, data: { error: "Simbol tidak tersedia" } };
+  const mark = Number((await bn("GET", "/fapi/v1/premiumIndex", { symbol: sym }, false)).markPrice);
+  if (amt > 0 ? !(stop < mark) : !(stop > mark)) return { status: 400, data: { error: `Stop ${stop} sudah terlewati harga ${mark}` } };
+  const old = await bn("GET", "/fapi/v1/openAlgoOrders", { symbol: sym }).catch(() => []), L = (Array.isArray(old) ? old : old?.orders ?? []).filter((a: any) => (a.orderType ?? a.type) === "STOP_MARKET");
+  const nw = await bn("POST", "/fapi/v1/algoOrder", { algoType: "CONDITIONAL", symbol: sym, side: amt > 0 ? "SELL" : "BUY", type: "STOP_MARKET", triggerPrice: roundTick(stop, I.tick), closePosition: "true", workingType: "MARK_PRICE", priceProtect: "true", clientAlgoId: `rc_s_${Date.now()}` });
+  for (const a of L) { try { await bn("DELETE", "/fapi/v1/algoOrder", { symbol: sym, algoId: a.algoId }); } catch (_) { /* sudah tidak aktif */ } }
+  return { status: 200, data: { moved: true, stop: nw.triggerPrice, replaced: L.length } };
+}
 async function account() {
   const [bal, pos, algo] = await Promise.all([bn("GET", "/fapi/v3/balance"), bn("GET", "/fapi/v3/positionRisk"), bn("GET", "/fapi/v1/openAlgoOrders").catch(() => [])]);
   const u = (bal ?? []).find((x: any) => x.asset === "USDT") ?? {};
@@ -123,6 +134,7 @@ Deno.serve(async (req) => {
   try {
     if (act === "account") return json(await account());
     if (act === "open") { const r = await openPos(b); return json(r.data, r.status); }
+    if (act === "stop") { const r = await moveStop(b); return json(r.data, r.status); }
     if (act === "close") { const sym = String(b?.symbol ?? "").toUpperCase(); if (!/^[A-Z0-9]{2,20}USDT$/.test(sym)) return json({ error: "Simbol tidak valid" }, 400); return json(await closeSym(sym)); }
     return json({ error: "Aksi tidak dikenal" }, 400); // sengaja TIDAK ada transfer/withdraw
   } catch (e) { return json({ error: (e as Error).message }, (e as BnErr).code === 451 || (e as BnErr).code === 403 ? 451 : 502); }

@@ -1999,6 +1999,36 @@
     const evPx = (res * (pT * U - (1 - pT) * Dd)) / c[n - 1] - cost; // perkiraan hasil per transaksi (bagian yang tidak kena batas dianggap ±0)
     const { pl, ...st } = St; return { ...out, ...st, pT, res, ev: evPx };
   }
-  const api = { binoLearn, gemAsset, binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
+  // ---------- TARGET KELUAR DARI DATA: peluang menyentuh +k ATR SEBELUM kena stop dalam H hari (sejarah aset sendiri) ----------
+  // Untuk tiap hari lampau: harga masuk = close, ATR14 hari itu; lihat H hari ke depan (high/low harian). Bila high & low sama-sama
+  // tembus di hari yang sama, dianggap stop dulu (konservatif). Hasil: kurva p(k) dan T1/T2 = level terjauh yang peluangnya ≥ pT1/pT2.
+  function exitTargets(D, o = {}) {
+    const n = D.n, c = D.c, hi = D.h, lo = D.l, H = o.H || 20, s = Math.max(0.5, o.stopK || 2), dir = o.dir === -1 ? -1 : 1, pT1 = o.pT1 ?? 0.6, pT2 = o.pT2 ?? 0.4, look = o.look || 1000;
+    if (n < 120) return null;
+    const atr = new Array(n).fill(null); { let a = 0; for (let i = 1; i < n; i++) { const tr = Math.max(hi[i] - lo[i], Math.abs(hi[i] - c[i - 1]), Math.abs(lo[i] - c[i - 1])); a = i < 15 ? a + tr / 14 : a + (tr - a) / 14; if (i >= 14) atr[i] = a; } }
+    const K = []; for (let k = 0.5; k <= 8.001; k += 0.25) K.push(+k.toFixed(2)); const hit = new Array(K.length).fill(0), evS = new Array(K.length).fill(0); let N = 0;
+    for (let t = Math.max(20, n - H - 1 - look); t < n - H; t++) { const a = atr[t]; if (!(a > 0)) continue; N++; const base = c[t]; let best = 0, j = 0, stopped = false;
+      for (let d = t + 1; d <= t + H; d++) { const fav = dir > 0 ? (hi[d] - base) / a : (base - lo[d]) / a, adv = dir > 0 ? (base - lo[d]) / a : (hi[d] - base) / a;
+        if (adv >= s) { stopped = true; break; } // stop dulu (termasuk hari yang sama)
+        if (fav > best) { best = fav; while (j < K.length && K[j] <= best) { hit[j]++; j++; } } }
+      const fin = stopped ? -s : (dir * (c[t + H] - base)) / a; // hasil bila target k tidak tersentuh: kena stop, atau keluar di akhir horizon
+      for (let i = 0; i < K.length; i++) evS[i] += i < j ? K[i] : fin; }
+    if (N < 100) return null; const p = hit.map((h) => h / N), ev = evS.map((v) => v / N);
+    const pick = (thr) => { let k = null; for (let i = 0; i < K.length; i++) if (p[i] >= thr) k = K[i]; return k; };
+    let k1 = pick(pT1), k2 = pick(pT2); if (k1 == null) k1 = 0.75; k1 = Math.max(0.75, k1); if (k2 == null || k2 < k1 + 0.5) k2 = k1 + 0.5;
+    // T2: level dengan nilai harapan tertinggi (dalam ATR, sudah termasuk kena stop & keluar di akhir horizon) di antara yang peluangnya ≥ 25%
+    { let bi = -1; for (let i = 0; i < K.length; i++) if (K[i] >= k1 + 0.5 && p[i] >= 0.25 && (bi < 0 || ev[i] > ev[bi])) bi = i; if (bi >= 0 && ev[bi] > (ev[K.indexOf(k2)] ?? -Infinity)) k2 = K[bi]; }
+    const pk = (k) => { const i = K.findIndex((x) => x >= k); return i < 0 ? 0 : p[i]; };
+    const evk = (k) => { const i = K.findIndex((x) => x >= k); return i < 0 ? NaN : ev[i]; };
+    return { dir, stopK: s, H, n: N, atr: atr[n - 1], k1, k2, p1: pk(k1), p2: pk(k2), ev1: evk(k1), ev2: evk(k2), curve: K.map((k, i) => [k, p[i], ev[i]]) };
+  }
+  // ---------- KUNCI UNTUNG (trailing): stop mengikuti harga terbaik; makin untung makin rapat ----------
+  // untung ≥ 1 ATR → stop minimal impas; jarak dari harga terbaik: 1,5 ATR (untung < 2 ATR), 1 ATR (< 3 ATR), 0,75 ATR (≥ 3 ATR)
+  function trailStop(dir, entry, best, atr, stop) {
+    if (!(atr > 0) || !(entry > 0) || !(best > 0)) return stop; const gain = (dir * (best - entry)) / atr; if (gain < 1) return stop;
+    const g = gain >= 3 ? 0.75 : gain >= 2 ? 1 : 1.5; let t = best - dir * g * atr; t = dir > 0 ? Math.max(t, entry) : Math.min(t, entry);
+    return stop == null || !isFinite(stop) ? t : dir > 0 ? Math.max(stop, t) : Math.min(stop, t);
+  }
+  const api = { exitTargets, trailStop, binoLearn, gemAsset, binomialBarrier, mlFast, radarAsset, dlModel, makeDL, dlSeq, bondRisk, STRAT_LIST, actionPlan, confluence, confSeries, mtfTrend, mtfDaily, CONF_F, planHistory, addHolidays, nyseHolidays, goalSim, goalMonthly, mlModel, ML_FEATS, isHoliday, addBiz, dsr, runStrategy, runAllStrategies, noiseBand, candleFootprint, mathLab, qnorm, gammaP, signalBacktest, quantPortfolio, backtest, alignSeries, screenAsset, dcfFCFF, excessReturn, solveImplied, valuationMC, costOfCapital, blackScholes, binomialCRR, probEnd, riskMetrics, ardl, ols, ncdf, evalPlan, compareStats, idxTick, roundTick, makeRng, garchFit, garchNextVar, fitRate, simRate, bondPrice, runPrice, runBond, kupiec, quantiles, logReturns, detectPpy, PRICE_MODELS, PCTS, mean, std };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MCEngine = api;
 })(typeof self !== "undefined" ? self : this);

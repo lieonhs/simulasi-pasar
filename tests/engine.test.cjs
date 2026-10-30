@@ -49,3 +49,22 @@ test("binomial belajar: suara harian bebas bocoran & masuk backtest sinyal", () 
   const B0 = E.signalBacktest(D.d, D.c), B1 = E.signalBacktest(D.d, D.c, { extra: full.votes });
   assert.ok(B1.trades.length > 0 && B0.trades.length > 0); assert.notDeepEqual(B1.events.map((e) => e.date), B0.events.map((e) => e.date));
 });
+test("target keluar dari data & kunci untung", () => {
+  const D = walk(1500, 21), L = E.exitTargets(D, { stopK: 2, dir: 1 }), S = E.exitTargets(D, { stopK: 1.5, dir: -1 });
+  assert.ok(L && L.k1 >= 0.75 && L.k2 > L.k1 && L.p1 >= 0.6 && L.p2 >= 0.25, JSON.stringify({ k1: L.k1, k2: L.k2, p1: L.p1, p2: L.p2 }));
+  assert.ok(S && S.k1 >= 0.75 && S.k2 > S.k1);
+  for (let i = 1; i < L.curve.length; i++) assert.ok(L.curve[i][1] <= L.curve[i - 1][1] + 1e-12, "peluang harus turun saat target makin jauh");
+  assert.equal(E.trailStop(1, 100, 100.5, 1, 97), 97); // untung < 1 ATR: stop tetap
+  assert.equal(E.trailStop(1, 100, 101.2, 1, 97), 100); // ≥ 1 ATR: minimal impas
+  assert.equal(E.trailStop(1, 100, 102.5, 1, 97), 101.5); // ≥ 2 ATR: 1 ATR di bawah harga terbaik
+  assert.equal(E.trailStop(1, 100, 104, 1, 97), 103.25); // ≥ 3 ATR: 0,75 ATR
+  assert.equal(E.trailStop(1, 100, 101.2, 1, 100.6), 100.6); // stop tidak pernah turun
+  assert.equal(E.trailStop(-1, 100, 97, 1, 103), 97.75); // short: untung 3 ATR → stop 0,75 ATR di atas harga terbaik
+});
+test("target T2 memilih nilai harapan tertinggi pada tren yang ditanam", () => {
+  const r = rng(13), n = 1500, D = { d: [], o: [], h: [], l: [], c: [], v: [], n }; let p = 100;
+  for (let i = 0; i < n; i++) { const op = p; p *= Math.exp(0.004 + (r() - 0.5) * 0.04); D.d.push(`d${i}`); D.o.push(op); D.h.push(Math.max(op, p) * 1.004); D.l.push(Math.min(op, p) * 0.996); D.c.push(p); D.v.push(1); }
+  const T = E.exitTargets(D, { stopK: 2, dir: 1 }), R = E.exitTargets(walk(1500, 3), { stopK: 2, dir: 1 });
+  assert.ok(T.ev2 >= T.curve.filter((x) => x[0] >= T.k1 + 0.5 && x[1] >= 0.25).reduce((m, x) => Math.max(m, x[2]), -1e9) - 1e-9, "T2 harus di nilai harapan tertinggi");
+  assert.ok(T.k2 > R.k2, `tren naik → target lebih jauh (tren ${T.k2} vs acak ${R.k2})`); console.log("tren", T.k1, T.k2, T.ev2.toFixed(2), "| acak", R.k1, R.k2, R.ev2.toFixed(2));
+});
