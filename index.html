@@ -405,6 +405,9 @@
       <div class="ap-tgt">
         <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual · eksplorasi short ½ bila rencana JUAL & ada model turun, tidak ada yang naik</span></label>
         <div class="grid"><div><label class="lbl" for="apLongVia">Beli kripto (long) lewat</label><select id="apLongVia"><option value="fut" selected>Futures LONG</option><option value="spot">Spot</option><option value="alt">Bergantian (bandingkan)</option><option value="adapt">Adaptif (pakai yang lebih untung per aset)</option></select></div></div>
+        <div id="apBnfBox" hidden class="ap-bnf"><label class="toggle"><input type="checkbox" id="apBnf"> <b>Kirim futures autopilot ke Binance</b> <span class="note">(akun kedua · hanya pemilik · tiap posisi futures demo juga dibuka di Binance dengan stop & target terpasang di Binance; ditutup bersamaan)</span></label>
+          <div class="grid"><div><label class="lbl" for="apBnfUsdt">Nilai per order (USDT)</label><input id="apBnfUsdt" type="number" min="5" step="5" value="150"></div><div><label class="lbl">&nbsp;</label><button class="btn" id="apBnfChk">Cek koneksi Binance</button></div></div>
+          <div id="apBnfOut"></div></div>
         <p class="note">Futures: langsung di harga sekarang, stop 1,5 ATR, target 2/3 ATR. Bergantian: tiap aset dicoba spot & futures bergiliran. Adaptif: bergantian sampai masing-masing ≥ 5 transaksi, lalu pakai yang laba rata-ratanya lebih besar.</p>
         <div class="grid"><div><label class="lbl" for="apLev">Leverage</label><select id="apLev"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x (maks)</option></select></div></div>
       </div>
@@ -1183,7 +1186,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=72d4540544"></script>
+<script src="js/80-autopilot.js?v=cb342d7147"></script>
 <script src="js/90-aset-terminal-boot.js?v=0d8a1e5845"></script>
 </body>
 </html>
