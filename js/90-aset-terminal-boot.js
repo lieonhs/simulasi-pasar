@@ -105,7 +105,7 @@
   async function mlExt(sym) { const L = /\.JK$/i.test(sym) ? [["^JKSE", "IHSG"], ["IDR=X", "USD/IDR"]] : /-USDT?$/i.test(sym) || isCrypto() ? [["BTC-USD", "Bitcoin"], ["^GSPC", "S&P 500"]] : [["^GSPC", "S&P 500"], ["^VIX", "VIX"]];
     const out = []; for (const [s, name] of L) { if (s === sym) continue; try { const d = await fetchSymbol(s, "10y"); out.push({ name, map: Object.fromEntries(d.dates.map((x, i) => [x, d.values[i]])) }); } catch { /* lewati */ } } return out; }
   const nhCache = new Map();
-  async function newsHist(sym) { const c = nhCache.get(sym); if (c && Date.now() - c.at < 600e3) return c.v;
+  async function newsHist(sym) { const c = nhCache.get(sym); if (c && Date.now() - c.at < 6 * 3600e3) return c.v; // data harian: cukup 6 jam sekali
     let v = { map: null, days: 0, installed: false, from: null };
     try { const j = await (await apiFetch(`${API}?action=news_hist&symbol=${encodeURIComponent(sym)}`)).json(); const rows = (j && j.rows) || [];
       v = { map: rows.length ? Object.fromEntries(rows.map((r) => [r.day, [r.n, r.sent]])) : null, days: rows.length, installed: !!(j && j.installed), from: rows.length ? rows[0].day : null }; } catch { /* */ }

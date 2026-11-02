@@ -378,7 +378,7 @@ lap("berita");
   // ---- Berita kejutan: judul berbahaya dalam 24 jam → jual posisi autopilot & blok beli 24 jam
   const SHOCK = ["hack", "hacked", "diretas", "peretasan", "exploit", "dibobol", "bangkrut", "pailit", "pkpu", "bankrupt", "bankruptcy", "insolven", "insolvency", "gagal bayar", "default", "delisting", "delist", "suspensi", "suspended", "suspend", "fraud", "penipuan", "manipulasi", "korupsi", "ditangkap", "tersangka", "investigasi", "investigation", "sec sues", "charged", "lawsuit", "gugatan", "sanksi", "sanction", "dilarang", "larangan", "ban ", "banned", "rug pull", "rugpull", "depeg", "de-peg", "halt", "dibekukan", "freeze", "frozen", "withdrawals paused", "crash", "ambruk", "anjlok", "arb", "auto reject bawah", "profit warning", "restatement", "resign", "mundur"];
   const apNewsCache = new Map();
-  async function apNews(sym, d) { const c = apNewsCache.get(sym); if (c && Date.now() - c.at < 5 * 60e3) return c.v;
+  async function apNews(sym, d) { const c = apNewsCache.get(sym); if (c && Date.now() - c.at < 30 * 60e3) return c.v; // 30 menit: hemat kuota server
     const code = sym.replace(/\.JK$/i, "").replace(/^\^/, "").replace(/-USDT?$/, ""), q = /\.JK$/i.test(sym) ? `saham ${code}` : d && d.name ? d.name.replace(/ USD$/i, "") : code;
     let v = { n: 0, neg: 0, shock: null, items: [] };
     try { const j = await (await apiFetch(`${API}?action=news&symbol=${encodeURIComponent(sym)}&q=${encodeURIComponent(q)}`)).json(); const now = Date.now() / 1000;
@@ -695,8 +695,21 @@ lap("berita");
     const t = tzParts("America/New_York"), wk = !["Sat", "Sun"].includes(t.wd) && t.m >= 9 * 60 + 30 && t.m < 16 * 60; return { open: wk && t.m >= 9 * 60 + 45 && t.m <= 15 * 60, close: !wk || t.m >= 15 * 60 + 50, label: "AS: tutup 15.50 New York" }; }
   const dayHeld = (s) => futList().some((f) => f.ap && f.day && f.s === s);
   const swingHeld = (s) => !!((pp.a.pos[s] && pp.a.pos[s].ap) || futList().some((f) => f.ap && !f.day && f.s === s) || au.list.some((x) => x.ap && x.sym === s && (x.st === "menunggu" || x.st === "terisi")));
+  // ---- bar 15 menit kripto langsung dari Binance (API publik, sama dengan sumber server) + unduh bertahap:
+  // 120 hari penuh sekali per sesi, lalu hanya bar baru sejak bar terakhir (data lama disimpan di memori)
+  const bnCache = new Map();
+  async function bnBars15(s) { const sym = s.toUpperCase().replace(/-USDT?$/, "") + "USDT", now = Date.now(), c = bnCache.get(sym), step = 900e3;
+    let bars = c ? c.bars : [], from = c && bars.length ? (bars[bars.length - 1][0] * 1000) : now - 120 * 864e5; // bar terakhir diambil ulang (mungkin belum selesai)
+    if (c) bars = bars.slice(0, -1);
+    for (let k = 0; k < 15 && from < now; k++) { const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${sym}&interval=15m&limit=1000&startTime=${from}&endTime=${now}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined });
+      if (!r.ok) throw new Error(`Binance ${r.status}`); const K = await r.json(); if (!Array.isArray(K) || !K.length) break;
+      for (const x of K) bars.push([Math.floor(x[0] / 1000), +x[1], +x[2], +x[3], +x[4], +x[5], +x[9]]); from = K[K.length - 1][0] + step; if (K.length < 1000) break; }
+    const cut = Math.floor((now - 121 * 864e5) / 1000); bars = bars.filter((b) => b[0] >= cut); if (bars.length < 200) throw new Error("bar kurang");
+    bnCache.set(sym, { bars, at: now }); if (bnCache.size > 200) bnCache.delete(bnCache.keys().next().value);
+    return { source: "binance", symbol: sym, interval: "15m", gmtoffset: 0, timezone: "UTC", currency: "USDT", taker: true, bars, price: bars[bars.length - 1][4], priceTime: bars[bars.length - 1][0] }; }
   async function dayIntraday(s) { const c = ap.dayc || (ap.dayc = new Map()), k = c.get(s); if (k && Date.now() - k.at < 4 * 60e3) return k.v;
-    let j = null; if (/-USDT?$/.test(s)) { const end = Math.floor(Date.now() / 1000); try { j = await (await apiFetch(`${API}?action=flow&symbol=${encodeURIComponent(s)}&interval=15m&start=${end - 120 * 86400}&end=${end}`)).json(); if (j.error || !Array.isArray(j.bars) || j.bars.length < 200) j = null; } catch { j = null; } }
+    let j = null; if (/-USDT?$/.test(s)) { try { j = await bnBars15(s); } catch { j = null; } // langsung dari Binance (bukan lewat server): hemat kuota Supabase
+      if (!j) { const end = Math.floor(Date.now() / 1000); try { j = await (await apiFetch(`${API}?action=flow&symbol=${encodeURIComponent(s)}&interval=15m&start=${end - 120 * 86400}&end=${end}`)).json(); if (j.error || !Array.isArray(j.bars) || j.bars.length < 200) j = null; } catch { j = null; } } }
     if (!j) j = await (await apiFetch(`${API}?action=intraday&symbol=${encodeURIComponent(s)}&interval=15m`)).json();
     if (j.error || !Array.isArray(j.bars) || j.bars.length < 200) throw new Error(j.error || "data intraday kurang");
     const crypto = /-USDT?$/.test(s), cost = (crypto ? (ap.cfg.fut ? FUT_FEE * 1e4 : 30) : /\.JK$/.test(s) ? 20 : 10);

@@ -654,13 +654,22 @@
       ["BZ=F", "Brent (biaya bunker)"], ["TMAS.JK", "Temas (pelayaran IDX)"], ["SMDR.JK", "Samudera Indonesia (IDX)"]],
   };
   const mk = { q: {}, mov: "gain", at: 0 };
+  // harga terkini: cache 15 detik; koin -USDT langsung dari Binance (satu permintaan untuk semua) → hemat kuota server
+  const qCache = new Map();
   async function quotesFor(syms) {
-    const out = {}; for (let i = 0; i < syms.length; i += 25) { const part = syms.slice(i, i + 25);
+    const out = {}, now = Date.now(); syms = [...new Set(syms)];
+    for (const s of syms) { const c = qCache.get(s); if (c && now - c.at < 15e3) out[s] = c.q; }
+    const usdt = syms.filter((s) => !out[s] && /-USDT$/i.test(s));
+    if (usdt.length) try { const ids = usdt.map((s) => s.toUpperCase().replace("-USDT", "") + "USDT"), r = await fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(ids))}`);
+      if (r.ok) for (const t of await r.json()) { const s = t.symbol.replace(/USDT$/, "") + "-USDT", key = usdt.find((x) => x.toUpperCase() === s); if (key && t.lastPrice) out[key] = { symbol: key, price: +t.lastPrice, prevClose: +t.prevClosePrice || +t.openPrice, volume: +t.volume, currency: "USDT", open: true, time: Math.floor((t.closeTime || now) / 1000) }; } } catch { /* jatuh ke server */ }
+    const rest = syms.filter((s) => !out[s] && !/-USDT$/i.test(s)); // -USDT tidak ada di Yahoo: tidak dikirim ke server
+    for (let i = 0; i < rest.length; i += 25) { const part = rest.slice(i, i + 25);
       try { const j = await (await apiFetch(`${API}?action=quotes&symbols=${encodeURIComponent(part.join(","))}`)).json(); (j.quotes || []).forEach((q) => { if (q && q.price != null) out[q.symbol] = q; }); } catch { /* */ } }
     // koin -USDT (meme/altcoin dari Binance) yang tidak ada di Yahoo: ambil harga langsung dari Binance
-    const miss = syms.filter((s) => /-USDT$/i.test(s) && !out[s]);
+    const miss = usdt.filter((s) => !out[s]); // permintaan gabungan gagal (mis. satu simbol tidak dikenal) → satu per satu
     await Promise.all(miss.map(async (s) => { try { const t = await (await fetch(`https://data-api.binance.vision/api/v3/ticker/24hr?symbol=${s.toUpperCase().replace("-USDT", "")}USDT`)).json();
       if (t && t.lastPrice) out[s] = { symbol: s, price: +t.lastPrice, prevClose: +t.prevClosePrice || +t.openPrice, volume: +t.volume, currency: "USDT", open: true, time: Math.floor((t.closeTime || Date.now()) / 1000) }; } catch { /* */ } }));
+    for (const [k, q] of Object.entries(out)) qCache.set(k, { at: now, q }); if (qCache.size > 600) qCache.clear();
     return out;
   }
   const qChg = (q) => (q && q.prevClose ? q.price / q.prevClose - 1 : NaN);
