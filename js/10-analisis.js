@@ -289,7 +289,7 @@
     const d = state.data; if (!d || !$("holdCard")) return; const sym = d.symbol, key = `${sym}|${hold.min}`;
     if (!force && hold.sym === key && hold.data) return drawHolders(); hold.sym = key; hold.data = null;
     $("holdOut").innerHTML = '<p class="status">Memuat data pemegang…</p>';
-    try { const j = await (await apiFetch(`${API.replace("market-data", "holders")}?symbol=${encodeURIComponent(sym)}&min=${hold.min}`)).json(); if (hold.sym !== key) return; hold.data = j; }
+    try { const j = await (await apiFetch(`${API.replace("market-data", "holders")}?symbol=${encodeURIComponent(sym)}&min=${hold.min}&v=2`)).json(); if (hold.sym !== key) return; hold.data = j; }
     catch (e) { if (hold.sym === key) $("holdOut").innerHTML = `<p class="status err">Gagal memuat: ${esc(e.message || String(e))}</p>`; return; }
     drawHolders();
   }
@@ -307,6 +307,7 @@
       <div class="table-wrap"><table><thead><tr><th>${crypto ? "Dompet" : "Pemegang"}</th><th>Porsi</th><th></th><th>Jenis</th><th>${crypto ? "Jumlah token" : "Lembar"}</th>${crypto ? "" : "<th>Per</th>"}</tr></thead><tbody>${rows}</tbody></table></div>`
       : `<p class="note">Tidak ada pemegang ≥ ${hold.min}% yang tersedia dari sumber data.</p>`}
       ${extra.length ? `<p class="note">${esc(extra.join(" · "))}</p>` : ""}
+      ${H.ai ? `<p class="note keep">⚠ Data dicari AI lewat Google Search${H.asOf ? ` (per ${esc(H.asOf)})` : ""} — bisa keliru atau usang, cek di sumbernya: ${(H.sources || []).map((x) => `<a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer">${esc(x.title || "sumber")}</a>`).join(" · ")}</p>` : ""}
       <p class="note">Sumber: ${esc((H.source || []).join(", ") || "–")}${(H.note || []).length ? ` · ${esc(H.note.join(" · "))}` : ""}</p>
       ${!crypto && /\.JK$/i.test(H.symbol) ? '<p class="note">Data lengkap pemegang ≥ 1% versi KSEI terbit bulanan (PDF) di pengumuman BEI: idx.co.id → Berita → Pengumuman → “Pemegang Saham di atas 1% (KSEI)”.</p>' : ""}`;
   }

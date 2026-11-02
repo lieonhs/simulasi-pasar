@@ -53,6 +53,7 @@ const raw = (x: any) => (x && typeof x === "object" ? x.raw ?? null : x ?? null)
 // Saham IDX: profil emiten BEI (pemegang ≥ 5% + masyarakat, dari laporan emiten terakhir) → cadangan Yahoo.
 // Saham lain: Yahoo (institusi & reksa dana dari laporan 13F/regulator, bisa tertinggal ±1 kuartal).
 // Kripto: token ERC-20 → dompet terbesar dari Ethplorer (alamat kontrak dari CoinGecko). Koin native (BTC, SOL, dst.) tidak punya daftar resmi.
+// Bila semua kosong: Gemini + Google Search, wajib ada sumber web (ditampilkan sebagai tautan).
 const cache = new Map<string, { at: number; data: any }>();
 async function holdersStock(symbol: string, minPct: number) {
   const out: any = { kind: "stock", symbol, holders: [], source: [], note: [] };
@@ -103,17 +104,44 @@ async function holdersCrypto(symbol: string, minPct: number) {
   return out;
 }
 
+// ---------- cadangan: Gemini + Google Search (wajib bersumber; jawaban tanpa sumber web dibuang) ----------
+const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+async function holdersAI(symbol: string, minPct: number, kind: "stock" | "crypto") {
+  if (!GEMINI_KEY) return null;
+  const code = symbol.replace(/\.JK$/i, "").replace(/-(USD|USDT|IDR)$/i, "").toUpperCase(), idx = /\.JK$/i.test(symbol);
+  const q = kind === "crypto" ? `Cari data terbaru distribusi kepemilikan koin/token ${code} (alamat/dompet terbesar, porsi tim/investor/yayasan/treasury perusahaan yang memegang ${code}). Sebut hanya pemegang dengan porsi ≥ ${minPct}% dari pasokan beredar.`
+    : idx ? `Cari data pemegang saham terbaru emiten ${code} di Bursa Efek Indonesia. Utamakan data KSEI "pemegang saham di atas 1%" (terbit bulanan sejak Maret 2026) atau laporan keuangan/keterbukaan informasi terbaru. Sebut semua pemegang dengan porsi ≥ ${minPct}% beserta porsi masyarakat.`
+    : `Cari pemegang saham terbesar terbaru ${code} (institusi, orang dalam/insider, reksa dana) dengan porsi ≥ ${minPct}% dari laporan 13F/13D/proxy statement terbaru.`;
+  const prompt = `${q}\nJangan mengarang angka. Bila tidak menemukan data yang jelas bersumber, kembalikan holders kosong.\nJawab HANYA JSON tanpa teks lain: {"asOf":"YYYY-MM-DD atau periode","holders":[{"name":"","pct":0,"type":"pengendali|institusi|insider|masyarakat|dompet|lainnya"}]}`;
+  for (const model of ["gemini-2.5-flash", "gemini-flash-latest"]) {
+    try { const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST", signal: AbortSignal.timeout(45000), headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0 } }) });
+      if (!r.ok) continue; const j = await r.json(), c = j?.candidates?.[0], text = (c?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+      const src = (c?.groundingMetadata?.groundingChunks ?? []).map((g: any) => g.web).filter((w: any) => w?.uri).slice(0, 6).map((w: any) => ({ title: String(w.title ?? "").slice(0, 80), uri: w.uri }));
+      if (!src.length) return { holders: [], src: [], note: "AI tidak menemukan sumber web" };
+      const m = text.match(/\{[\s\S]*\}/); if (!m) continue; const p = JSON.parse(m[0]);
+      const H = (Array.isArray(p.holders) ? p.holders : []).map((h: any) => ({ name: String(h.name ?? "").trim().slice(0, 120), pct: Number(h.pct), type: String(h.type ?? "").slice(0, 20) }))
+        .filter((h: any) => h.name && h.pct >= minPct && h.pct <= 100);
+      if (H.reduce((a: number, h: any) => a + h.pct, 0) > 101) return { holders: [], src, note: "jumlah porsi dari AI > 100%, dibuang" }; // tidak konsisten → jangan tampilkan
+      return { holders: H.sort((a: any, b: any) => b.pct - a.pct), src, asOf: String(p.asOf ?? "").slice(0, 20) };
+    } catch (_) { /* coba model berikutnya */ } }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const who = await checkUser(req);
   if (!who.ok) return json({ error: who.why }, 401);
   const u = new URL(req.url), sym = (u.searchParams.get("symbol") ?? "").trim(), mn = Math.max(0.5, Math.min(50, Number(u.searchParams.get("min") ?? 2) || 2));
   if (!SYMBOL_RE.test(sym)) return json({ error: "Simbol tidak valid" }, 400);
-  const key = `${sym.toUpperCase()}|${mn}`, hit = cache.get(key); if (hit && Date.now() - hit.at < 6 * 3600e3) return json(hit.data, 200, 21600);
+  const key = `${sym.toUpperCase()}|${mn}`, hit = cache.get(key); if (hit && Date.now() - hit.at < 6 * 3600e3) return json(hit.data, 200, hit.data.holders.length ? 21600 : 0);
   try {
     const isC = /-(USD|USDT|IDR)$/i.test(sym);
     const data = isC ? await holdersCrypto(sym, mn) : await holdersStock(sym, mn);
+    if (!data.holders.length) { const A = await holdersAI(sym, mn, isC ? "crypto" : "stock"); // BEI/Yahoo/Ethplorer kosong → cari lewat AI + Google Search
+      if (A && A.holders.length) { data.holders = A.holders; data.ai = true; data.asOf = A.asOf; data.sources = A.src; data.source.push("AI + Google Search (verifikasi di sumber)"); }
+      else if (A && A.note) data.note.push(A.note); }
     if (data.holders.length || data.source.length) { cache.set(key, { at: Date.now(), data }); if (cache.size > 500) cache.clear(); }
-    return json(data, 200, 21600);
+    return json(data, 200, data.holders.length ? 21600 : 0);
   } catch (e) { return json({ error: String(e) }, 502); }
 });
