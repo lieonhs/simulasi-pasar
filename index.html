@@ -380,6 +380,7 @@
         <div><label class="lbl" for="apMode">Mode</label><select id="apMode"><option value="asset" selected>Per aset</option><option value="porto">Portofolio (rebalancing)</option></select></div>
         <div><label class="lbl" for="apBudget">Dana uji per run (maks Rp 1 miliar)</label><input id="apBudget" type="number" min="1000000" max="1000000000" step="1000000" value="1000000000"></div>
         <div class="ap-porto"><label class="lbl" for="apMaxW">Bobot maks per aset</label><select id="apMaxW"><option value="0.25">25%</option><option value="0.35" selected>35%</option><option value="0.5">50%</option></select></div>
+        <label class="toggle" style="grid-column:1/-1"><input type="checkbox" id="apDemoFree" checked> <b>Demo tanpa batas</b> <span class="note">(abaikan batas order/hari, posisi, per aset, jeda & rem rugi harian di akun demo — hanya kas demo yang membatasi; batas di bawah hanya berlaku untuk uang asli atau bila ini dimatikan)</span></label>
         <div><label class="lbl" for="apMaxPos">Maks posisi terbuka</label><select id="apMaxPos"><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option><option selected>10</option><option>15</option><option>20</option><option>30</option></select></div>
         <div><label class="lbl" for="apMaxDay">Maks order baru / hari</label><select id="apMaxDay"><option>10</option><option>20</option><option>50</option><option value="100" selected>100</option><option>200</option><option>300</option></select><span class="note">uang asli tetap maks 50 · jual tidak pernah dibatasi</span></div>
         <div><label class="lbl" for="apMaxAsset">Maks posisi baru / aset / hari</label><select id="apMaxAsset"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
@@ -1192,7 +1193,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=87cb192ade"></script>
+<script src="js/80-autopilot.js?v=8b2cd0f4af"></script>
 <script src="js/90-aset-terminal-boot.js?v=0d8a1e5845"></script>
 </body>
 </html>
