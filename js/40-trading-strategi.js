@@ -46,7 +46,8 @@
   function ppFill(o, px) {
     if (o.type !== "limit" && isFinite(px)) { px = px * (1 + (o.side === "buy" ? 1 : -1) * slipOf(o.s)); o.slip = slipOf(o.s); }
     const a = pp.a, fx = fxOf(o.s), [fb, fs] = FEE[kindOf(o.s)], gross = o.units * px * fx;
-    if (o.side === "buy") { const fee = gross * fb; if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
+    if (o.side === "buy") { const fee = gross * fb; if (o.ap && gross + fee > a.cash && typeof demoTopUp === "function") demoTopUp(gross + fee - a.cash + 1, `beli ${o.s}`); // uang demo tak terbatas (autopilot)
+      if (gross + fee > a.cash + 1e-6) { o.status = "ditolak"; o.note = "kas tidak cukup"; return false; }
       a.cash -= gross + fee; const p = a.pos[o.s] || { units: 0, cost: 0, name: o.name || o.s }; p.units += o.units; p.cost += gross + fee; a.pos[o.s] = p; o.fee = fee;
       if (o.brk) p.brk = { ...o.brk, entry: px, hit1: false, at: new Date().toISOString() }; if (o.ap) p.ap = true; if (o.xp) p.xp = true; }
     else { const p = a.pos[o.s]; if (!p || p.units + 1e-9 < o.units) { o.status = "ditolak"; o.note = "posisi tidak cukup"; return false; } if (p.ap) o.ap = true; if (p.xp) o.xp = true;
