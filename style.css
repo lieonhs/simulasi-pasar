@@ -799,3 +799,7 @@ tr.muted td { opacity: .55; }
 .vid-sus { opacity: .7; border-style: dashed; }
 #apVidCh { width: 100%; font: 12px var(--mono); }
 .vid-item a, .vid-item a b { color: var(--accent); }
+.ap-val { border: 1px solid var(--accent); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.ap-val .card-h { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+.ap-val .grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.ap-val input { width: 100%; }

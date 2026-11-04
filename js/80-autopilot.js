@@ -974,6 +974,9 @@ lap("berita");
       try { const m = await apBuy(r.X, diff); apMarkOpen(r.s); apLogAdd(r.s, `PORTOFOLIO tambah ke ${pct(r.w, 0)} · ekspektasi ${pct(r.e, 1)} − biaya ${pct(apCostRT(r.s), 1)} · ${m}`, "buy"); toast(`Autopilot: ${m}`); } catch (e) { apLogAdd(r.s, "gagal tambah: " + e.message, "err"); } }
     ap.porto = R.map((r) => ({ s: r.s, w: r.w, cur: r.cur / B, net: r.net })); }
   function drawAp() { if (!ap.cfg || !$("apTable")) return; const g = demoGate(), c = ap.cfg;
+    if ($("apValNow")) { const v = c.target === "demo" ? (demoInf() ? `dipakai sekarang: <b>${big(infVal(), "IDR")}</b> per posisi · eksplorasi ${big(infVal(0.5), "IDR")} · kuota ${big(infVal(0.25), "IDR")}` : `dipakai sekarang: dihitung dari risiko ${pct(parseFloat($("actRisk").value) || 0.01, 1)} modal run (uang demo tak terbatas mati)`)
+        : `dipakai sekarang: <b>Indodax ${big(Math.min(c.val || 0, (ix.cfg && ix.cfg.maxIdr) || 2e6), "IDR")}</b> per order${(ix.cfg && ix.cfg.maxIdr) && c.val > ix.cfg.maxIdr ? ` (dipotong batas server ${big(ix.cfg.maxIdr, "IDR")})` : ""}`;
+      $("apValNow").innerHTML = v + (c.bnf ? ` · Binance <b>${nf(0).format(c.bnfUsdt || 150)} USDT</b>${bnf.st && bnf.st.maxUsdt && (c.bnfUsdt || 150) > bnf.st.maxUsdt ? ` (dipotong ${bnf.st.maxUsdt})` : ""}` : ""); }
     { const cnt = new Map(); let buy = 0; for (const sy of apSyms()) { const st = ap.st[sy]; if (!st) continue; const V = st.V; if (V && V.act === "BELI") buy++;
         let k = apShort1(st.note || (V ? (V.act === "TUNGGU" ? V.why : V.act) : "")) || "–"; if (/^kurang:/.test(k)) k = /BELI/.test(k) || !/TAHAN|JUAL/.test(k) ? "model belum sepakat" : "rencana tidak BELI"; if (/^(JUAL|TAHAN)$/.test(k)) k = "rencana tidak BELI";
         cnt.set(k, (cnt.get(k) || 0) + 1); }

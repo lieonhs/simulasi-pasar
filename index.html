@@ -27,7 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/katex/katex.min.css?v=d0d6077daa">
-<link rel="stylesheet" href="style.css?v=946a1760de">
+<link rel="stylesheet" href="style.css?v=c33a038913">
 <script src="vendor/chart.umd.min.js?v=283d65ad75"></script>
 <script src="vendor/supabase.js?v=43b205e2c6"></script>
 <script defer src="vendor/katex/katex.min.js?v=f4e1ebdc2d"></script>
@@ -369,6 +369,10 @@
         <div><label class="lbl" for="apTarget">Eksekusi di</label><select id="apTarget"><option value="demo" selected>Akun demo</option><option value="idx">Indodax (uang asli)</option></select></div>
         <div><label class="lbl" for="apStyle">Gaya trading</label><select id="apStyle"><option value="swing">Swing (tahan beberapa hari)</option><option value="day">Harian / day trade (tutup sebelum sesi berakhir)</option><option value="both">Keduanya: swing (model) + harian, jalan bersamaan</option><option value="adapt">Adaptif per aset: dua strategi jalan, otomatis pakai yang lebih efektif</option></select></div>
       </div>
+      <div class="ap-val"><div class="card-h"><b>💰 Nilai per transaksi</b><span class="note" id="apValNow"></span></div>
+        <div class="grid"><div><label class="lbl" for="apInfVal">Demo (Rp)</label><input id="apInfVal" type="number" min="100000" step="1000000" value="10000000"><span class="note">eksplorasi ½ · kuota ¼ · futures: nilai kontrak (margin = nilai ÷ leverage)</span></div>
+        <div><label class="lbl" for="apVal">Indodax · uang asli (Rp)</label><input id="apVal" type="number" min="10000" step="10000" value="100000"><span class="note">dibatasi juga oleh batas server INDODAX_MAX_IDR</span></div>
+        <div><label class="lbl" for="apBnfUsdt">Binance futures (USDT)</label><input id="apBnfUsdt" type="number" min="5" step="5" value="150"><span class="note">dibatasi BINANCE_FUT_MAX_USDT di server</span></div></div></div>
       <details class="ap-adv"><summary>⚙ Pengaturan lanjutan · kecerdasan, risiko, otak, perangkat</summary>
       <div class="lbl">Kecerdasan yang harus sepakat</div>
       <div class="ap-chk"><label class="toggle"><input type="checkbox" id="apUseML" checked> Machine learning</label><label class="toggle"><input type="checkbox" id="apUseDL" checked> Deep learning</label><label class="toggle"><input type="checkbox" id="apUseAI" checked> RAM AI (aturan)</label><label class="toggle"><input type="checkbox" id="apUseNews" checked> Berita (jual darurat bila ada kejutan)</label><label class="toggle"><input type="checkbox" id="apUseExp" checked> Pengalaman demo (belajar dari hasil sendiri)</label></div>
@@ -381,13 +385,13 @@
         <div><label class="lbl" for="apBudget">Dana uji per run (maks Rp 1 miliar)</label><input id="apBudget" type="number" min="1000000" max="1000000000" step="1000000" value="1000000000"></div>
         <div class="ap-porto"><label class="lbl" for="apMaxW">Bobot maks per aset</label><select id="apMaxW"><option value="0.25">25%</option><option value="0.35" selected>35%</option><option value="0.5">50%</option></select></div>
         <label class="toggle" style="grid-column:1/-1"><input type="checkbox" id="apDemoInf" checked> <b>Uang demo tak terbatas</b> <span class="note">(kas kurang → modal virtual disuntik otomatis & dicatat; aturan gagal-run 50% tidak berlaku; tiap posisi memakai nilai tetap di bawah supaya perbandingan adil)</span></label>
-        <div><label class="lbl" for="apInfVal">Nilai per posisi demo (Rp)</label><input id="apInfVal" type="number" min="100000" step="1000000" value="10000000"><span class="note">eksplorasi ½ · kuota ¼ · futures: nilai kontrak (margin = nilai ÷ leverage)</span></div>
+        
         <label class="toggle" style="grid-column:1/-1"><input type="checkbox" id="apDemoFree" checked> <b>Demo tanpa batas</b> <span class="note">(abaikan batas order/hari, posisi, per aset, jeda & rem rugi harian di akun demo — hanya kas demo yang membatasi; batas di bawah hanya berlaku untuk uang asli atau bila ini dimatikan)</span></label>
         <div><label class="lbl" for="apMaxPos">Maks posisi terbuka</label><select id="apMaxPos"><option>1</option><option>2</option><option>3</option><option>5</option><option>8</option><option selected>10</option><option>15</option><option>20</option><option>30</option></select></div>
         <div><label class="lbl" for="apMaxDay">Maks order baru / hari</label><select id="apMaxDay"><option>10</option><option>20</option><option>50</option><option value="100" selected>100</option><option>200</option><option>300</option></select><span class="note">uang asli tetap maks 50 · jual tidak pernah dibatasi</span></div>
         <div><label class="lbl" for="apMaxAsset">Maks posisi baru / aset / hari</label><select id="apMaxAsset"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
         <div><label class="lbl" for="apGapMin">Jeda antar posisi di aset yang sama</label><select id="apGapMin"><option value="30">30 menit</option><option value="60" selected>1 jam</option><option value="120">2 jam</option><option value="240">4 jam</option></select></div>
-        <div><label class="lbl" for="apVal">Nilai per order Indodax (Rp)</label><input id="apVal" type="number" min="10000" step="10000" value="100000"></div>
+        
         <div><label class="lbl" for="apEvery">Periksa tiap</label><select id="apEvery"><option value="0">Terus-menerus</option><option value="15">15 menit</option><option value="30" selected>30 menit</option><option value="60">60 menit</option></select></div>
       </div>
       <label class="toggle"><input type="checkbox" id="apExplore" checked> Eksplorasi demo <span class="note">(beli ½ ukuran bila rencana BELI, keyakinan asli ≥ 60% dan tidak ada model yang bilang turun; langsung di harga sekarang bila untung:rugi masih ≥ 1. Ditandai terpisah, tidak dihitung untuk membuka uang asli, tidak berlaku untuk Indodax)</span></label>
@@ -411,7 +415,7 @@
         <label class="toggle"><input type="checkbox" id="apFut1"> <b>Futures demo (short saat turun)</b> <span class="note">kripto saja · uang virtual · eksplorasi short ½ bila rencana JUAL & ada model turun, tidak ada yang naik</span></label>
         <div class="grid"><div><label class="lbl" for="apLongVia">Beli kripto (long) lewat</label><select id="apLongVia"><option value="fut" selected>Futures LONG</option><option value="spot">Spot</option><option value="alt">Bergantian (bandingkan)</option><option value="adapt">Adaptif (pakai yang lebih untung per aset)</option></select></div></div>
         <div id="apBnfBox" hidden class="ap-bnf"><label class="toggle"><input type="checkbox" id="apBnf"> <b>Kirim futures autopilot ke Binance</b> <span class="note">(akun kedua · hanya pemilik · <b>akun demo</b>: tiap posisi futures demo dicerminkan ke Binance · <b>akun Indodax (uang asli)</b>: short & long-futures kripto langsung ke Binance, spot tetap ke Indodax · stop & target selalu terpasang di Binance)</span></label>
-          <div class="grid"><div><label class="lbl" for="apBnfUsdt">Nilai per order (USDT)</label><input id="apBnfUsdt" type="number" min="5" step="5" value="150"></div><div><label class="lbl">&nbsp;</label><button class="btn" id="apBnfChk">Cek koneksi Binance</button></div></div>
+          <div class="grid"><div><label class="lbl">&nbsp;</label><button class="btn" id="apBnfChk">Cek koneksi Binance</button></div></div>
           <div id="apBnfOut"></div></div>
         <p class="note">Futures: langsung di harga sekarang, stop 1,5 ATR, target 2/3 ATR. Bergantian: tiap aset dicoba spot & futures bergiliran. Adaptif: bergantian sampai masing-masing ≥ 5 transaksi, lalu pakai yang laba rata-ratanya lebih besar.</p>
         <div class="grid"><div><label class="lbl" for="apLev">Leverage</label><select id="apLev"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="5">5x (maks)</option></select></div></div>
@@ -1195,7 +1199,7 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=ee339d1e36"></script>
+<script src="js/80-autopilot.js?v=41bb4e4195"></script>
 <script src="js/90-aset-terminal-boot.js?v=f8925fa00c"></script>
 </body>
 </html>
