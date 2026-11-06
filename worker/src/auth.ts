@@ -1,6 +1,8 @@
 // Login RAM Capital tanpa Supabase.
 // Secret APP_USERS (JSON): [{"email":"...","salt":"hex","hash":"hex","role":"owner|user"}] — buat entrinya dari layar login web (⚙ Server → Buat entri akun).
 // Secret TOKEN_SECRET: string acak panjang (≥ 32 karakter) untuk menandatangani token login (berlaku 30 hari).
+// Mode GABUNG: token login Supabase (ES256) juga diterima — diverifikasi dengan kunci PUBLIK Supabase (JWKS), tanpa rahasia Supabase.
+//   Hanya email yang tercantum di APP_USERS (boleh tanpa salt/hash: {"email":"…","role":"owner"}) yang boleh lewat jalur ini.
 import { env } from "cloudflare:workers";
 export const ENV = (k: string): string | undefined => { const v = (env as any)[k]; return v == null ? undefined : String(v); };
 const te = new TextEncoder();
@@ -24,8 +26,27 @@ export async function login(req: Request) {
   const exp = Math.floor(now / 1000) + 30 * 86400, p = b64u(te.encode(JSON.stringify({ sub: email, email, role: u.role === "owner" ? "owner" : "user", exp })));
   return { status: 200, data: { access_token: `${p}.${b64u(await hmac(p))}`, expires_at: exp, user: { id: email, email, role: u.role === "owner" ? "owner" : "user" } } };
 }
+const SB = () => (ENV("SUPABASE_URL") ?? "https://immvxirnxumsvjelbmum.supabase.co").replace(/\/+$/, "");
+let jwks: { at: number; keys: any[] } | null = null;
+async function sbKeys(): Promise<any[]> {
+  if (jwks && Date.now() - jwks.at < 3600e3) return jwks.keys;
+  try { const r = await fetch(`${SB()}/auth/v1/.well-known/jwks.json`, { signal: AbortSignal.timeout(8000) }); if (r.ok) { const j: any = await r.json(); if (Array.isArray(j.keys) && j.keys.length) { jwks = { at: Date.now(), keys: j.keys }; return j.keys; } } } catch (_) { /* Supabase tidak bisa dihubungi */ }
+  try { const j = JSON.parse(ENV("SUPABASE_JWKS") ?? "{}"); if (Array.isArray(j.keys)) return j.keys; } catch (_) { /* */ } // cadangan: kunci publik disimpan di secret
+  return jwks ? jwks.keys : [];
+}
+async function checkSupabase(tok: string) { // token login Supabase (ES256) → diverifikasi lokal dengan kunci publik
+  const [h, p, s] = tok.split("."); let H: any, P: any; try { H = JSON.parse(new TextDecoder().decode(ub64u(h))); P = JSON.parse(new TextDecoder().decode(ub64u(p))); } catch { return null; }
+  if (H.alg !== "ES256") return null; const jwk = (await sbKeys()).find((k: any) => k.kid === H.kid && k.kty === "EC"); if (!jwk) return null;
+  const key = await crypto.subtle.importKey("jwk", { kty: "EC", crv: jwk.crv ?? "P-256", x: jwk.x, y: jwk.y, ext: true }, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, ub64u(s), te.encode(`${h}.${p}`)); if (!ok) return null;
+  if (P.iss !== `${SB()}/auth/v1` || P.role !== "authenticated" || !(P.exp * 1000 > Date.now())) return null;
+  const email = String(P.email ?? "").toLowerCase(), u = users().find((x: any) => String(x.email ?? "").toLowerCase() === email); if (!u) return { denied: true };
+  return { email, role: u.role === "owner" ? "owner" : "user" };
+}
 export async function checkUser(req: Request): Promise<{ ok: boolean; why?: string; sub?: string; email?: string; role?: string }> {
-  const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim(), [p, s] = tok.split(".");
+  const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (tok.split(".").length === 3) { const S = await checkSupabase(tok); if (S) return (S as any).denied ? { ok: false, why: "Akun ini belum didaftarkan di server Cloudflare (APP_USERS)" } : { ok: true, sub: (S as any).email, email: (S as any).email, role: (S as any).role }; }
+  const [p, s] = tok.split(".");
   if (!p || !s || (ENV("TOKEN_SECRET") ?? "").length < 32) return { ok: false, why: "Perlu login" };
   const want = b64u(await hmac(p)); if (want.length !== s.length) return { ok: false, why: "Perlu login" };
   let d = 0; for (let i = 0; i < s.length; i++) d |= want.charCodeAt(i) ^ s.charCodeAt(i); if (d) return { ok: false, why: "Perlu login" }; // perbandingan waktu-konstan

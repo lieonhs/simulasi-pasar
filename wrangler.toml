@@ -6,3 +6,5 @@ compatibility_date = "2025-09-01"
 workers_dev = true
 [observability]
 enabled = true
+[vars]
+SUPABASE_URL = "https://immvxirnxumsvjelbmum.supabase.co"

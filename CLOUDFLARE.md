@@ -3,7 +3,17 @@
 Web (GitHub Pages) tetap sama. Yang pindah hanya **server**: 5 fungsi Supabase digabung menjadi satu Cloudflare Worker
 (`worker/`, dibuat otomatis dari `supabase/functions/*` oleh `tools/gen-worker.py`). Supabase tetap bisa dipakai sampai kamu menggantinya.
 
-## Yang berubah di mode Cloudflare
+## Tiga mode server (layar login → ⚙ ganti mode)
+| Mode | Login & data | Panggilan data (harga, berita, AI, Indodax, Binance) |
+|---|---|---|
+| **Supabase saja** | Supabase | Supabase |
+| **Gabung** (disarankan) | Supabase — data lama & sinkron laptop–HP tetap | **Cloudflare dulu**, otomatis ke Supabase bila Cloudflare gagal/kena batas (lalu Supabase dipakai langsung 10 menit) |
+| **Cloudflare saja** | Worker + browser ini (IndexedDB) | Cloudflare |
+
+Mode **Gabung** tidak butuh `TOKEN_SECRET`/password di `APP_USERS`: Worker memverifikasi token login Supabase (ES256) dengan **kunci publik** Supabase.
+Cukup cantumkan emailnya di `APP_USERS`, mis. `[{"email":"emailmu@gmail.com","role":"owner"}]`. Akun yang tidak tercantum otomatis memakai Supabase.
+
+## Yang berubah di mode Cloudflare saja
 - **Login**: akun diatur lewat secret `APP_USERS` (tidak ada daftar/persetujuan admin, tidak ada reset password lewat email).
 - **Data** (pengaturan, akun demo, memori AI, log) tersimpan di **browser** (IndexedDB), tidak tersinkron antar perangkat.
   Pakai **Profil → Ekspor/Impor cadangan** secara rutin.
@@ -17,7 +27,7 @@ Web (GitHub Pages) tetap sama. Yang pindah hanya **server**: 5 fungsi Supabase d
    `CLOUDFLARE_API_TOKEN` dan `CLOUDFLARE_ACCOUNT_ID`.
 4. GitHub → Actions → **Deploy Cloudflare Worker** → Run workflow. Setelah hijau, alamat Worker tampil di log
    (contoh `https://ram-capital.<subdomain>.workers.dev`).
-5. Di web RAM Capital, layar login → **⚙ Server: ganti** → tempel alamat Worker → muat ulang.
+5. Di web RAM Capital, layar login → **⚙ ganti mode** → pilih **3 (Gabung)** atau **2 (Cloudflare saja)** → tempel alamat Worker.
    Lalu klik **buat TOKEN_SECRET** dan **buat entri akun** (password tidak pernah dikirim ke mana pun; yang disalin hanya hash).
 6. Cloudflare → Workers & Pages → `ram-capital` → Settings → **Variables and Secrets** → tambah (tipe *Secret*):
    - `TOKEN_SECRET` — dari langkah 5

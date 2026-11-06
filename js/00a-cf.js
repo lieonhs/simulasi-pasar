@@ -6,7 +6,9 @@
 (() => {
   let base = ""; try { const q = new URLSearchParams(location.search).get("srv"); if (q != null) { if (q === "supabase") localStorage.removeItem("sp_srv"); else if (/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(q)) localStorage.setItem("sp_srv", q.replace(/\/+$/, "")); }
     base = localStorage.getItem("sp_srv") || ""; } catch { /* */ }
-  window.CF_BASE = base;
+  let mode = "cf"; try { mode = localStorage.getItem("sp_srvmode") || "cf"; } catch { /* */ } // cf = Cloudflare saja · mix = gabung (login & data Supabase, panggilan server Cloudflare → cadangan Supabase)
+  if (!base) mode = "";
+  window.CF_BASE = mode === "cf" ? base : ""; window.CF_MIX = mode === "mix" ? base : "";
   // ---------- IndexedDB kecil: tabel → baris ----------
   const DB = "ramcap", ST = "rows"; let dbp = null;
   const db = () => (dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(ST); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })));
@@ -62,10 +64,13 @@
     const hash = hexOf(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 10000 }, k, 256)), role = confirm("Jadikan PEMILIK (akses Indodax/Binance/admin)? OK = pemilik, Batal = pengguna biasa") ? "owner" : "user";
     prompt("Salin entri ini ke secret APP_USERS (gabungkan beberapa akun di dalam [ … ], dipisah koma). Password aslinya TIDAK tersimpan di sini:", JSON.stringify([{ email, salt: hexOf(salt), hash, role }])); }
   function tokenSecret() { prompt("TOKEN_SECRET acak (salin ke secret TOKEN_SECRET di Cloudflare, sekali saja):", hexOf(crypto.getRandomValues(new Uint8Array(32)))); }
-  function setServer() { const v = prompt("Alamat server Cloudflare Worker (mis. https://ram-capital.namamu.workers.dev). Kosongkan untuk kembali ke Supabase:", base || ""); if (v == null) return;
+  function setServer(m) { const v = prompt("Alamat server Cloudflare Worker (mis. https://ram-capital.namamu.workers.dev). Kosongkan untuk kembali ke Supabase:", base || ""); if (v == null) return;
     const u = v.trim().replace(/\/+$/, ""); if (u && !/^https:\/\/[\w.-]+(\/[\w./-]*)?$/.test(u)) { alert("Alamat harus diawali https://"); return; }
-    try { u ? localStorage.setItem("sp_srv", u) : localStorage.removeItem("sp_srv"); } catch { /* */ } location.reload(); }
-  const wire = () => { const el = document.getElementById("srvBox"); if (!el) return; el.innerHTML = `Server: <b>${base ? "Cloudflare" : "Supabase"}</b> · <a href="#" data-srv="set">ganti</a>` + (base ? ` · <a href="#" data-srv="acc">buat entri akun</a> · <a href="#" data-srv="tok">buat TOKEN_SECRET</a>` : "");
-    el.onclick = (e) => { const a = e.target.closest("[data-srv]"); if (!a) return; e.preventDefault(); ({ set: setServer, acc: makeEntry, tok: tokenSecret })[a.dataset.srv](); }; };
+    try { if (u) { localStorage.setItem("sp_srv", u); localStorage.setItem("sp_srvmode", m === "mix" ? "mix" : "cf"); } else localStorage.removeItem("sp_srv"); } catch { /* */ } location.reload(); }
+  function setMode() { const v = prompt("Mode server:\n1 = Supabase saja\n2 = Cloudflare saja (login & data di browser ini)\n3 = Gabung: login & data tetap Supabase, panggilan data ke Cloudflare, otomatis pindah ke Supabase bila Cloudflare gagal/kena batas", mode === "mix" ? "3" : mode === "cf" ? "2" : "1"); if (v == null) return;
+    const m = { 1: "", 2: "cf", 3: "mix" }[v.trim()]; if (m === undefined) return; if (m && !base) { setServer(m); return; } try { if (m) localStorage.setItem("sp_srvmode", m); else localStorage.removeItem("sp_srv"); } catch { /* */ } location.reload(); }
+  const wire = () => { const el = document.getElementById("srvBox"); if (!el) return; const nm = mode === "mix" ? "Gabung (Supabase + Cloudflare)" : mode === "cf" ? "Cloudflare" : "Supabase";
+    el.innerHTML = `Server: <b>${nm}</b> · <a href="#" data-srv="mode">ganti mode</a>` + (base ? ` · <a href="#" data-srv="set">alamat Worker</a> · <a href="#" data-srv="acc">buat entri akun</a> · <a href="#" data-srv="tok">buat TOKEN_SECRET</a>` : "");
+    el.onclick = (e) => { const a = e.target.closest("[data-srv]"); if (!a) return; e.preventDefault(); ({ mode: setMode, set: () => setServer(mode || "cf"), acc: makeEntry, tok: tokenSecret })[a.dataset.srv](); }; };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire); else wire();
 })();

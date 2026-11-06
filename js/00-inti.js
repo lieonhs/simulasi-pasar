@@ -3,7 +3,7 @@
 "use strict";
   const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
   const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
-  const API_ROOT = window.CF_BASE || SB_URL; // server: Cloudflare Worker (bila diisi) atau Supabase
+  const API_ROOT = window.CF_BASE || window.CF_MIX || SB_URL; // server: Cloudflare Worker (mode Cloudflare/gabung) atau Supabase
   const API = API_ROOT + "/functions/v1/market-data"; const API_IDX = API.replace("market-data", "indodax-menu");
   // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi.
   // Pengecualian: akun pemilik/admin di perangkat yang ditandai "tetap masuk" (sp_keep) memakai localStorage, tanpa keluar otomatis.
@@ -30,7 +30,13 @@
     // batas waktu: permintaan yang menggantung (jaringan pindah, server lambat) dibatalkan, supaya antrean autopilot tidak macet selamanya
     const { timeout, ...o2 } = opt; opt = o2; const ms = timeout || (/action=(ai|brief|guide)\b/.test(url) ? 75e3 : 30e3);
     const sig = () => (opt.signal || (typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined));
-    const go = async () => { try { return await fetch(url, { ...opt, headers: hdr(), signal: sig() }); } catch (e) { if (e && (e.name === "TimeoutError" || e.name === "AbortError")) throw new Error(`waktu habis (${Math.round(ms / 1000)} dtk) mengambil data`); throw e; } };
+    const go1 = async (u) => { try { return await fetch(u, { ...opt, headers: hdr(), signal: sig() }); } catch (e) { if (e && (e.name === "TimeoutError" || e.name === "AbortError")) throw new Error(`waktu habis (${Math.round(ms / 1000)} dtk) mengambil data`); throw e; } };
+    // mode GABUNG: Cloudflare dulu; gagal / kena batas / akun belum terdaftar di Worker → otomatis ke Supabase (dan Supabase dipakai langsung 10 menit)
+    const MIX = window.CF_MIX, viaCf = MIX && url.startsWith(MIX), alt = viaCf ? SB_URL + url.slice(MIX.length) : null;
+    const go = async () => { if (viaCf && Date.now() < (window.__cfDown || 0)) return go1(alt);
+      let r = null; try { r = await go1(url); } catch (e) { if (!viaCf) throw e; }
+      if (viaCf && (!r || r.status === 401 || r.status === 429 || r.status >= 500)) { window.__cfDown = Date.now() + 10 * 60e3; window.__cfWhy = r ? `Cloudflare ${r.status}` : "Cloudflare tidak bisa dihubungi"; return go1(alt); }
+      return r; };
     let r = await go();
     if (r.status === 401 && sb) { // 401 sering hanya sementara (token baru diganti, server sibuk): perbarui sesi lalu coba sekali lagi
       try { const { data } = await refreshOnce(); if (data && data.session) { session = data.session; r = await go(); } } catch { /* */ }
