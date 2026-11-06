@@ -1,0 +1,111 @@
+// DIBUAT OTOMATIS oleh tools/gen-worker.py dari supabase/functions/indodax-menu/index.ts — jangan diedit langsung.
+import { ENV, checkUser } from "../auth";
+// indodax-menu: Indodax untuk RAM Capital memakai Trade API v2 (api.indodax.com/api/v2, HMAC-SHA256, header X-APIKEY + Sign).
+// GET  ?action=pairs                 semua pasangan IDR + harga + perubahan 24 jam / 7 hari (publik)
+// GET  ?action=book&pair=btc_idr     order book 20 level + 30 transaksi terakhir (publik)
+// POST ?action=private {method,params,confirm}  hanya pemilik:
+//   status, account, openOrders, getOrder, orderHistory, myTrades, deposits, withdrawals (baca)
+//   createOrder (wajib konfirmasi; batas INDODAX_MAX_IDR untuk BELI — jual/keluar posisi tidak dibatasi), cancelOrder. Penarikan dana TIDAK tersedia.
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36" };
+const json = (body: unknown, status = 200, cache = 0) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json", ...(cache ? { "Cache-Control": `private, max-age=${cache}` } : {}) } });
+const SB_URL = ENV("SUPABASE_URL") ?? "", SB_ANON = ENV("SUPABASE_ANON_KEY") ?? "", SB_SERVICE = ENV("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const IDX_KEY = ENV("INDODAX_KEY") ?? "", IDX_SECRET = ENV("INDODAX_SECRET") ?? "";
+const OWNER = (ENV("OWNER_EMAIL") ?? "raafialmuchsin6805@gmail.com").toLowerCase();
+const IDX_MAX = Number(ENV("INDODAX_MAX_IDR") ?? "2000000");
+
+const okTokens = new Map<string, number>(), memberCache = new Map<string, { at: number; ok: boolean }>();
+async function isApproved(sub: string) {
+  const c = memberCache.get(sub); if (c && Date.now() - c.at < 60e3) return c.ok; if (!SB_SERVICE) return true;
+  const r = await fetch(`${SB_URL}/rest/v1/sp_members?select=status&user_id=eq.${encodeURIComponent(sub)}`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+  let ok: boolean; if (r.status === 404 || r.status === 400) { const t = await r.text(); ok = /PGRST205|does not exist|schema cache/i.test(t); } else if (!r.ok) ok = false; else { const j = await r.json(); ok = Array.isArray(j) && j[0]?.status === "approved"; }
+  if (memberCache.size > 1000) memberCache.clear(); memberCache.set(sub, { at: Date.now(), ok }); return ok;
+}
+async function checkUser_supabase(req: Request): Promise<{ ok: boolean; why?: string; email?: string }> {
+  const tok = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim(); if (!tok || tok.split(".").length !== 3) return { ok: false, why: "Perlu login" };
+  let p: any; try { p = JSON.parse(atob(tok.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return { ok: false, why: "Perlu login" }; }
+  const exp = (p.exp ?? 0) * 1000; if (p.role !== "authenticated" || exp < Date.now()) return { ok: false, why: "Perlu login" };
+  if ((okTokens.get(tok) ?? 0) <= Date.now()) { const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` } }); if (!r.ok) return { ok: false, why: "Perlu login" }; if (okTokens.size > 500) okTokens.clear(); okTokens.set(tok, exp); }
+  if (!(await isApproved(p.sub))) return { ok: false, why: "Akun belum disetujui admin" };
+  return { ok: true, email: p.email };
+}
+
+let pairsCache: { at: number; data: any } | null = null;
+async function pairs() {
+  if (pairsCache && Date.now() - pairsCache.at < 30e3) return pairsCache.data;
+  const [pr, sm] = await Promise.all([fetch("https://indodax.com/api/pairs", { headers: UA }), fetch("https://indodax.com/api/summaries", { headers: UA })]);
+  if (!pr.ok) return { error: `Indodax pairs ${pr.status}` };
+  const P = await pr.json(), sum = sm.ok ? await sm.json() : {}, tick = sum?.tickers ?? {}, p24 = sum?.prices_24h ?? {}, p7 = sum?.prices_7d ?? {};
+  const chg = (last: number, ref: any) => (Number(ref) > 0 && last > 0 ? last / Number(ref) - 1 : null);
+  const list = (Array.isArray(P) ? P : []).filter((p: any) => String(p.id ?? p.ticker_id ?? "").endsWith("idr")).map((p: any) => {
+    const id = String(p.id ?? p.ticker_id), base = String(p.traded_currency ?? p.base_currency ?? id.replace(/idr$/, "")).toLowerCase(), t = tick[`${base}_idr`] ?? {}, last = Number(t.last ?? 0) || 0;
+    return { id, pair: `${base}_idr`, base, name: p.description ?? p.traded_currency_unit ?? base.toUpperCase(), last: last || null, high: Number(t.high ?? 0) || null, low: Number(t.low ?? 0) || null,
+      volIdr: Number(t.vol_idr ?? 0) || 0, chg24: chg(last, p24[`${base}idr`]), chg7: chg(last, p7[`${base}idr`]), buy: Number(t.buy ?? 0) || null, sell: Number(t.sell ?? 0) || null,
+      minIdr: Number(p.trade_min_traded_currency ?? p.trade_min_base_currency ?? 0) || null, priceRound: Number(p.price_round ?? 0) || null, volPrec: Number(p.volume_precision ?? 8), pricePrec: Number(p.price_precision ?? 0) || null, suspended: !!p.is_maintenance };
+  }).sort((a: any, b: any) => b.volIdr - a.volIdr);
+  const data = { at: Math.floor(Date.now() / 1000), count: list.length, pairs: list }; pairsCache = { at: Date.now(), data }; return data;
+}
+async function book(pair: string) {
+  if (!/^[a-z0-9]{2,15}_idr$/.test(pair)) return { status: 400, data: { error: "pair tidak valid" } };
+  const id = pair.replace("_", ""), [d, t] = await Promise.all([fetch(`https://indodax.com/api/depth/${id}`, { headers: UA }), fetch(`https://indodax.com/api/trades/${id}`, { headers: UA })]);
+  const dj = d.ok ? await d.json().catch(() => ({})) : {}, tj = t.ok ? await t.json().catch(() => []) : [];
+  const lv = (a: any) => (Array.isArray(a) ? a.slice(0, 20).map((x: any) => [Number(x[0]), Number(x[1])]) : []);
+  return { status: 200, data: { pair, bids: lv(dj.buy), asks: lv(dj.sell), trades: (Array.isArray(tj) ? tj : []).slice(0, 30).map((x: any) => ({ t: Number(x.date), px: Number(x.price), amt: Number(x.amount), side: x.type })), at: Math.floor(Date.now() / 1000) } };
+}
+async function hmac256(key: string, msg: string) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return [...new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function v2(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, string> = {}) {
+  const qs = new URLSearchParams({ ...params, timestamp: String(Date.now()), recvWindow: "10000" }).toString(), sig = await hmac256(IDX_SECRET, qs);
+  const r = await fetch(`https://api.indodax.com${path}${method === "POST" ? "" : "?" + qs}`, { method,
+    headers: { ...UA, Accept: "application/json", "X-APIKEY": IDX_KEY, Sign: sig, ...(method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) }, body: method === "POST" ? qs : undefined });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || (j && typeof j === "object" && !Array.isArray(j) && typeof j.code === "number" && j.code < 0)) return { status: r.ok ? 400 : r.status, data: { error: (j && (j.msg || j.message || j.error)) || `HTTP ${r.status}`, code: j && j.code } };
+  return { status: 200, data: j };
+}
+const SYM = /^[a-z0-9]{2,15}idr$/;
+const str = (v: unknown, n = 40) => String(v ?? "").slice(0, n);
+async function priv(body: any, email: string) {
+  if ((email ?? "").toLowerCase() !== OWNER) return { status: 403, data: { error: "Fitur Indodax hanya untuk pemilik akun." } };
+  const m = String(body?.method ?? ""), p = body?.params ?? {};
+  if (m === "status") { if (!IDX_KEY || !IDX_SECRET) return { status: 200, data: { configured: false, maxIdr: IDX_MAX } };
+    const a = await v2("GET", "/api/v2/account", { omitZeroBalances: "true" }); return { status: 200, data: { configured: true, maxIdr: IDX_MAX, ok: a.status === 200, error: a.status === 200 ? null : a.data.error, canTrade: a.data?.canTrade ?? null, canWithdraw: a.data?.canWithdraw ?? null } }; }
+  if (!IDX_KEY || !IDX_SECRET) return { status: 503, data: { error: "Belum dikonfigurasi: tambahkan secret INDODAX_KEY dan INDODAX_SECRET di Supabase." } };
+  const sym = str(p.symbol, 20).toLowerCase(), week = { startTime: String(Date.now() - 7 * 864e5 + 60e3), endTime: String(Date.now()) };
+  if (sym && !SYM.test(sym)) return { status: 400, data: { error: "Simbol tidak valid (contoh: btcidr)." } };
+  if (m === "account") return v2("GET", "/api/v2/account", { omitZeroBalances: "true" });
+  if (m === "openOrders") return v2("GET", "/api/v2/openOrders", sym ? { symbol: sym } : {});
+  if (m === "orderHistory") return sym ? v2("GET", "/api/v2/order/histories", { symbol: sym, limit: "500", ...week }) : { status: 400, data: { error: "Pilih koin dulu." } };
+  if (m === "myTrades") return sym ? v2("GET", "/api/v2/myTrades", { symbol: sym, limit: "1000", ...week }) : { status: 400, data: { error: "Pilih koin dulu." } };
+  if (m === "deposits" || m === "withdrawals") { const coin = str(p.coin, 12).toUpperCase(); if (!/^[A-Z0-9]{2,12}$/.test(coin)) return { status: 400, data: { error: "Koin tidak valid." } };
+    return v2("GET", m === "deposits" ? "/api/v2/capital/deposit/hisrec" : "/api/v2/capital/withdraw/history", { coin }); } // hanya riwayat; tidak ada fungsi tarik dana
+  if (m === "getOrder") { const id = str(p.orderId, 40); if (!sym || !/^[0-9]{1,30}$/.test(id)) return { status: 400, data: { error: "Order tidak valid." } }; return v2("GET", "/api/v2/order", { symbol: sym, orderId: id }); }
+  if (m === "cancelOrder") { const id = str(p.orderId, 40); if (!sym || !/^[0-9]{1,30}$/.test(id)) return { status: 400, data: { error: "Order tidak valid." } }; return v2("DELETE", "/api/v2/order", { symbol: sym, orderId: id }); }
+  if (m === "createOrder") {
+    const side = str(p.side, 4).toUpperCase(), type = str(p.type, 6).toUpperCase(), price = Number(p.price ?? 0), qty = Number(p.quantity ?? 0), quote = Number(p.quoteOrderQty ?? 0);
+    if (!sym || !["BUY", "SELL"].includes(side) || !["LIMIT", "MARKET"].includes(type)) return { status: 400, data: { error: "Simbol/sisi/jenis order tidak valid." } };
+    if (body?.confirm !== `${side.toLowerCase()} ${sym.replace(/idr$/, "_idr")}`) return { status: 400, data: { error: "Konfirmasi order tidak cocok." } };
+    let value = 0; const P: Record<string, string> = { symbol: sym, side, type };
+    if (type === "LIMIT") { if (!(price > 0 && qty > 0)) return { status: 400, data: { error: "Harga & jumlah wajib untuk order limit." } }; P.price = String(price); P.quantity = String(qty); value = price * qty; }
+    else if (side === "BUY") { if (!(quote > 0)) return { status: 400, data: { error: "Isi jumlah rupiah untuk beli market." } }; P.quoteOrderQty = String(Math.floor(quote)); value = quote; }
+    else { if (!(qty > 0)) return { status: 400, data: { error: "Isi jumlah koin." } }; P.quantity = String(qty);
+      const t = await (await fetch(`https://indodax.com/api/ticker/${sym}`, { headers: UA })).json().catch(() => ({})); value = qty * Number(t?.ticker?.last ?? 0); }
+    if (!(value > 0)) return { status: 400, data: { error: "Nilai order tidak valid." } };
+    if (side === "BUY" && value > IDX_MAX) return { status: 400, data: { error: `Order Rp ${Math.round(value).toLocaleString("id-ID")} melebihi batas per order Rp ${IDX_MAX.toLocaleString("id-ID")} (secret INDODAX_MAX_IDR).` } };
+    return v2("POST", "/api/v2/order", P);
+  }
+  return { status: 400, data: { error: "Metode tidak diizinkan." } };
+}
+
+export default (async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const who = await checkUser(req); if (!who.ok) return json({ error: who.why }, 401);
+  const u = new URL(req.url), action = u.searchParams.get("action") ?? "pairs";
+  try {
+    if (action === "pairs") return json(await pairs(), 200, 30);
+    if (action === "book") { const r = await book((u.searchParams.get("pair") ?? "").toLowerCase()); return json(r.data, r.status, 5); }
+    if (action === "private") { if (req.method !== "POST") return json({ error: "Gunakan POST" }, 405); const r = await priv(await req.json().catch(() => null), who.email ?? ""); return json(r.data, r.status); }
+    return json({ error: "action tidak dikenal" }, 400);
+  } catch (e) { return json({ error: String(e) }, 502); }
+});

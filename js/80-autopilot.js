@@ -307,7 +307,7 @@ lap("berita");
     const last = L[L.length - 1]; if (last && Date.now() - last < (c.gapMin ?? 60) * 60e3) return `jeda ${c.gapMin ?? 60} menit antar posisi di aset ini`; return null; }
   function apMarkOpen(s) { const m = apOpens(); (m[s] || (m[s] = [])).push(Date.now()); ap.cfg.nDay++; }
   // ---- MATA VIDEO: pernyataan resmi (Fed, Gedung Putih, Setpres, Kemenkeu, IDX Channel, …) ditonton Gemini → dampak per kelas aset
-  const API_VID = SB_URL + "/functions/v1/video-eye";
+  const API_VID = API_ROOT + "/functions/v1/video-eye";
   const VID_DEF = "UCAzhpt9DmG6PnHXjmJTvRGQ, UCYxRlFDqcWM4y7FfpiAN3KQ, UC_m_NBgf7ieJBHzb6vvJC5A, UCBU3tlSHnFzYWCsMEmMTWyQ, UCQA6NejSxQguRkD3L8eXHzA"; // Fed, White House, Sekretariat Presiden, Kemenkeu, IDX CHANNEL
   const vid = (() => { try { return JSON.parse(localStorage.getItem("sp_vid") || "{}"); } catch { return {}; } })(); vid.res = vid.res || {}; vid.skip = vid.skip || {};
   const vidSave = () => { try { const k = Object.keys(vid.res).sort((a, b) => (vid.res[b].at || 0) - (vid.res[a].at || 0)); for (const x of k.slice(80)) delete vid.res[x]; localStorage.setItem("sp_vid", JSON.stringify({ res: vid.res, skip: vid.skip, at: vid.at })); } catch { /* */ } };
@@ -637,7 +637,7 @@ lap("berita");
   // futures demo LONG (dir +1) / SHORT (dir −1) di harga live: stop 1,5 ATR, target 2 & 3 ATR (untung:rugi ≥ 1,3), ukuran dari risiko per transaksi; eksplorasi ½ ukuran & ditandai xp
   // ---- Binance USDⓈ-M futures (akun kedua, hanya pemilik): futures autopilot demo dicerminkan ke Binance.
   // Server default DEMO TRADING (uang palsu). Uang asli hanya bila secret BINANCE_FUT_LIVE=1 → di sini juga wajib lolos syarat demo + verifikasi password.
-  const API_BNF = SB_URL + "/functions/v1/binance-fut?forceFunctionRegion=ap-southeast-2"; // Binance menolak server AS → fungsi dikunci ke Sydney
+  const API_BNF = API_ROOT + "/functions/v1/binance-fut?forceFunctionRegion=ap-southeast-2"; // Binance menolak server AS → fungsi dikunci ke Sydney
   const bnf = { st: null, at: 0 };
   async function bnfCall(body) { const r = await apiFetch(API_BNF, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error(j.error || `Binance ${r.status}`); return j; }

@@ -389,6 +389,9 @@
       if (e.target.id === "hpCsv") return hpCsv();
       const ts = e.target.closest("[data-theme-set]"); if (ts) { applyTheme(ts.dataset.themeSet); showProfile(); return; }
       if (e.target.id === "profOut") { $("cmdLogout").click(); return; }
+      if (e.target.id === "cfExp") { (async () => { const j = await window.cfBackup(), b = new Blob([JSON.stringify(j)], { type: "application/json" }), a = document.createElement("a");
+          a.href = URL.createObjectURL(b); a.download = `ramcapital-cadangan-${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast(`Cadangan diunduh (${j.rows.length} bagian).`); })(); return; }
+      if (e.target.id === "cfImp") { $("cfImpF").onchange = async (ev) => { const f = ev.target.files && ev.target.files[0]; if (!f) return; try { const j = JSON.parse(await f.text()); if (!confirm(`Pulihkan ${j.rows ? j.rows.length : 0} bagian dari cadangan ${String(j.at || "").slice(0, 10)}? Data di browser ini akan ditimpa.`)) return; await window.cfRestore(j); toast("Cadangan dipulihkan, memuat ulang…"); setTimeout(() => location.reload(), 600); } catch (er) { toast("Gagal: " + er.message); } }; $("cfImpF").click(); return; }
       if (e.target.id === "profSave") { sb.rpc("sp_update_profile", { p_name: $("profName").value }).then(({ data }) => { if (data) me = { ...me, ...data }; $("cmdUser").innerHTML = `<span class="pn">${esc((me.name || "").toUpperCase().slice(0, 18) + (me.role === "admin" ? " · ADMIN" : ""))}</span>`; toast("Nama disimpan"); }); return; }
       const mb = e.target.closest("[data-mem]"); if (mb) { const args = { p_user: mb.dataset.mem, p_status: mb.dataset.st || "approved", p_role: mb.dataset.role || null };
         sb.rpc("sp_admin_decide", args).then(({ error }) => { if (error) toast("Gagal: " + error.message); showProfile(); refreshAdminBadge(); }); return; }

@@ -3,7 +3,8 @@
 "use strict";
   const SB_URL = "https://immvxirnxumsvjelbmum.supabase.co";
   const SB_KEY = "sb_publishable_55aYAB_89tsZ2QNBzv5igg_v0FlChuz"; // kunci publik (aman di browser; data dilindungi RLS)
-  const API = SB_URL + "/functions/v1/market-data"; const API_IDX = API.replace("market-data", "indodax-menu");
+  const API_ROOT = window.CF_BASE || SB_URL; // server: Cloudflare Worker (bila diisi) atau Supabase
+  const API = API_ROOT + "/functions/v1/market-data"; const API_IDX = API.replace("market-data", "indodax-menu");
   // sesi login hanya hidup selama tab terbuka (sessionStorage): tutup tab / browser = wajib login lagi.
   // Pengecualian: akun pemilik/admin di perangkat yang ditandai "tetap masuk" (sp_keep) memakai localStorage, tanpa keluar otomatis.
   let KEEP = false; try { KEEP = localStorage.getItem("sp_keep") === "1"; } catch { /* */ }
@@ -17,7 +18,7 @@
     sessionStorage.removeItem("sp_left");
     addEventListener("pagehide", () => { try { sessionStorage.setItem("sp_left", String(Date.now())); } catch { /* */ } });
   } catch { /* */ }
-  const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: KEEP ? window.localStorage : window.sessionStorage } }) : null;
+  const sb = window.CF_BASE && window.cfClient ? window.cfClient() : window.supabase ? window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, storage: KEEP ? window.localStorage : window.sessionStorage } }) : null;
   const IDLE_MIN = 30; let lastAct = Date.now();
   let session = null;
   let refreshing = null; const refreshOnce = () => (refreshing || (refreshing = sb.auth.refreshSession().finally(() => setTimeout(() => (refreshing = null), 3000)))); // satu pembaruan untuk semua permintaan paralel

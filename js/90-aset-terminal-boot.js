@@ -614,7 +614,10 @@
   async function showProfile() {
     if (!me) return; const th = document.documentElement.getAttribute("data-theme");
     let admin = "";
-    if (me.role === "admin" && !me._nodb) {
+    if (sb && sb.cf) admin = `<div class="subh">Server Cloudflare · data di browser ini</div><p class="note">Pengaturan, akun demo, memori AI & log tersimpan di <b>browser ini saja</b> (tidak ikut ke perangkat lain). Buat cadangan rutin — data hilang bila data situs/browser dihapus.</p>
+        <p><button class="fn-key" id="cfExp">Ekspor cadangan (.json)</button> <button class="fn-key" id="cfImp">Impor cadangan</button> <input type="file" id="cfImpF" accept="application/json,.json" hidden></p>
+        <p class="note">Akun diatur lewat secret <code>APP_USERS</code> di Cloudflare (bukan persetujuan admin di sini).</p>`;
+    else if (me.role === "admin" && !me._nodb) {
       const { data, error } = await sb.from("sp_members").select("*").order("requested_at", { ascending: false });
       const L = data || [], cnt = (st) => L.filter((x) => x.status === st).length;
       const btn = (u, st, lbl) => `<button class="fn-key" data-mem="${esc(u)}" data-st="${st}">${lbl}</button>`;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com https://indodax.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://s3.tradingview.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev https://immvxirnxumsvjelbmum.supabase.co wss://immvxirnxumsvjelbmum.supabase.co https://data-api.binance.vision https://api.binance.com https://indodax.com wss://stream.binance.com:9443 wss://streamer.finance.yahoo.com; frame-src https://www.tradingview.com https://s.tradingview.com https://www.tradingview-widget.com https://s.tradingview-widget.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="app-v" content="bc3126f3ae">
 <script src="boot.js?v=4f05a39fd3"></script>
@@ -27,7 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="vendor/katex/katex.min.css?v=d0d6077daa">
-<link rel="stylesheet" href="style.css?v=c33a038913">
+<link rel="stylesheet" href="style.css?v=736e570d44">
 <script src="vendor/chart.umd.min.js?v=283d65ad75"></script>
 <script src="vendor/supabase.js?v=43b205e2c6"></script>
 <script defer src="vendor/katex/katex.min.js?v=f4e1ebdc2d"></script>
@@ -77,6 +77,7 @@
     <div id="authMsg" class="status"></div>
     <div class="auth-links"><a href="#" id="authToSignup">Buat akun</a><a href="#" id="authToReset">Lupa password?</a><a href="#" id="authToLogin" hidden>Kembali ke masuk</a></div>
   </form>
+  <p class="note srv-box" id="srvBox"></p>
 </div>
 <div id="pendGate" class="auth-gate" hidden>
   <div class="auth-card">
@@ -1191,15 +1192,16 @@ P/BV stabil: \( \dfrac{ROE_T - g_T}{k_e - g_T} \)</p>
 <footer class="foot wrap">Data: Yahoo Finance (fallback Binance untuk kripto) via Supabase Edge Function. Bukan saran investasi.</footer>
 
 <script src="engine.js?v=52c5d556d8"></script>
-<script src="js/00-inti.js?v=ec88551cf4"></script>
+<script src="js/00a-cf.js?v=2fcbe4dc06"></script>
+<script src="js/00-inti.js?v=51a14d6d16"></script>
 <script src="js/10-analisis.js?v=ca617e0e2d"></script>
 <script src="js/20-watchlist-pasar.js?v=9a6785e44f"></script>
 <script src="js/30-portofolio.js?v=4219b116f7"></script>
 <script src="js/40-trading-strategi.js?v=8641c9e467"></script>
-<script src="js/50-bantuan-terminal.js?v=7b0e88ce8e"></script>
+<script src="js/50-bantuan-terminal.js?v=5904757198"></script>
 <script src="js/60-sinyal-rencana-ai.js?v=8d25f3714f"></script>
 <script src="js/70-radar-gems.js?v=4d8fe41098"></script>
-<script src="js/80-autopilot.js?v=41bb4e4195"></script>
-<script src="js/90-aset-terminal-boot.js?v=f8925fa00c"></script>
+<script src="js/80-autopilot.js?v=b13d382ae1"></script>
+<script src="js/90-aset-terminal-boot.js?v=b5f48bd3e3"></script>
 </body>
 </html>

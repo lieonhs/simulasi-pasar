@@ -803,3 +803,4 @@ tr.muted td { opacity: .55; }
 .ap-val .card-h { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
 .ap-val .grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .ap-val input { width: 100%; }
+.srv-box { text-align: center; margin-top: 8px; } .srv-box a { color: var(--accent); }
